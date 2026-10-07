@@ -536,20 +536,20 @@ button,input,select,textarea{font-family:inherit}
   background:#fffefc;border:1px solid var(--line-subtle);
   border-radius:14px;padding:4px 10px;box-shadow:var(--shadow-sm);
   display:flex;align-items:center;justify-content:space-between;
-  flex-wrap:nowrap;gap:8px;
+  flex-wrap:nowrap;gap:6px;
 }
 .week-nav{
-  display:flex;align-items:center;gap:4px;
+  display:flex;align-items:center;gap:3px;flex-shrink:0;
 }
 .week-nav .p-btn{
-  font-size:11.5px;padding:3px 9px;
+  font-size:11px;padding:3px 7px;white-space:nowrap;
 }
 .week-info{
-  text-align:center;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  text-align:right;display:flex;align-items:center;gap:4px;flex-shrink:0;
 }
 .wl-date{
-  font-size:13.5px;font-weight:800;color:var(--ink-primary);
-  letter-spacing:.2px;
+  font-size:12px;font-weight:800;color:var(--ink-primary);
+  letter-spacing:.1px;white-space:nowrap;
 }
 .wl-schools{
   display:flex;align-items:center;gap:5px;flex-wrap:wrap;
@@ -1133,10 +1133,10 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
   .btn-txt{display:none} /* 移动端仅保留图标 ⚙️ / 🚪，省出横向空间 */
   .user-pill{padding:2px 7px;font-size:11px}
   .p-btn{padding:3px 7px;font-size:11.5px}
-  .week-nav .p-btn{padding:3px 7px;font-size:11px}
+  .week-nav .p-btn{padding:2.5px 6px;font-size:10.5px}
   .weekbar-wrap{padding:0 6px 3px}
-  .weekbar-card{padding:4px 6px;gap:5px}
-  .wl-date{font-size:12px}
+  .weekbar-card{padding:3px 8px;gap:4px}
+  .wl-date{font-size:11px}
   .school-badge{font-size:10px;padding:1px 5px}
   .legend-card{font-size:10.5px;gap:6px}
   .modal{padding:18px 16px}
