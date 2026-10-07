@@ -1,0 +1,17 @@
+services:
+  sched-share:
+    build: .
+    image: sched-share:latest
+    container_name: sched-share
+    user: "1000:1000"
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - PORT=8795
+      - DATA_DIR=/data
+    ports:
+      - "127.0.0.1:8795:8795"
+    volumes:
+      - ./data:/data
+      - ./app.py:/app/app.py
+      - ./dog-couple.png:/app/dog-couple.png

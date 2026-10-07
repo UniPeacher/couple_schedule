@@ -1,0 +1,27 @@
+# 数据存储目录与敏感凭证
+data/
+*.db
+*.db-*
+*.key
+*.txt
+!requirements.txt
+
+# 备份与临时文件
+*.bak*
+*.tmp
+*.swp
+*.swo
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# 系统与编辑器缓存
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
