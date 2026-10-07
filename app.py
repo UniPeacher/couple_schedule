@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS comments(
   uid      TEXT NOT NULL,
   text     TEXT NOT NULL,
   created  TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS anniversaries(
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  title    TEXT NOT NULL,
+  date     TEXT NOT NULL,
+  target_type TEXT NOT NULL DEFAULT 'love');
 """
 
 # 首次初始化时预置的两人示例日程（uid, 标题, 地点, 备注, repeat, 星期0-6, 单次日期, 开始, 结束, 周次）
@@ -135,6 +140,12 @@ def get_comment_counts():
     with LOCK:
         rows = CONN.execute("SELECT event_id, COUNT(*) n FROM comments GROUP BY event_id").fetchall()
         return {r["event_id"]: r["n"] for r in rows}
+
+
+def get_anniversaries():
+    with LOCK:
+        rows = CONN.execute("SELECT * FROM anniversaries ORDER BY date ASC, id ASC").fetchall()
+        return [dict(r) for r in rows]
 
 
 def init_db():
@@ -317,6 +328,7 @@ def week_payload(anchor_iso):
         "weeknums": {uid: week_num(u["week1"], mon) for uid, u in users.items()},
         "settings": {"window_start": m2t(ws), "window_end": m2t(we), "min_gap": min_gap},
         "days": out_days,
+        "anniversaries": get_anniversaries(),
     }
 
 
@@ -541,6 +553,33 @@ button,input,select,textarea{font-family:inherit}
 .dot.a{background:var(--dog-a);box-shadow:0 0 0 2px var(--dog-a-bd)}
 .dot.b{background:var(--dog-b);box-shadow:0 0 0 2px var(--dog-b-bd)}
 .dot.free{background:var(--free-accent);box-shadow:0 0 0 2px var(--free-bd)}
+
+/* 甜蜜纪念日与倒计时条 */
+.anniv-bar{
+  max-width:1120px;margin:2px auto 6px;padding:0 10px;
+  display:flex;align-items:center;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.anniv-bar::-webkit-scrollbar{display:none}
+.anniv-capsule{
+  display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
+  background:#fff;border:1.5px solid var(--line-strong);
+  border-radius:var(--radius-pill);padding:3px 10px;
+  font-size:11.5px;font-weight:700;color:var(--ink-primary);
+  box-shadow:var(--shadow-sm);cursor:pointer;user-select:none;
+  transition:all .15s ease;
+}
+.anniv-capsule:hover{transform:translateY(-1px);background:#fff9f2;border-color:var(--accent)}
+.anniv-capsule.love{background:#fff1f4;border-color:#ffccd5;color:#e11d48}
+.anniv-capsule.birthday{background:#fff8eb;border-color:#fed7aa;color:#d97706}
+.anniv-capsule.countdown{background:#f0fdf4;border-color:#bbf7d0;color:#16a34a}
+.anniv-add-btn{
+  display:inline-flex;align-items:center;gap:4px;flex-shrink:0;
+  border:1px dashed var(--line-strong);border-radius:var(--radius-pill);
+  padding:3px 9px;font-size:11px;font-weight:600;color:var(--ink-muted);
+  background:transparent;cursor:pointer;transition:all .15s ease;
+}
+.anniv-add-btn:hover{background:#fff;color:var(--ink-primary);border-color:var(--dog-a)}
 
 /* 日历区域 */
 main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
@@ -988,6 +1027,8 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
   .legend-card{font-size:10.5px;gap:6px}
   .modal{padding:18px 16px}
   .fab{right:16px;bottom:18px;padding:10px 18px;font-size:13.5px}
+  .anniv-bar{padding:0 6px;margin:2px auto 4px}
+  .anniv-capsule{font-size:11px;padding:2px 8px}
 }
 </style>
 </head>
@@ -998,7 +1039,7 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 "use strict";
 var WD = ["周一","周二","周三","周四","周五","周六","周日"];
 var ME = null, DATA = null, ANCHOR = null, META = null;
-var addUid = "a", addRep = "weekly", loginUid = "a";
+var addUid = "a", addRep = "weekly", loginUid = "a", annivType = "love";
 
 function $(s){ return document.querySelector(s); }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
@@ -1011,6 +1052,40 @@ function t2m(t){ var p=t.split(":"); return (+p[0])*60 + (+p[1]); }
 function m2t(m){ return pad(Math.floor(m/60))+":"+pad(m%60); }
 function durTxt(a,b){ var m=b-a, h=Math.floor(m/60);
   return h>0 ? h+"小时"+(m%60?(m%60)+"分":"") : m+"分钟"; }
+
+function calcAnniv(item, todayStr){
+  var today = new Date(todayStr + "T00:00:00");
+  var tdate = new Date(item.date + "T00:00:00");
+  var diffDays = Math.round((today - tdate) / 86400000);
+  var icon = "💕", text = "";
+  if (item.target_type === "love"){
+    icon = "💖";
+    if (diffDays >= 0){
+      text = esc(item.title) + " 第 " + (diffDays + 1) + " 天";
+    } else {
+      text = esc(item.title) + " 还有 " + (-diffDays) + " 天";
+    }
+  } else if (item.target_type === "birthday"){
+    icon = "🎂";
+    var curYear = today.getFullYear();
+    var nextBday = new Date(curYear, tdate.getMonth(), tdate.getDate());
+    if (nextBday < today){
+      nextBday = new Date(curYear + 1, tdate.getMonth(), tdate.getDate());
+    }
+    var daysLeft = Math.round((nextBday - today) / 86400000);
+    text = (daysLeft === 0) ? (esc(item.title) + " 今天生日快乐！🎉") : (esc(item.title) + " 还有 " + daysLeft + " 天");
+  } else {
+    icon = "🎯";
+    if (diffDays < 0){
+      text = esc(item.title) + " 倒计时 " + (-diffDays) + " 天";
+    } else if (diffDays === 0){
+      text = esc(item.title) + " 就是今天啦！✨";
+    } else {
+      text = esc(item.title) + " 已过去 " + diffDays + " 天";
+    }
+  }
+  return { icon: icon, text: text, type: item.target_type, diffDays: diffDays };
+}
 function toast(msg){ var t=$("#toast"); t.textContent=msg; t.classList.add("show");
   clearTimeout(t._h); t._h=setTimeout(function(){ t.classList.remove("show"); }, 2600); }
 
@@ -1151,6 +1226,27 @@ function renderApp(){
     (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) +
   '</span>';
 
+  var annivList = DATA.anniversaries || [];
+  var todayStr = todayISO();
+  var annivHtml = "";
+  if (annivList.length > 0){
+    annivHtml = '<div class="anniv-bar">' +
+      annivList.map(function(item){
+        var calc = calcAnniv(item, todayStr);
+        return '<span class="anniv-capsule ' + calc.type + '" data-act="open-anniv-list" title="点击查看/管理纪念日">' +
+          calc.icon + ' ' + calc.text +
+        '</span>';
+      }).join("") +
+      '<button class="anniv-add-btn" data-act="open-anniv" title="添加纪念日/倒计时">＋ 记一个</button>' +
+    '</div>';
+  } else {
+    annivHtml = '<div class="anniv-bar">' +
+      '<button class="anniv-add-btn" data-act="open-anniv" style="margin:2px 0">' +
+        '💖 记录第一个相恋纪念日 / 生日倒计时 🐾' +
+      '</button>' +
+    '</div>';
+  }
+
   var html =
   '<div class="header-box" id="headerBox">' +
     '<header class="topbar">' +
@@ -1160,6 +1256,7 @@ function renderApp(){
       '</div>' +
       '<span class="spacer"></span>' +
       myPill +
+      '<button class="p-btn icon-btn" data-act="open-anniv" title="纪念日与倒计时">💖<span class="btn-txt"> 纪念日</span></button>' +
       '<button class="p-btn icon-btn" data-act="open-settings" title="设置">⚙️<span class="btn-txt"> 设置</span></button>' +
       '<button class="p-btn icon-btn" data-act="logout" title="退出">🚪<span class="btn-txt"> 退出</span></button>' +
     '</header>' +
@@ -1185,6 +1282,7 @@ function renderApp(){
         '</div>' +
       '</div>' +
     '</div>' +
+    annivHtml +
   '</div>' +
 
   '<main><div class="calwrap"><div class="cal" style="--pxh:' + PXH + 'px">' + head + body + '</div></div></main>' +
@@ -1276,11 +1374,55 @@ function modalsHTML(){
         '</div>' +
       '</form></div></div>' +
 
+    '<div class="overlay" id="ovAnniv"><div class="modal">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>情侣纪念日与倒计时 💖</h3></div>' +
+        '<img src="/img/dog-couple.png" alt="" class="mhead-img">' +
+      '</div>' +
+      '<div id="annivListContainer" style="margin-bottom:14px;max-height:160px;overflow-y:auto"></div>' +
+      '<form id="annivForm" style="border-top:1.5px dashed var(--line-strong);padding-top:12px">' +
+        '<div class="field" style="font-weight:700;font-size:12.5px;color:var(--ink-primary);margin-bottom:6px">＋ 记录新纪念日 / 倒计时</div>' +
+        '<div class="field"><label>类型</label>' +
+          '<div class="seg" id="annivTypeSeg">' +
+            '<div class="opt on" data-act="anniv-type" data-v="love">💖 相恋/相遇纪念日</div>' +
+            '<div class="opt" data-act="anniv-type" data-v="birthday">🎂 TA 的生日</div>' +
+            '<div class="opt" data-act="anniv-type" data-v="countdown">🎯 考试/旅行倒计时</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="field"><label>名称</label><input id="an_title" required maxlength="60" placeholder="如：恋爱纪念日 / 楚菁生日 / 寒假去海边 🌊"></div>' +
+        '<div class="field"><label>日期（相恋起始日 / 生日 / 目标日）</label><input type="date" id="an_date" required value="' + DATA.week_start + '"></div>' +
+        '<div class="foot">' +
+          '<button type="button" class="p-btn" data-act="close">关闭</button>' +
+          '<button class="p-btn pri">💖 记下这一天！</button>' +
+        '</div>' +
+      '</form>' +
+    '</div></div>' +
+
     '<div class="overlay" id="ovDetail"><div class="modal" id="ovDetailBox"></div></div>';
 }
 
 /* ---------------- 日程详情与情侣留言 ---------------- */
 var curDetail = null;
+
+function renderAnnivList(){
+  var box = $("#annivListContainer");
+  if (!box) return;
+  var list = (DATA && DATA.anniversaries) || [];
+  if (list.length === 0){
+    box.innerHTML = '<div style="font-size:12px;color:var(--ink-muted);text-align:center;padding:12px 0">' +
+      '还没有添加纪念日哦，在下方记一个吧 🐾</div>';
+    return;
+  }
+  var todayStr = todayISO();
+  box.innerHTML = list.map(function(item){
+    var c = calcAnniv(item, todayStr);
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:#fff8eb;border:1px solid #fed7aa;border-radius:12px;margin-bottom:6px;font-size:12px">' +
+      '<div><span style="font-size:14px;margin-right:4px">' + c.icon + '</span><strong>' + c.text + '</strong>' +
+      '<span style="color:var(--ink-muted);font-size:11px;margin-left:6px">(' + esc(item.date) + ')</span></div>' +
+      '<button class="p-btn danger" style="padding:2px 8px;font-size:11px" data-act="del-anniv" data-id="' + item.id + '">删除</button>' +
+    '</div>';
+  }).join("");
+}
 
 function openDetail(id, date){
   curDetail = {id: +id, date: date};
@@ -1393,6 +1535,21 @@ document.addEventListener("click", function(e){
   else if (act === "today"){ ANCHOR = todayISO(); load(); }
   else if (act === "open-add"){ $("#ovAdd").classList.add("show"); }
   else if (act === "open-settings"){ $("#ovSet").classList.add("show"); }
+  else if (act === "open-anniv" || act === "open-anniv-list"){
+    renderAnnivList();
+    $("#ovAnniv").classList.add("show");
+  }
+  else if (act === "anniv-type"){
+    annivType = el.getAttribute("data-v");
+    document.querySelectorAll("#annivTypeSeg .opt").forEach(function(o){ o.classList.toggle("on", o.getAttribute("data-v") === annivType); });
+  }
+  else if (act === "del-anniv"){
+    if (!confirm("确定删除这个纪念日？")) return;
+    api("/api/anniversaries/delete", {method:"POST", body:{id:+el.getAttribute("data-id")}})
+      .then(function(){ toast("已删除 🐾"); return load(); })
+      .then(function(){ renderAnnivList(); })
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  }
   else if (act === "detail"){ openDetail(el.getAttribute("data-id"), el.getAttribute("data-date")); }
   else if (act === "send-cmt"){
     var inp = $("#cmtText");
@@ -1470,6 +1627,21 @@ document.addEventListener("submit", function(e){
         return api("/api/me").then(function(j){ ME = j; load(); });
       });
     }).catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  } else if (f.id === "annivForm"){
+    e.preventDefault();
+    var body = {
+      title: $("#an_title").value.trim(),
+      date: $("#an_date").value,
+      target_type: annivType
+    };
+    api("/api/anniversaries", {method:"POST", body:body})
+      .then(function(){
+        $("#an_title").value = "";
+        toast("已记下这一天啦 💖");
+        return load();
+      })
+      .then(function(){ renderAnnivList(); })
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   }
 });
 
@@ -1685,6 +1857,14 @@ class Handler(BaseHTTPRequestHandler):
                 if self.authed() is None:
                     return
                 return self.change_password(d)
+            if path == "/api/anniversaries":
+                if self.authed() is None:
+                    return
+                return self.create_anniversary(d)
+            if path == "/api/anniversaries/delete":
+                if self.authed() is None:
+                    return
+                return self.delete_anniversary(d)
             return self.send_json({"error": "not found"}, 404)
         except Exception:
             self.log_error("POST %s failed: %s", path, sys.exc_info()[1])
@@ -1777,6 +1957,34 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "旧密码不正确"}, 400)
         with LOCK:
             CONN.execute("UPDATE users SET pw_hash=? WHERE uid=?", (hash_pw(new), uid))
+        return self.send_json({"ok": True})
+
+    def create_anniversary(self, d):
+        title = str(d.get("title") or "").strip()[:60]
+        dt = str(d.get("date") or "").strip()
+        target_type = str(d.get("target_type") or "love").strip()
+        if not title:
+            return self.send_json({"error": "纪念日名称不能为空"}, 400)
+        if not DATE_RE.match(dt):
+            return self.send_json({"error": "日期格式无效"}, 400)
+        try:
+            date.fromisoformat(dt)
+        except ValueError:
+            return self.send_json({"error": "日期无效"}, 400)
+        if target_type not in ("love", "birthday", "countdown"):
+            target_type = "love"
+        with LOCK:
+            CONN.execute("INSERT INTO anniversaries(title, date, target_type) VALUES(?,?,?)",
+                         (title, dt, target_type))
+        return self.send_json({"ok": True})
+
+    def delete_anniversary(self, d):
+        try:
+            aid = int(d.get("id"))
+        except (TypeError, ValueError):
+            return self.send_json({"error": "参数错误"}, 400)
+        with LOCK:
+            CONN.execute("DELETE FROM anniversaries WHERE id=?", (aid,))
         return self.send_json({"ok": True})
 
     def log_message(self, fmt, *args):
