@@ -58,6 +58,28 @@ python3 app.py
 
 ---
 
+## 📱 Android 客户端与云端打包 (APK)
+
+本项目包含专属的 Android 原生客户端代码（位于 `android/` 目录），已配置好 GitHub Actions 自动化编译工作流。
+
+### 客户端亮点：
+- 🐾 **线条小狗专属应用图标**（基于高清贴贴小狗绘制，多分辨率适配）
+- 🥛 **沉浸式手账状态栏**（奶白与草莓粉主题状态栏沉浸）
+- 🔄 **手势下拉刷新**（支持下拉实时同步课表与留言）
+- 💾 **自动持久化登录状态**（基于 CookieManager，退出应用后再次打开无需重复输入密码）
+- ⚙️ **灵活切换服务器**（默认连接部署地址，长按界面任意空白处可随时修改后端 URL）
+
+### 获取 APK 安装包：
+1. **GitHub 云端自动编译**：
+   - 每次推送到 `main` 分支时，GitHub Actions 会自动编译生成最新 APK。
+   - 访问仓库的 **[Actions 页面](../../actions)**，点击最新一次工作流运行，在 **Artifacts** 区域即可直接下载 `couple-schedule-apk`。
+2. **手动一键触发编译**：
+   - 在 GitHub 仓库导航到 **Actions** -> **Build Android APK** -> 点击 **Run workflow** 即可在云端一键编译。
+3. **Release 发版**：
+   - 只要给仓库打上标签（如 `git tag v1.0.0 && git push origin v1.0.0`），GitHub Actions 会自动创建 Release 并直接附带 `couple-schedule-v1.0.0.apk` 下载链接。
+
+---
+
 ## 🛠️ 技术栈
 
 - **后端**：Python 3.12（纯标准库，无 pip 依赖）
