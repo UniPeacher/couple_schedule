@@ -141,9 +141,9 @@ button,input,select,textarea{font-family:inherit}
 }
 .weekbar-card{
   background:#fffefc;border:1px solid var(--line-subtle);
-  border-radius:14px;padding:6px 12px;box-shadow:var(--shadow-sm);
+  border-radius:14px;padding:4px 10px;box-shadow:var(--shadow-sm);
   display:flex;align-items:center;justify-content:space-between;
-  flex-wrap:wrap;gap:8px;
+  flex-wrap:nowrap;gap:8px;
 }
 .week-nav{
   display:flex;align-items:center;gap:4px;
@@ -893,15 +893,6 @@ function renderApp(){
         '</div>' +
         '<div class="week-info">' +
           '<span class="wl-date">🗓️ ' + weekLabel + '</span>' +
-          '<span class="wl-schools">' +
-            '<span class="school-badge a">🐶 ' + esc(u.a.name) + (wn.a ? ' 第' + wn.a + '周' : '') + '</span>' +
-            '<span class="school-badge b">🐾 ' + esc(u.b.name) + (wn.b ? ' 第' + wn.b + '周' : '') + '</span>' +
-          '</span>' +
-        '</div>' +
-        '<div class="legend-card">' +
-          '<span class="legend-item"><i class="dot a"></i> 左列 · ' + esc(u.a.name) + '</span>' +
-          '<span class="legend-item"><i class="dot b"></i> 右列 · ' + esc(u.b.name) + '</span>' +
-          '<span class="legend-item"><i class="dot free"></i> 俩汪贴贴</span>' +
         '</div>' +
       '</div>' +
     '</div>' +
