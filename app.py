@@ -438,42 +438,52 @@ button,input,select,textarea{font-family:inherit}
   100%{opacity:0;transform:translate(12px,-24px) scale(1.2)}
 }
 
+/* 顶部固定大容器 */
+.header-box{
+  position:sticky;top:0;z-index:25;
+  background:rgba(255, 254, 251, 0.96);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1.5px solid var(--line-strong);
+  box-shadow:var(--shadow-sm);
+  transition:box-shadow .2s ease, transform .25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* 顶部导航 */
 .topbar{
-  position:sticky;top:0;z-index:25;
-  background:rgba(255, 254, 251, 0.94);
-  backdrop-filter:blur(10px);
-  border-bottom:1.5px solid var(--line-strong);
-  padding:10px 16px;
-  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-  box-shadow:var(--shadow-sm);
+  padding:5px 14px;
+  display:flex;align-items:center;gap:8px;
+  max-height:48px;overflow:hidden;
+  transition:max-height .25s cubic-bezier(0.4, 0, 0.2, 1),
+             opacity .2s ease,
+             padding .25s ease,
+             transform .25s ease;
 }
 .brand{
-  display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;
+  display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;
 }
 .brand-img{
-  height:36px;width:auto;flex:none;
+  height:30px;width:auto;flex:none;
   filter:drop-shadow(0 2px 4px rgba(139,92,44,0.1));
   transition:transform .25s ease;
 }
 .brand:hover .brand-img{animation:puppyWag .6s ease infinite}
 .brand-text{display:flex;flex-direction:column}
 .brand-title{
-  font-size:17px;font-weight:800;letter-spacing:.3px;
-  color:var(--ink-primary);display:flex;align-items:center;gap:5px;
+  font-size:15px;font-weight:800;letter-spacing:.3px;
+  color:var(--ink-primary);display:flex;align-items:center;gap:4px;
 }
 .brand-sub{
-  font-size:11.5px;color:var(--ink-muted);font-weight:500;
+  font-size:11px;color:var(--ink-muted);font-weight:500;
   display:flex;align-items:center;gap:4px;
 }
 .spacer{flex:1}
 
 /* 用户状态徽章与按钮 */
 .user-pill{
-  display:inline-flex;align-items:center;gap:6px;
-  font-size:12.5px;font-weight:700;
-  padding:5px 12px;border-radius:var(--radius-pill);
-  border:1.5px solid var(--line-strong);
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:11.5px;font-weight:700;
+  padding:3px 10px;border-radius:var(--radius-pill);
+  border:1px solid var(--line-strong);
   background:#fff;box-shadow:var(--shadow-sm);
 }
 .user-pill.a{background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)}
@@ -481,10 +491,10 @@ button,input,select,textarea{font-family:inherit}
 
 .p-btn{
   border:1.5px solid var(--line-strong);background:#fff;
-  border-radius:var(--radius-pill);padding:6px 14px;
-  font-size:13px;font-weight:600;color:var(--ink-primary);
-  cursor:pointer;display:inline-flex;align-items:center;gap:4px;
-  transition:all .18s ease;box-shadow:0 1px 3px rgba(139,92,44,0.06);
+  border-radius:var(--radius-pill);padding:4px 11px;
+  font-size:12px;font-weight:600;color:var(--ink-primary);
+  cursor:pointer;display:inline-flex;align-items:center;gap:3px;
+  transition:all .15s ease;box-shadow:0 1px 3px rgba(139,92,44,0.06);
 }
 .p-btn:hover{background:#fff8f0;border-color:#e4cdb5;transform:translateY(-1px)}
 .p-btn:active{transform:scale(0.96)}
@@ -504,45 +514,65 @@ button,input,select,textarea{font-family:inherit}
 
 /* 周导航控制器 */
 .weekbar-wrap{
-  max-width:1120px;margin:14px auto 8px;padding:0 12px;
+  max-width:1120px;margin:0 auto;padding:0 10px 5px;
+  transition:padding .2s ease;
 }
 .weekbar-card{
-  background:#fffefc;border:1.5px solid var(--line-strong);
-  border-radius:20px;padding:12px 16px;box-shadow:var(--shadow-sm);
+  background:#fffefc;border:1px solid var(--line-subtle);
+  border-radius:14px;padding:6px 12px;box-shadow:var(--shadow-sm);
   display:flex;align-items:center;justify-content:space-between;
-  flex-wrap:wrap;gap:12px;
+  flex-wrap:wrap;gap:8px;
+  transition:all .2s ease;
 }
 .week-nav{
-  display:flex;align-items:center;gap:8px;
+  display:flex;align-items:center;gap:4px;
 }
 .week-info{
-  text-align:center;display:flex;flex-direction:column;gap:3px;
+  text-align:center;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
 }
 .wl-date{
-  font-size:15px;font-weight:800;color:var(--ink-primary);
-  letter-spacing:.3px;
+  font-size:13.5px;font-weight:800;color:var(--ink-primary);
+  letter-spacing:.2px;
 }
 .wl-schools{
-  display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;
+  display:flex;align-items:center;gap:5px;flex-wrap:wrap;
 }
 .school-badge{
-  font-size:11.5px;font-weight:700;padding:2px 10px;
+  font-size:11px;font-weight:700;padding:1px 8px;
   border-radius:var(--radius-pill);border:1px solid;
 }
 .school-badge.a{background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)}
 .school-badge.b{background:var(--dog-b-bg);border-color:var(--dog-b-bd);color:var(--dog-b-text)}
 
 .legend-card{
-  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
-  font-size:12px;color:var(--ink-muted);font-weight:600;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-size:11.5px;color:var(--ink-muted);font-weight:600;
 }
-.legend-item{display:inline-flex;align-items:center;gap:5px}
+.legend-item{display:inline-flex;align-items:center;gap:4px}
 .legend-item .dot{
-  width:10px;height:10px;border-radius:50%;display:inline-block;
+  width:9px;height:9px;border-radius:50%;display:inline-block;
 }
 .dot.a{background:var(--dog-a);box-shadow:0 0 0 2px var(--dog-a-bd)}
 .dot.b{background:var(--dog-b);box-shadow:0 0 0 2px var(--dog-b-bd)}
 .dot.free{background:var(--free-accent);box-shadow:0 0 0 2px var(--free-bd)}
+
+/* 页面滚动时自动收缩顶栏 (Header Collapsed) */
+body.header-collapsed .header-box{
+  box-shadow:0 4px 16px rgba(139, 92, 44, 0.1);
+}
+body.header-collapsed .topbar{
+  max-height:0;padding-top:0;padding-bottom:0;opacity:0;
+  transform:translateY(-100%);pointer-events:none;
+}
+body.header-collapsed .weekbar-wrap{
+  padding:3px 10px 4px;
+}
+body.header-collapsed .weekbar-card{
+  padding:4px 8px;background:transparent;border-color:transparent;box-shadow:none;
+}
+body.header-collapsed .legend-card{
+  display:none;
+}
 
 /* 日历区域 */
 main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
@@ -977,11 +1007,22 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 
 /* 响应式调整 */
 @media (max-width:640px){
-  .topbar{padding:8px 12px}
-  .weekbar-card{padding:10px 12px}
-  .brand-title{font-size:16px}
+  .topbar{padding:4px 8px;max-height:42px;gap:6px}
+  .brand-img{height:25px}
+  .brand-title{font-size:13.5px}
+  .brand-sub{display:none} /* 移动端隐藏副标题，顶栏高度直接减半 */
+  .btn-txt{display:none} /* 移动端仅保留图标 ⚙️ / 🚪，省出宝贵横向宽度 */
+  .user-pill{padding:2px 7px;font-size:11px}
+  .p-btn{padding:3px 8px;font-size:11.5px}
+  .weekbar-wrap{padding:0 6px 3px}
+  .weekbar-card{padding:4px 6px;gap:5px}
+  .wl-date{font-size:12px}
+  .school-badge{font-size:10px;padding:1px 5px}
+  .legend-card{font-size:10.5px;gap:6px}
   .modal{padding:18px 16px}
   .fab{right:16px;bottom:18px;padding:10px 18px;font-size:13.5px}
+  body.header-collapsed .weekbar-wrap{padding:2px 6px 3px}
+  body.header-collapsed .weekbar-card{padding:2px 4px}
 }
 </style>
 </head>
@@ -1146,38 +1187,40 @@ function renderApp(){
   '</span>';
 
   var html =
-  '<header class="topbar">' +
-    '<div class="brand">' +
-      '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
-      '<div class="brand-text">' +
-        '<div class="brand-title">线条小狗 · 两人日程 🐾</div>' +
-        '<div class="brand-sub">小金毛 🐶 小白狗 · 甜蜜小窝</div>' +
-      '</div>' +
-    '</div>' +
-    '<span class="spacer"></span>' +
-    myPill +
-    '<button class="p-btn" data-act="open-settings">⚙️ 设置</button>' +
-    '<button class="p-btn" data-act="logout">🚪 退出</button>' +
-  '</header>' +
-
-  '<div class="weekbar-wrap">' +
-    '<div class="weekbar-card">' +
-      '<div class="week-nav">' +
-        '<button class="p-btn" data-act="prev">‹ 上一周</button>' +
-        '<button class="p-btn pri" data-act="today" style="padding:6px 16px">🐾 今天</button>' +
-        '<button class="p-btn" data-act="next">下一周 ›</button>' +
-      '</div>' +
-      '<div class="week-info">' +
-        '<div class="wl-date">🗓️ ' + weekLabel + '</div>' +
-        '<div class="wl-schools">' +
-          '<span class="school-badge a">🐶 ' + esc(u.a.name) + (wn.a ? ' 第' + wn.a + '周' : '') + '</span>' +
-          '<span class="school-badge b">🐾 ' + esc(u.b.name) + (wn.b ? ' 第' + wn.b + '周' : '') + '</span>' +
+  '<div class="header-box" id="headerBox">' +
+    '<header class="topbar">' +
+      '<div class="brand">' +
+        '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
+        '<div class="brand-text">' +
+          '<div class="brand-title">线条小狗 · 两人日程 🐾</div>' +
+          '<div class="brand-sub">小金毛 🐶 小白狗 · 甜蜜小窝</div>' +
         '</div>' +
       '</div>' +
-      '<div class="legend-card">' +
-        '<span class="legend-item"><i class="dot a"></i> 左列 · ' + esc(u.a.name) + ' (小金毛)</span>' +
-        '<span class="legend-item"><i class="dot b"></i> 右列 · ' + esc(u.b.name) + ' (小白狗)</span>' +
-        '<span class="legend-item"><i class="dot free"></i> 俩汪贴贴</span>' +
+      '<span class="spacer"></span>' +
+      myPill +
+      '<button class="p-btn icon-btn" data-act="open-settings" title="设置">⚙️<span class="btn-txt"> 设置</span></button>' +
+      '<button class="p-btn icon-btn" data-act="logout" title="退出">🚪<span class="btn-txt"> 退出</span></button>' +
+    '</header>' +
+
+    '<div class="weekbar-wrap">' +
+      '<div class="weekbar-card">' +
+        '<div class="week-nav">' +
+          '<button class="p-btn" data-act="prev">‹ 上周</button>' +
+          '<button class="p-btn pri" data-act="today" style="padding:4px 12px">🐾 今天</button>' +
+          '<button class="p-btn" data-act="next">下周 ›</button>' +
+        '</div>' +
+        '<div class="week-info">' +
+          '<span class="wl-date">🗓️ ' + weekLabel + '</span>' +
+          '<span class="wl-schools">' +
+            '<span class="school-badge a">🐶 ' + esc(u.a.name) + (wn.a ? ' 第' + wn.a + '周' : '') + '</span>' +
+            '<span class="school-badge b">🐾 ' + esc(u.b.name) + (wn.b ? ' 第' + wn.b + '周' : '') + '</span>' +
+          '</span>' +
+        '</div>' +
+        '<div class="legend-card">' +
+          '<span class="legend-item"><i class="dot a"></i> 左列 · ' + esc(u.a.name) + '</span>' +
+          '<span class="legend-item"><i class="dot b"></i> 右列 · ' + esc(u.b.name) + '</span>' +
+          '<span class="legend-item"><i class="dot free"></i> 俩汪贴贴</span>' +
+        '</div>' +
       '</div>' +
     '</div>' +
   '</div>' +
@@ -1475,6 +1518,30 @@ document.addEventListener("keydown", function(e){
     if (btn) btn.click();
   }
 });
+
+/* ---------------- 页面上滑自动收缩顶栏 ---------------- */
+var lastScrollY = 0;
+var scrollTicking = false;
+
+window.addEventListener("scroll", function() {
+  if (!scrollTicking) {
+    window.requestAnimationFrame(function() {
+      var curY = window.pageYOffset || document.documentElement.scrollTop || 0;
+      if (curY <= 20) {
+        document.body.classList.remove("header-collapsed");
+      } else if (curY > lastScrollY + 6 && curY > 40) {
+        // 向下滑动页面（查看后续时间段） -> 紧凑收缩顶栏
+        document.body.classList.add("header-collapsed");
+      } else if (curY < lastScrollY - 10) {
+        // 向上轻拉 -> 重新展开顶栏
+        document.body.classList.remove("header-collapsed");
+      }
+      lastScrollY = curY;
+      scrollTicking = false;
+    });
+    scrollTicking = true;
+  }
+}, { passive: true });
 
 ANCHOR = todayISO();
 api("/api/meta").then(function(j){ META = j; }).catch(function(){})
