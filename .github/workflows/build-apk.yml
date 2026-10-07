@@ -1,0 +1,64 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.5
+
+      - name: Build Android Release APK
+        working-directory: ./android
+        run: |
+          gradle assembleRelease --stacktrace
+
+      - name: Prepare APK Artifact
+        run: |
+          mkdir -p output
+          cp android/app/build/outputs/apk/release/app-release.apk output/couple-schedule-v1.0.0.apk
+
+      - name: Upload APK to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: couple-schedule-apk
+          path: output/couple-schedule-v1.0.0.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output/couple-schedule-v1.0.0.apk
+          tag_name: v1.0.0
+          name: "线条小狗日程 v1.0.0 🐾"
+          body: |
+            ## 🐾 线条小狗情侣日程共享 App (Android)
+
+            - 🐶 **专属线条小狗图标**：基于贴贴小狗插画高清适配全分辨率图标
+            - 🥛 **沉浸式手账主题**：状态栏与导航栏奶白暖调手账配色
+            - 🔄 **手势下拉刷新**：支持下拉手势随时同步课表与情侣留言
+            - 💾 **自动持久化登录**：退出应用无需重复输入密码
+            - ⚙️ **灵活配置网址**：长按屏幕空白处可自由配置服务器后端 URL
+          draft: false
+          prerelease: false
