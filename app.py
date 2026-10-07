@@ -23,6 +23,7 @@ from urllib.parse import urlparse, parse_qs
 
 PORT = int(os.environ.get("PORT", "8795"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
+PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
 DB_PATH = os.path.join(DATA_DIR, "sched.db")
 SECRET_FILE = os.path.join(DATA_DIR, "secret.key")
 COOKIE = "sched_sess"
@@ -74,6 +75,21 @@ CREATE TABLE IF NOT EXISTS anniversaries(
   title    TEXT NOT NULL,
   date     TEXT NOT NULL,
   target_type TEXT NOT NULL DEFAULT 'love');
+CREATE TABLE IF NOT EXISTS diaries(
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  date        TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  location    TEXT DEFAULT '',
+  mood        TEXT DEFAULT '',
+  weather     TEXT DEFAULT '',
+  content     TEXT DEFAULT '',
+  author_uid  TEXT NOT NULL,
+  created_at  TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS diary_photos(
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  diary_id    INTEGER NOT NULL,
+  file_name   TEXT NOT NULL,
+  sort_order  INTEGER DEFAULT 0);
 """
 
 # 首次初始化时预置的两人示例日程（uid, 标题, 地点, 备注, repeat, 星期0-6, 单次日期, 开始, 结束, 周次）
@@ -581,6 +597,100 @@ button,input,select,textarea{font-family:inherit}
 }
 .anniv-add-btn:hover{background:#fff;color:var(--ink-primary);border-color:var(--dog-a)}
 
+/* 模式切换胶囊 (课表 / 手账) */
+.view-seg{
+  display:inline-flex;align-items:center;background:#f5eee6;
+  padding:2px;border-radius:var(--radius-pill);border:1px solid var(--line-subtle);
+  margin-left:4px;
+}
+.view-seg-opt{
+  padding:3px 9px;border-radius:var(--radius-pill);font-size:11.5px;font-weight:700;
+  cursor:pointer;color:var(--ink-muted);transition:all .15s ease;user-select:none;
+}
+.view-seg-opt.on{
+  background:#fff;color:var(--dog-a);box-shadow:0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* 月历手账视图 */
+.month-cal-wrap{
+  max-width:1120px;margin:0 auto;padding:6px 12px 24px;
+}
+.month-topcard{
+  background:#fffefc;border:1.5px solid var(--line-strong);border-radius:20px;
+  padding:10px 16px;box-shadow:var(--shadow-sm);margin-bottom:12px;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;
+}
+.month-grid{
+  display:grid;grid-template-columns:repeat(7, 1fr);gap:8px;
+}
+.month-head-cell{
+  text-align:center;font-size:12px;font-weight:800;color:var(--ink-muted);
+  padding:6px 0;letter-spacing:.5px;
+}
+.month-cell{
+  background:#fff;border:1.5px solid var(--line-strong);border-radius:16px;
+  min-height:92px;padding:6px 8px;display:flex;flex-direction:column;
+  box-shadow:var(--shadow-sm);cursor:pointer;transition:all .18s ease;
+  position:relative;overflow:hidden;
+}
+.month-cell:hover{
+  border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-md);
+}
+.month-cell.other-month{
+  opacity:0.4;background:#fdfbf7;
+}
+.month-cell.today{
+  border:2px solid var(--dog-a);background:#fffbfb;
+}
+.month-cell.today .mday-num{
+  background:var(--dog-a);color:#fff;border-radius:50%;width:20px;height:20px;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.mday-head{
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;
+}
+.mday-num{
+  font-size:12.5px;font-weight:800;color:var(--ink-primary);
+}
+.mday-badges{
+  display:flex;align-items:center;gap:3px;
+}
+.mday-badge{
+  font-size:11px;line-height:1;
+}
+.mday-polaroid{
+  margin-top:auto;display:flex;align-items:center;gap:6px;
+  background:#fffef9;border:1px solid #ebd8c8;border-radius:10px;padding:3px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.06);
+}
+.mday-thumb{
+  width:32px;height:32px;border-radius:6px;object-fit:cover;flex-shrink:0;
+}
+.mday-info{
+  overflow:hidden;font-size:10.5px;line-height:1.2;font-weight:700;
+  color:var(--ink-primary);text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* 拍立得照片墙与日记弹窗 */
+.polaroid-gallery{
+  display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;
+}
+.polaroid-card{
+  background:#fff;padding:6px 6px 14px;border:1px solid #e2d3c3;
+  border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.08);
+  width:calc(33.333% - 8px);max-width:130px;transform:rotate(-1deg);
+  transition:all .2s ease;
+}
+.polaroid-card:nth-child(even){transform:rotate(1.5deg)}
+.polaroid-card:hover{transform:rotate(0deg) scale(1.05);z-index:2}
+.polaroid-img{
+  width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:4px;display:block;
+}
+.diary-item-card{
+  background:#fffefc;border:1.5px solid var(--line-strong);border-radius:16px;
+  padding:12px;margin-bottom:12px;box-shadow:var(--shadow-sm);
+}
+
 /* 日历区域 */
 main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 .calwrap{
@@ -1039,6 +1149,11 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 "use strict";
 var WD = ["周一","周二","周三","周四","周五","周六","周日"];
 var ME = null, DATA = null, ANCHOR = null, META = null;
+var CURRENT_VIEW = "week"; // "week" | "month"
+var MONTH_ANCHOR = todayISO().slice(0, 7); // YYYY-MM
+var MONTH_DATA = null;
+var diaryPhotosToUpload = []; // base64 list
+var activeDiaryDate = "";
 var addUid = "a", addRep = "weekly", loginUid = "a", annivType = "love";
 
 function $(s){ return document.querySelector(s); }
@@ -1105,13 +1220,21 @@ function api(path, opts){
 }
 
 function load(){
-  return api("/api/week?date=" + ANCHOR).then(function(j){ DATA = j; render(); })
-    .catch(function(e){ if (e.message !== "unauth") toast(e.message); });
+  if (CURRENT_VIEW === "month"){
+    return api("/api/month?month=" + MONTH_ANCHOR).then(function(j){ MONTH_DATA = j; render(); })
+      .catch(function(e){ if (e.message !== "unauth") toast(e.message); });
+  } else {
+    return api("/api/week?date=" + ANCHOR).then(function(j){ DATA = j; render(); })
+      .catch(function(e){ if (e.message !== "unauth") toast(e.message); });
+  }
 }
 
 /* ---------------- 渲染 ---------------- */
 function render(){
-  if (!ME){ renderLogin(); } else { renderApp(); }
+  if (!ME){ renderLogin(); } else {
+    if (CURRENT_VIEW === "month") renderMonthApp();
+    else renderApp();
+  }
 }
 
 function renderLogin(){
@@ -1163,6 +1286,135 @@ function eventBlock(ev, uid, date){
     (bits.length ? '<span class="em">' + bits.join(' · ') + '</span>' : '') +
     (ev.n_comments ? '<span class="cbadge" title="' + ev.n_comments + ' 条评论">💬 ' + ev.n_comments + '</span>' : '') +
     '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button></div>';
+}
+
+/* ---------------- 月历手账视图渲染 ---------------- */
+function renderMonthApp(){
+  var ym = MONTH_ANCHOR; // "YYYY-MM"
+  var parts = ym.split("-");
+  var year = +parts[0], month = +parts[1];
+  var u = (META && META.users) || [{uid:"a",name:"小金毛"},{uid:"b",name:"小白狗"}];
+  var myIsA = ME.uid === "a";
+  var myPill = '<span class="user-pill ' + ME.uid + '">' + (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) + '</span>';
+
+  // 计算本月日历格子 (周一到周日)
+  var firstDay = new Date(year, month - 1, 1);
+  var lastDay = new Date(year, month, 0);
+  var startDayOfWeek = (firstDay.getDay() + 6) % 7; // 0=周一, 6=周日
+  var totalDays = lastDay.getDate();
+
+  var cellsHtml = "";
+  // 周标题
+  WD.forEach(function(w){
+    cellsHtml += '<div class="month-head-cell">' + w + '</div>';
+  });
+
+  // 上月填充
+  var prevMonthLastDay = new Date(year, month - 1, 0).getDate();
+  for (var i = startDayOfWeek - 1; i >= 0; i--){
+    var pDay = prevMonthLastDay - i;
+    cellsHtml += '<div class="month-cell other-month"><div class="mday-head"><span class="mday-num">' + pDay + '</span></div></div>';
+  }
+
+  var byDate = (MONTH_DATA && MONTH_DATA.diaries_by_date) || {};
+  var annivList = (MONTH_DATA && MONTH_DATA.anniversaries) || (DATA && DATA.anniversaries) || [];
+  var todayStr = todayISO();
+
+  // 本月各天
+  for (var d = 1; d <= totalDays; d++){
+    var dtStr = year + "-" + pad(month) + "-" + pad(d);
+    var isToday = (dtStr === todayStr);
+    var dayDiaries = byDate[dtStr] || [];
+    
+    // 纪念日判定
+    var dayBadges = [];
+    annivList.forEach(function(item){
+      if (item.target_type === "birthday"){
+        var bp = item.date.split("-");
+        if (+bp[1] === month && +bp[2] === d){
+          dayBadges.push('<span class="mday-badge" title="' + esc(item.title) + ' 生日">🎂</span>');
+        }
+      } else if (item.target_type === "love"){
+        var lp = item.date.split("-");
+        if (+lp[1] === month && +lp[2] === d){
+          dayBadges.push('<span class="mday-badge" title="' + esc(item.title) + ' 纪念日">💖</span>');
+        }
+      } else {
+        if (item.date === dtStr){
+          dayBadges.push('<span class="mday-badge" title="' + esc(item.title) + '">🎯</span>');
+        }
+      }
+    });
+
+    var diaryPreview = "";
+    if (dayDiaries.length > 0){
+      var firstD = dayDiaries[0];
+      var thumb = firstD.cover_photo ? ('/photos/' + firstD.cover_photo) : '/img/dog-add.png';
+      diaryPreview = '<div class="mday-polaroid">' +
+        '<img src="' + thumb + '" class="mday-thumb" alt="">' +
+        '<div class="mday-info">' + esc(firstD.title) + '</div>' +
+      '</div>';
+    }
+
+    cellsHtml += '<div class="month-cell' + (isToday ? ' today' : '') + '" data-act="open-day-diary" data-date="' + dtStr + '">' +
+      '<div class="mday-head">' +
+        '<span class="mday-num">' + d + '</span>' +
+        '<div class="mday-badges">' + dayBadges.join("") + '</div>' +
+      '</div>' +
+      diaryPreview +
+    '</div>';
+  }
+
+  // 下月填充对齐 7 的倍数
+  var currentCellCount = startDayOfWeek + totalDays;
+  var remain = (7 - (currentCellCount % 7)) % 7;
+  for (var n = 1; n <= remain; n++){
+    cellsHtml += '<div class="month-cell other-month"><div class="mday-head"><span class="mday-num">' + n + '</span></div></div>';
+  }
+
+  var count = (MONTH_DATA && MONTH_DATA.total_count) || 0;
+
+  var html =
+  '<div class="header-box" id="headerBox">' +
+    '<header class="topbar">' +
+      '<div class="brand">' +
+        '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
+        '<span class="brand-title">两人日程 🐾</span>' +
+        '<div class="view-seg">' +
+          '<span class="view-seg-opt' + (CURRENT_VIEW==="week"?" on":"") + '" data-act="switch-view" data-v="week">🗓️ 课表</span>' +
+          '<span class="view-seg-opt' + (CURRENT_VIEW==="month"?" on":"") + '" data-act="switch-view" data-v="month">📔 手账</span>' +
+        '</div>' +
+      '</div>' +
+      '<span class="spacer"></span>' +
+      myPill +
+      '<button class="p-btn icon-btn" data-act="open-anniv" title="纪念日与倒计时">💖<span class="btn-txt"> 纪念日</span></button>' +
+      '<button class="p-btn icon-btn" data-act="open-settings" title="设置">⚙️<span class="btn-txt"> 设置</span></button>' +
+      '<button class="p-btn icon-btn" data-act="logout" title="退出">🚪<span class="btn-txt"> 退出</span></button>' +
+    '</header>' +
+  '</div>' +
+
+  '<div class="month-cal-wrap">' +
+    '<div class="month-topcard">' +
+      '<div class="week-nav">' +
+        '<button class="p-btn" data-act="month-prev">‹ 上月</button>' +
+        '<button class="p-btn pri" data-act="month-cur">🐾 本月</button>' +
+        '<button class="p-btn" data-act="month-next">下月 ›</button>' +
+      '</div>' +
+      '<div style="font-size:15px;font-weight:800;color:var(--ink-primary)">' +
+        '🗓️ ' + year + ' 年 ' + month + ' 月 · 俩汪足迹手账 🐾' +
+      '</div>' +
+      '<div style="font-size:12px;font-weight:700;color:var(--dog-a)">' +
+        '✨ 本月已记录 ' + count + ' 篇出游美好回忆' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="month-grid">' + cellsHtml + '</div>' +
+  '</div>' +
+
+  '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>' +
+  modalTemplates(u);
+
+  $("#app").innerHTML = html;
 }
 
 function renderApp(){
@@ -1253,6 +1505,10 @@ function renderApp(){
       '<div class="brand">' +
         '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
         '<span class="brand-title">两人日程 🐾</span>' +
+        '<div class="view-seg">' +
+          '<span class="view-seg-opt' + (CURRENT_VIEW==="week"?" on":"") + '" data-act="switch-view" data-v="week">🗓️ 课表</span>' +
+          '<span class="view-seg-opt' + (CURRENT_VIEW==="month"?" on":"") + '" data-act="switch-view" data-v="month">📔 手账</span>' +
+        '</div>' +
       '</div>' +
       '<span class="spacer"></span>' +
       myPill +
@@ -1389,7 +1645,39 @@ function modalsHTML(){
       '</form>' +
     '</div></div>' +
 
-    '<div class="overlay" id="ovDetail"><div class="modal" id="ovDetailBox"></div></div>';
+    '<div class="overlay" id="ovDetail"><div class="modal" id="ovDetailBox"></div></div>' +
+
+    '<div class="overlay" id="ovDiaryDay"><div class="modal" id="ovDiaryDayBox"></div></div>' +
+
+    '<div class="overlay" id="ovAddDiary"><div class="modal">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>记下今天去哪玩啦 🐾</h3></div>' +
+        '<img src="/img/dog-add.png" alt="" class="mhead-img">' +
+      '</div>' +
+      '<form id="addDiaryForm">' +
+        '<div class="field"><label>游玩日期</label><input type="date" id="df_date" required></div>' +
+        '<div class="field"><label>游玩主题 / 事项</label><input id="df_title" required maxlength="80" placeholder="如：迪士尼一日游 🎡 / 武康路散步吃冰淇淋 🍦"></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>地点</label><input id="df_loc" maxlength="100" placeholder="如：上海迪士尼 / 外滩"></div>' +
+          '<div class="field"><label>心情小贴纸</label><select id="df_mood">' +
+            '<option value="🥰 幸福贴贴">🥰 幸福贴贴</option>' +
+            '<option value="🥳 快乐狂欢">🥳 快乐狂欢</option>' +
+            '<option value="😋 撑成小猪">😋 撑成小猪</option>' +
+            '<option value="🥱 累并快乐">🥱 累并快乐</option>' +
+            '<option value="✨ 仪式感满满">✨ 仪式感满满</option>' +
+          '</select></div>' +
+        '</div>' +
+        '<div class="field"><label>手账碎碎念 / 美好回忆</label><textarea id="df_content" rows="3" placeholder="今天遇到了什么好玩的事，拍了什么照片..." style="width:100%;border:1.5px solid var(--line-strong);border-radius:12px;padding:8px;font-family:inherit;font-size:13px"></textarea></div>' +
+        '<div class="field"><label>拍立得照片（支持多张，自动压缩秒传 📷）</label>' +
+          '<input type="file" id="df_files" accept="image/*" multiple style="font-size:12px">' +
+          '<div id="df_preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>' +
+        '</div>' +
+        '<div class="foot">' +
+          '<button type="button" class="p-btn" data-act="close">取消</button>' +
+          '<button class="p-btn pri">✨ 贴在手账本上！</button>' +
+        '</div>' +
+      '</form>' +
+    '</div></div>';
 }
 
 /* ---------------- 日程详情与情侣留言 ---------------- */
@@ -1413,6 +1701,61 @@ function renderAnnivList(){
       '<button class="p-btn danger" style="padding:2px 8px;font-size:11px" data-act="del-anniv" data-id="' + item.id + '">删除</button>' +
     '</div>';
   }).join("");
+}
+
+function openDayDiaries(dtStr){
+  activeDiaryDate = dtStr;
+  api("/api/diaries?date=" + dtStr).then(function(res){
+    var list = res.diaries || [];
+    var html = '<div class="mhead">' +
+      '<div class="mhead-left"><h3>' + dtStr + ' 俩汪足迹 🐾</h3></div>' +
+      '<img src="/img/dog-wave.png" alt="" class="mhead-img">' +
+    '</div>';
+
+    if (list.length === 0){
+      html += '<div style="text-align:center;padding:24px 0;color:var(--ink-muted);font-size:13px">' +
+        '这一天还没有记录足迹哦~<br>' +
+        '<button class="p-btn pri" style="margin-top:12px" data-act="open-add-diary" data-date="' + dtStr + '">🐾 记下今天的快乐！</button>' +
+      '</div>';
+    } else {
+      list.forEach(function(d){
+        var photosHtml = "";
+        if (d.photos && d.photos.length > 0){
+          photosHtml = '<div class="polaroid-gallery">' +
+            d.photos.map(function(p){
+              return '<div class="polaroid-card">' +
+                '<a href="/photos/' + p.file_name + '" target="_blank">' +
+                  '<img src="/photos/' + p.file_name + '" class="polaroid-img" alt="">' +
+                '</a>' +
+              '</div>';
+            }).join("") +
+          '</div>';
+        }
+
+        html += '<div class="diary-item-card">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+            '<div>' +
+              '<span style="font-size:15px;font-weight:800;color:var(--ink-primary)">' + esc(d.title) + '</span>' +
+              (d.mood ? (' <span style="font-size:12px;background:#fff8eb;border-radius:10px;padding:2px 6px;margin-left:4px">' + esc(d.mood) + '</span>') : '') +
+            '</div>' +
+            '<button class="p-btn danger" style="padding:2px 8px;font-size:11px" data-act="del-diary" data-id="' + d.id + '">删除</button>' +
+          '</div>' +
+          (d.location ? ('<div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:6px">📍 ' + esc(d.location) + '</div>') : '') +
+          (d.content ? ('<div style="font-size:13px;line-height:1.5;color:var(--ink-secondary);white-space:pre-wrap;margin-bottom:8px">' + esc(d.content) + '</div>') : '') +
+          photosHtml +
+          '<div style="font-size:11px;color:var(--ink-muted);text-align:right">由 ' + esc(d.author_name) + ' 记录于 ' + esc(d.created_at) + '</div>' +
+        '</div>';
+      });
+
+      html += '<div style="text-align:center;margin-top:12px">' +
+        '<button class="p-btn pri" data-act="open-add-diary" data-date="' + dtStr + '">＋ 追加一篇手账</button>' +
+      '</div>';
+    }
+
+    html += '<div class="foot" style="margin-top:14px"><button type="button" class="p-btn" data-act="close">关闭</button></div>';
+    $("#ovDiaryDayBox").innerHTML = html;
+    $("#ovDiaryDay").classList.add("show");
+  }).catch(function(err){ if (err.message !== "unauth") toast(err.message); });
 }
 
 function openDetail(id, date){
@@ -1526,6 +1869,48 @@ document.addEventListener("click", function(e){
   else if (act === "today"){ ANCHOR = todayISO(); load(); }
   else if (act === "open-add"){ $("#ovAdd").classList.add("show"); }
   else if (act === "open-settings"){ $("#ovSet").classList.add("show"); }
+  else if (act === "switch-view"){
+    CURRENT_VIEW = el.getAttribute("data-v");
+    load();
+  }
+  else if (act === "month-prev"){
+    var p = MONTH_ANCHOR.split("-"), y = +p[0], m = +p[1] - 1;
+    if (m < 1){ m = 12; y--; }
+    MONTH_ANCHOR = y + "-" + pad(m);
+    load();
+  }
+  else if (act === "month-next"){
+    var p = MONTH_ANCHOR.split("-"), y = +p[0], m = +p[1] + 1;
+    if (m > 12){ m = 1; y++; }
+    MONTH_ANCHOR = y + "-" + pad(m);
+    load();
+  }
+  else if (act === "month-cur"){
+    MONTH_ANCHOR = todayISO().slice(0, 7);
+    load();
+  }
+  else if (act === "open-day-diary"){
+    openDayDiaries(el.getAttribute("data-date"));
+  }
+  else if (act === "open-add-diary"){
+    var dt = el.getAttribute("data-date") || activeDiaryDate || todayISO();
+    var fDate = $("#df_date");
+    if (fDate) fDate.value = dt;
+    diaryPhotosToUpload = [];
+    var prev = $("#df_preview");
+    if (prev) prev.innerHTML = "";
+    $("#ovAddDiary").classList.add("show");
+  }
+  else if (act === "del-diary"){
+    if (!confirm("确定删除这篇手账与照片？")) return;
+    api("/api/diaries/delete", {method:"POST", body:{id:+el.getAttribute("data-id")}})
+      .then(function(){
+        toast("已删除 🐾");
+        load();
+        if (activeDiaryDate) openDayDiaries(activeDiaryDate);
+      })
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  }
   else if (act === "open-anniv" || act === "open-anniv-list"){
     renderAnnivList();
     $("#ovAnniv").classList.add("show");
@@ -1633,6 +2018,65 @@ document.addEventListener("submit", function(e){
       })
       .then(function(){ renderAnnivList(); })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  } else if (f.id === "addDiaryForm"){
+    e.preventDefault();
+    var body = {
+      date: $("#df_date").value,
+      title: $("#df_title").value.trim(),
+      location: $("#df_loc").value.trim(),
+      mood: $("#df_mood").value,
+      content: $("#df_content").value.trim(),
+      photos: diaryPhotosToUpload
+    };
+    api("/api/diaries", {method:"POST", body:body})
+      .then(function(){
+        document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
+        toast("手账已贴在小窝啦 🐾");
+        diaryPhotosToUpload = [];
+        load();
+      })
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  }
+});
+
+document.addEventListener("change", function(e){
+  if (e.target && e.target.id === "df_files"){
+    var files = Array.from(e.target.files);
+    var prev = $("#df_preview");
+    files.forEach(function(file){
+      if (!file.type.startsWith("image/")) return;
+      var reader = new FileReader();
+      reader.onload = function(evt){
+        var img = new Image();
+        img.onload = function(){
+          // 手机端自动等比压缩为轻量长边 1200px 拍立得照片
+          var canvas = document.createElement("canvas");
+          var maxSide = 1200;
+          var w = img.width, h = img.height;
+          if (w > maxSide || h > maxSide){
+            if (w > h){ h = Math.round(h * maxSide / w); w = maxSide; }
+            else { w = Math.round(w * maxSide / h); h = maxSide; }
+          }
+          canvas.width = w;
+          canvas.height = h;
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+          var compB64 = canvas.toDataURL("image/jpeg", 0.82);
+          diaryPhotosToUpload.push(compB64);
+
+          var thumbEl = document.createElement("img");
+          thumbEl.src = compB64;
+          thumbEl.style.width = "48px";
+          thumbEl.style.height = "48px";
+          thumbEl.style.objectFit = "cover";
+          thumbEl.style.borderRadius = "6px";
+          thumbEl.style.border = "1px solid #ddd";
+          if (prev) prev.appendChild(thumbEl);
+        };
+        img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
   }
 });
 
@@ -1751,6 +2195,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "未登录"}, 401)
                 users = get_users()
                 return self.send_json({"uid": uid, "name": users[uid]["name"]})
+            if path.startswith("/photos/"):
+                fn = os.path.basename(path[8:])
+                fp = os.path.join(PHOTOS_DIR, fn)
+                if fp and os.path.exists(fp):
+                    mime = "image/jpeg"
+                    if fn.endswith(".png"): mime = "image/png"
+                    elif fn.endswith(".webp"): mime = "image/webp"
+                    with open(fp, "rb") as f:
+                        return self.send_bytes(200, f.read(), mime,
+                                               extra=[("Cache-Control", "public, max-age=604800")])
+                return self.send_json({"error": "not found"}, 404)
             if path == "/api/week":
                 if self.authed() is None:
                     return
@@ -1763,6 +2218,20 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     return self.send_json({"error": "日期格式无效"}, 400)
                 return self.send_json(week_payload(d))
+            if path == "/api/month":
+                if self.authed() is None:
+                    return
+                qs = parse_qs(urlparse(self.path).query)
+                ym = (qs.get("month") or [""])[0]
+                if not re.match(r"^\d{4}-\d{2}$", ym):
+                    ym = date.today().strftime("%Y-%m")
+                return self.send_json(self.month_payload(ym))
+            if path == "/api/diaries":
+                if self.authed() is None:
+                    return
+                qs = parse_qs(urlparse(self.path).query)
+                dt = (qs.get("date") or [""])[0]
+                return self.send_json(self.get_diaries_by_date(dt))
             return self.send_json({"error": "not found"}, 404)
         except Exception:
             self.log_error("GET %s failed: %s", path, sys.exc_info()[1])
@@ -1856,6 +2325,14 @@ class Handler(BaseHTTPRequestHandler):
                 if self.authed() is None:
                     return
                 return self.delete_anniversary(d)
+            if path == "/api/diaries":
+                if self.authed() is None:
+                    return
+                return self.create_diary(d)
+            if path == "/api/diaries/delete":
+                if self.authed() is None:
+                    return
+                return self.delete_diary(d)
             return self.send_json({"error": "not found"}, 404)
         except Exception:
             self.log_error("POST %s failed: %s", path, sys.exc_info()[1])
@@ -1977,6 +2454,116 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             CONN.execute("DELETE FROM anniversaries WHERE id=?", (aid,))
         return self.send_json({"ok": True})
+
+    def month_payload(self, ym):
+        # ym: YYYY-MM
+        users = get_users()
+        with LOCK:
+            # 找到当月的 diaries
+            d_rows = CONN.execute(
+                "SELECT d.*, "
+                "(SELECT p.file_name FROM diary_photos p WHERE p.diary_id=d.id ORDER BY p.sort_order, p.id LIMIT 1) as cover_photo, "
+                "(SELECT COUNT(*) FROM diary_photos p WHERE p.diary_id=d.id) as photo_count "
+                "FROM diaries d WHERE d.date LIKE ? ORDER BY d.date ASC, d.id ASC",
+                (f"{ym}-%",)
+            ).fetchall()
+            diaries = [dict(r) for r in d_rows]
+            annivs = [dict(r) for r in CONN.execute("SELECT * FROM anniversaries").fetchall()]
+
+        # 按天分组
+        by_date = {}
+        for item in diaries:
+            by_date.setdefault(item["date"], []).append(item)
+
+        return {
+            "month": ym,
+            "diaries_by_date": by_date,
+            "total_count": len(diaries),
+            "anniversaries": annivs,
+            "users": {u: {"name": users[u]["name"]} for u in ("a", "b")}
+        }
+
+    def get_diaries_by_date(self, dt):
+        if not dt or not DATE_RE.match(dt):
+            return {"diaries": []}
+        users = get_users()
+        with LOCK:
+            rows = CONN.execute("SELECT * FROM diaries WHERE date=? ORDER BY id ASC", (dt,)).fetchall()
+            res = []
+            for r in rows:
+                item = dict(r)
+                photos = CONN.execute("SELECT * FROM diary_photos WHERE diary_id=? ORDER BY sort_order, id", (item["id"],)).fetchall()
+                item["photos"] = [dict(p) for p in photos]
+                item["author_name"] = users.get(item["author_uid"], {}).get("name", "小狗")
+                res.append(item)
+        return {"date": dt, "diaries": res}
+
+    def create_diary(self, d):
+        uid = self.current_uid()
+        title = str(d.get("title") or "").strip()[:80]
+        dt = str(d.get("date") or "").strip()
+        location = str(d.get("location") or "").strip()[:100]
+        mood = str(d.get("mood") or "").strip()[:30]
+        weather = str(d.get("weather") or "").strip()[:30]
+        content = str(d.get("content") or "").strip()[:4000]
+        photos_base64 = d.get("photos") or []  # list of base64 strings
+
+        if not title:
+            return self.send_json({"error": "游玩主题/标题不能为空"}, 400)
+        if not dt or not DATE_RE.match(dt):
+            return self.send_json({"error": "日期无效"}, 400)
+
+        os.makedirs(PHOTOS_DIR, exist_ok=True)
+        saved_photos = []
+
+        import base64
+        for idx, p_b64 in enumerate(photos_base64[:9]):  # 最多支持9张
+            try:
+                if "," in p_b64:
+                    p_b64 = p_b64.split(",", 1)[1]
+                data = base64.b64decode(p_b64)
+                fname = f"pic_{dt}_{int(time.time())}_{secrets.token_hex(4)}.jpg"
+                fpath = os.path.join(PHOTOS_DIR, fname)
+                with open(fpath, "wb") as pf:
+                    pf.write(data)
+                saved_photos.append(fname)
+            except Exception as e:
+                self.log_error("保存图片失败: %s", e)
+
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        with LOCK:
+            cur = CONN.execute(
+                "INSERT INTO diaries(date, title, location, mood, weather, content, author_uid, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                (dt, title, location, mood, weather, content, uid, now_str)
+            )
+            diary_id = cur.lastrowid
+            for s_idx, fname in enumerate(saved_photos):
+                CONN.execute(
+                    "INSERT INTO diary_photos(diary_id, file_name, sort_order) VALUES(?,?,?)",
+                    (diary_id, fname, s_idx)
+                )
+
+        return self.send_json({"ok": True, "id": diary_id})
+
+    def delete_diary(self, d):
+        try:
+            did = int(d.get("id"))
+        except (TypeError, ValueError):
+            return self.send_json({"error": "参数错误"}, 400)
+        with LOCK:
+            photos = CONN.execute("SELECT file_name FROM diary_photos WHERE diary_id=?", (did,)).fetchall()
+            for p in photos:
+                try:
+                    fp = os.path.join(PHOTOS_DIR, p["file_name"])
+                    if os.path.exists(fp):
+                        os.remove(fp)
+                except Exception:
+                    pass
+            CONN.execute("DELETE FROM diary_photos WHERE diary_id=?", (did,))
+            CONN.execute("DELETE FROM diaries WHERE id=?", (did,))
+        return self.send_json({"ok": True})
+
 
     def log_message(self, fmt, *args):
         sys.stdout.write("%s %s %s\n" % (time.strftime("%F %T"), self.client_address[0], fmt % args))
