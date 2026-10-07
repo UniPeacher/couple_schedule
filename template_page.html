@@ -1019,7 +1019,7 @@ function renderMonthApp(){
   '</div>' +
 
   '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>' +
-  modalTemplates(u);
+  modalsHTML();
 
   $("#app").innerHTML = html;
 }
@@ -1162,17 +1162,18 @@ function renderApp(){
 }
 
 function modalsHTML(){
-  var u = DATA.users;
+  var u = (DATA && DATA.users) || (MONTH_DATA && MONTH_DATA.users) || {a:{name:"小金毛"},b:{name:"小白狗"}};
   var uidOpts = ["a","b"].map(function(uid){
     var isA = uid === "a";
     var sideCls = isA ? "" : " b-side";
     var ico = isA ? "🐶 小金毛 · " : "🐾 小白狗 · ";
     return '<div class="opt' + (uid===addUid?(" on" + sideCls):"") + '" data-act="pick-add" data-uid="' + uid + '">' +
-      ico + esc(u[uid].name) +
+      ico + esc(u[uid] ? u[uid].name : uid) +
     '</div>';
   }).join("");
   var wdOpts = WD.map(function(w,i){ return '<option value="' + i + '">' + w + '</option>'; }).join("");
-  var s = DATA.settings;
+  var s = (DATA && DATA.settings) || {window_start:"08:00",window_end:"22:00",min_gap:20};
+  var wStart = (DATA && DATA.week_start) || todayISO();
 
   return '<div class="overlay" id="ovAdd"><div class="modal">' +
     '<div class="mhead">' +
@@ -1185,7 +1186,7 @@ function modalsHTML(){
         '<div class="opt' + (addRep==="weekly"?" on":"") + '" data-act="rep" data-v="weekly">🔄 每周重复</div>' +
         '<div class="opt' + (addRep==="once"?" on":"") + '" data-act="rep" data-v="once">📅 单次日程</div></div></div>' +
       '<div class="field" id="fldWd"><label>星期几</label><select id="f_wd">' + wdOpts + '</select></div>' +
-      '<div class="field" id="fldDt" style="display:none"><label>具体日期</label><input type="date" id="f_date" value="' + DATA.week_start + '"></div>' +
+      '<div class="field" id="fldDt" style="display:none"><label>具体日期</label><input type="date" id="f_date" value="' + wStart + '"></div>' +
       '<div class="row2">' +
         '<div class="field"><label>开始时间</label><input type="time" id="f_ts" required value="19:00"></div>' +
         '<div class="field"><label>结束时间</label><input type="time" id="f_te" required value="21:00"></div></div>' +
@@ -1244,7 +1245,7 @@ function modalsHTML(){
           '</div>' +
         '</div>' +
         '<div class="field"><label>名称</label><input id="an_title" required maxlength="60" placeholder="如：恋爱纪念日 / 楚菁生日 / 寒假去海边 🌊"></div>' +
-        '<div class="field"><label>日期（相恋起始日 / 生日 / 目标日）</label><input type="date" id="an_date" required value="' + DATA.week_start + '"></div>' +
+        '<div class="field"><label>日期（相恋起始日 / 生日 / 目标日）</label><input type="date" id="an_date" required value="' + wStart + '"></div>' +
         '<div class="foot">' +
           '<button type="button" class="p-btn" data-act="close">关闭</button>' +
           '<button class="p-btn pri">💖 记下这一天！</button>' +
