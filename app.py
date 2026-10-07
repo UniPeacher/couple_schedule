@@ -478,9 +478,11 @@ button,input,select,textarea{font-family:inherit}
 /* 顶部导航 */
 .topbar{
   padding:6px 14px;
-  display:flex;align-items:center;gap:10px;
+  display:flex;align-items:center;gap:8px;
   flex-wrap:nowrap;white-space:nowrap;
-  contain:paint;
+}
+.icon-btn{
+  flex-shrink:0;padding:4px 8px;font-size:12px;
 }
 .brand{
   display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
@@ -1127,10 +1129,14 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 
 /* 响应式调整 */
 @media (max-width:640px){
-  .topbar{padding:5px 10px;gap:6px}
-  .brand-img{height:22px}
-  .brand-title{font-size:14px}
-  .btn-txt{display:none} /* 移动端仅保留图标 ⚙️ / 🚪，省出横向空间 */
+  .topbar{padding:5px 8px;gap:5px}
+  .brand-img{height:20px}
+  .brand-title{font-size:13.5px}
+  .view-seg{margin-left:2px;padding:1.5px}
+  .view-seg-opt{padding:2px 6px;font-size:10.5px}
+  .icon-btn{padding:3px 6px;font-size:11px}
+  .btn-txt{display:none} /* 移动端仅保留图标 ⚙️ / 💖，省出横向空间 */
+  .spacer{min-width:0}
   .user-pill{padding:2px 7px;font-size:11px}
   .p-btn{padding:3px 7px;font-size:11.5px}
   .week-nav .p-btn{padding:2.5px 6px;font-size:10.5px}
