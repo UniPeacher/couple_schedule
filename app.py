@@ -449,27 +449,25 @@ button,input,select,textarea{font-family:inherit}
 
 /* 顶部导航 */
 .topbar{
-  padding:5px 14px;
-  display:flex;align-items:center;gap:8px;
+  padding:6px 14px;
+  display:flex;align-items:center;gap:10px;
+  flex-wrap:nowrap;white-space:nowrap;
   contain:paint;
 }
 .brand{
-  display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;
+  display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
+  flex-shrink:0;
 }
 .brand-img{
-  height:30px;width:auto;flex:none;
+  height:26px;width:auto;flex:none;
 }
 .brand:hover .brand-img{animation:puppyWag .6s ease infinite}
-.brand-text{display:flex;flex-direction:column}
 .brand-title{
-  font-size:15px;font-weight:800;letter-spacing:.3px;
-  color:var(--ink-primary);display:flex;align-items:center;gap:4px;
+  font-size:15px;font-weight:800;letter-spacing:.2px;
+  color:var(--ink-primary);display:inline-flex;align-items:center;gap:2px;
+  white-space:nowrap;
 }
-.brand-sub{
-  font-size:11px;color:var(--ink-muted);font-weight:500;
-  display:flex;align-items:center;gap:4px;
-}
-.spacer{flex:1}
+.spacer{flex:1;min-width:4px}
 
 /* 用户状态徽章与按钮 */
 .user-pill{
@@ -991,13 +989,12 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 
 /* 响应式调整 */
 @media (max-width:640px){
-  .topbar{padding:4px 8px;max-height:42px;gap:6px}
-  .brand-img{height:25px}
-  .brand-title{font-size:13.5px}
-  .brand-sub{display:none} /* 移动端隐藏副标题，顶栏高度直接减半 */
-  .btn-txt{display:none} /* 移动端仅保留图标 ⚙️ / 🚪，省出宝贵横向宽度 */
+  .topbar{padding:5px 10px;gap:6px}
+  .brand-img{height:22px}
+  .brand-title{font-size:14px}
+  .btn-txt{display:none} /* 移动端仅保留图标 ⚙️ / 🚪，省出横向空间 */
   .user-pill{padding:2px 7px;font-size:11px}
-  .p-btn{padding:3px 8px;font-size:11.5px}
+  .p-btn{padding:3px 7px;font-size:11.5px}
   .weekbar-wrap{padding:0 6px 3px}
   .weekbar-card{padding:4px 6px;gap:5px}
   .wl-date{font-size:12px}
@@ -1167,7 +1164,7 @@ function renderApp(){
 
   var myIsA = ME.uid === 'a';
   var myPill = '<span class="user-pill ' + ME.uid + '">' +
-    (myIsA ? '🐶 小金毛 · ' : '🐾 小白狗 · ') + esc(ME.name) +
+    (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) +
   '</span>';
 
   var html =
@@ -1175,10 +1172,7 @@ function renderApp(){
     '<header class="topbar">' +
       '<div class="brand">' +
         '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
-        '<div class="brand-text">' +
-          '<div class="brand-title">线条小狗 · 两人日程 🐾</div>' +
-          '<div class="brand-sub">小金毛 🐶 小白狗 · 甜蜜小窝</div>' +
-        '</div>' +
+        '<span class="brand-title">两人日程 🐾</span>' +
       '</div>' +
       '<span class="spacer"></span>' +
       myPill +
