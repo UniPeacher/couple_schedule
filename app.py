@@ -542,20 +542,6 @@ button,input,select,textarea{font-family:inherit}
 .dot.b{background:var(--dog-b);box-shadow:0 0 0 2px var(--dog-b-bd)}
 .dot.free{background:var(--free-accent);box-shadow:0 0 0 2px var(--free-bd)}
 
-/* 页面滚动时自动收缩顶栏 (使用纯 CSS display 切换，零 layout 抖动，GPU 满帧) */
-body.header-collapsed .topbar{
-  display:none;
-}
-body.header-collapsed .weekbar-wrap{
-  padding:3px 10px 4px;
-}
-body.header-collapsed .weekbar-card{
-  padding:3px 6px;background:transparent;border-color:transparent;box-shadow:none;
-}
-body.header-collapsed .legend-card{
-  display:none;
-}
-
 /* 日历区域 */
 main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 .calwrap{
@@ -1002,8 +988,6 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
   .legend-card{font-size:10.5px;gap:6px}
   .modal{padding:18px 16px}
   .fab{right:16px;bottom:18px;padding:10px 18px;font-size:13.5px}
-  body.header-collapsed .weekbar-wrap{padding:2px 6px 3px}
-  body.header-collapsed .weekbar-card{padding:2px 4px}
 }
 </style>
 </head>
@@ -1496,31 +1480,6 @@ document.addEventListener("keydown", function(e){
     if (btn) btn.click();
   }
 });
-
-/* ---------------- 页面上滑自动收缩顶栏 (高性能防抖) ---------------- */
-var lastScrollY = 0;
-var isCollapsed = false;
-
-window.addEventListener("scroll", function() {
-  var curY = window.pageYOffset || document.documentElement.scrollTop || 0;
-  if (curY <= 15) {
-    if (isCollapsed) {
-      isCollapsed = false;
-      document.body.classList.remove("header-collapsed");
-    }
-  } else if (curY > lastScrollY + 12 && curY > 50) {
-    if (!isCollapsed) {
-      isCollapsed = true;
-      document.body.classList.add("header-collapsed");
-    }
-  } else if (curY < lastScrollY - 18) {
-    if (isCollapsed) {
-      isCollapsed = false;
-      document.body.classList.remove("header-collapsed");
-    }
-  }
-  lastScrollY = curY;
-}, { passive: true });
 
 ANCHOR = todayISO();
 api("/api/meta").then(function(j){ META = j; }).catch(function(){})
