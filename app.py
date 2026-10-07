@@ -541,6 +541,9 @@ button,input,select,textarea{font-family:inherit}
 .week-nav{
   display:flex;align-items:center;gap:4px;
 }
+.week-nav .p-btn{
+  font-size:11.5px;padding:3px 9px;
+}
 .week-info{
   text-align:center;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
 }
@@ -1130,6 +1133,7 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
   .btn-txt{display:none} /* 移动端仅保留图标 ⚙️ / 🚪，省出横向空间 */
   .user-pill{padding:2px 7px;font-size:11px}
   .p-btn{padding:3px 7px;font-size:11.5px}
+  .week-nav .p-btn{padding:3px 7px;font-size:11px}
   .weekbar-wrap{padding:0 6px 3px}
   .weekbar-card{padding:4px 6px;gap:5px}
   .wl-date{font-size:12px}
@@ -1521,7 +1525,7 @@ function renderApp(){
       '<div class="weekbar-card">' +
         '<div class="week-nav">' +
           '<button class="p-btn" data-act="prev">‹ 上周</button>' +
-          '<button class="p-btn pri" data-act="today" style="padding:4px 12px">🐾 今天</button>' +
+          '<button class="p-btn pri" data-act="today">🐾 今天</button>' +
           '<button class="p-btn" data-act="next">下周 ›</button>' +
         '</div>' +
         '<div class="week-info">' +
