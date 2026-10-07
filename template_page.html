@@ -76,30 +76,23 @@ button,input,select,textarea{font-family:inherit}
 /* 顶部固定大容器 */
 .header-box{
   position:sticky;top:0;z-index:25;
-  background:rgba(255, 254, 251, 0.96);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  background:#fffefc;
   border-bottom:1.5px solid var(--line-strong);
   box-shadow:var(--shadow-sm);
-  transition:box-shadow .2s ease, transform .25s cubic-bezier(0.4, 0, 0.2, 1);
+  contain:layout style paint;
 }
 
 /* 顶部导航 */
 .topbar{
   padding:5px 14px;
   display:flex;align-items:center;gap:8px;
-  max-height:48px;overflow:hidden;
-  transition:max-height .25s cubic-bezier(0.4, 0, 0.2, 1),
-             opacity .2s ease,
-             padding .25s ease,
-             transform .25s ease;
+  contain:paint;
 }
 .brand{
   display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;
 }
 .brand-img{
   height:30px;width:auto;flex:none;
-  filter:drop-shadow(0 2px 4px rgba(139,92,44,0.1));
-  transition:transform .25s ease;
 }
 .brand:hover .brand-img{animation:puppyWag .6s ease infinite}
 .brand-text{display:flex;flex-direction:column}
@@ -119,7 +112,7 @@ button,input,select,textarea{font-family:inherit}
   font-size:11.5px;font-weight:700;
   padding:3px 10px;border-radius:var(--radius-pill);
   border:1px solid var(--line-strong);
-  background:#fff;box-shadow:var(--shadow-sm);
+  background:#fff;
 }
 .user-pill.a{background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)}
 .user-pill.b{background:var(--dog-b-bg);border-color:var(--dog-b-bd);color:var(--dog-b-text)}
@@ -129,20 +122,17 @@ button,input,select,textarea{font-family:inherit}
   border-radius:var(--radius-pill);padding:4px 11px;
   font-size:12px;font-weight:600;color:var(--ink-primary);
   cursor:pointer;display:inline-flex;align-items:center;gap:3px;
-  transition:all .15s ease;box-shadow:0 1px 3px rgba(139,92,44,0.06);
 }
-.p-btn:hover{background:#fff8f0;border-color:#e4cdb5;transform:translateY(-1px)}
+.p-btn:hover{background:#fff8f0;border-color:#e4cdb5}
 .p-btn:active{transform:scale(0.96)}
 .p-btn.pri{
   background:linear-gradient(135deg, var(--dog-a) 0%, #ff7ea1 100%);
   color:#fff;border-color:var(--dog-a);
-  box-shadow:0 4px 12px rgba(255,96,136,0.3);
 }
-.p-btn.pri:hover{filter:brightness(1.05);transform:translateY(-1px)}
+.p-btn.pri:hover{filter:brightness(1.05)}
 .p-btn.pri-b{
   background:linear-gradient(135deg, var(--dog-b) 0%, #fbb042 100%);
   color:#fff;border-color:var(--dog-b);
-  box-shadow:0 4px 12px rgba(234,138,21,0.3);
 }
 .p-btn.danger{color:#b91c1c;border-color:#fecaca}
 .p-btn.danger:hover{background:#fff1f2}
@@ -150,14 +140,12 @@ button,input,select,textarea{font-family:inherit}
 /* 周导航控制器 */
 .weekbar-wrap{
   max-width:1120px;margin:0 auto;padding:0 10px 5px;
-  transition:padding .2s ease;
 }
 .weekbar-card{
   background:#fffefc;border:1px solid var(--line-subtle);
   border-radius:14px;padding:6px 12px;box-shadow:var(--shadow-sm);
   display:flex;align-items:center;justify-content:space-between;
   flex-wrap:wrap;gap:8px;
-  transition:all .2s ease;
 }
 .week-nav{
   display:flex;align-items:center;gap:4px;
@@ -191,19 +179,15 @@ button,input,select,textarea{font-family:inherit}
 .dot.b{background:var(--dog-b);box-shadow:0 0 0 2px var(--dog-b-bd)}
 .dot.free{background:var(--free-accent);box-shadow:0 0 0 2px var(--free-bd)}
 
-/* 页面滚动时自动收缩顶栏 (Header Collapsed) */
-body.header-collapsed .header-box{
-  box-shadow:0 4px 16px rgba(139, 92, 44, 0.1);
-}
+/* 页面滚动时自动收缩顶栏 (使用纯 CSS display 切换，零 layout 抖动，GPU 满帧) */
 body.header-collapsed .topbar{
-  max-height:0;padding-top:0;padding-bottom:0;opacity:0;
-  transform:translateY(-100%);pointer-events:none;
+  display:none;
 }
 body.header-collapsed .weekbar-wrap{
   padding:3px 10px 4px;
 }
 body.header-collapsed .weekbar-card{
-  padding:4px 8px;background:transparent;border-color:transparent;box-shadow:none;
+  padding:3px 6px;background:transparent;border-color:transparent;box-shadow:none;
 }
 body.header-collapsed .legend-card{
   display:none;
@@ -1154,28 +1138,29 @@ document.addEventListener("keydown", function(e){
   }
 });
 
-/* ---------------- 页面上滑自动收缩顶栏 ---------------- */
+/* ---------------- 页面上滑自动收缩顶栏 (高性能防抖) ---------------- */
 var lastScrollY = 0;
-var scrollTicking = false;
+var isCollapsed = false;
 
 window.addEventListener("scroll", function() {
-  if (!scrollTicking) {
-    window.requestAnimationFrame(function() {
-      var curY = window.pageYOffset || document.documentElement.scrollTop || 0;
-      if (curY <= 20) {
-        document.body.classList.remove("header-collapsed");
-      } else if (curY > lastScrollY + 6 && curY > 40) {
-        // 向下滑动页面（查看后续时间段） -> 紧凑收缩顶栏
-        document.body.classList.add("header-collapsed");
-      } else if (curY < lastScrollY - 10) {
-        // 向上轻拉 -> 重新展开顶栏
-        document.body.classList.remove("header-collapsed");
-      }
-      lastScrollY = curY;
-      scrollTicking = false;
-    });
-    scrollTicking = true;
+  var curY = window.pageYOffset || document.documentElement.scrollTop || 0;
+  if (curY <= 15) {
+    if (isCollapsed) {
+      isCollapsed = false;
+      document.body.classList.remove("header-collapsed");
+    }
+  } else if (curY > lastScrollY + 12 && curY > 50) {
+    if (!isCollapsed) {
+      isCollapsed = true;
+      document.body.classList.add("header-collapsed");
+    }
+  } else if (curY < lastScrollY - 18) {
+    if (isCollapsed) {
+      isCollapsed = false;
+      document.body.classList.remove("header-collapsed");
+    }
   }
+  lastScrollY = curY;
 }, { passive: true });
 
 ANCHOR = todayISO();
