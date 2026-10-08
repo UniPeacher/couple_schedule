@@ -39,6 +39,8 @@ public class WebAppInterface {
         if (uid != null && !uid.trim().isEmpty()) {
             SharedPreferences pref = mContext.getSharedPreferences("schedule_pref", Context.MODE_PRIVATE);
             pref.edit().putString("auth_uid", uid.trim()).apply();
+            // 确保 WebSocket 即时推送连接自动建立
+            PushManager.getInstance(mContext).start();
             // 确保 WebView 的 Cookie 立即持久化写入闪存
             try {
                 CookieManager.getInstance().flush();
