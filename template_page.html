@@ -898,13 +898,30 @@ function api(path, opts){
   });
 }
 
-function load(){
+function load(opts){
+  var silent = opts && opts.silent;
   if (CURRENT_VIEW === "month"){
-    return api("/api/month?month=" + MONTH_ANCHOR).then(function(j){ MONTH_DATA = j; render(); })
-      .catch(function(e){ if (e.message !== "unauth") toast(e.message); });
+    if (MONTH_DATA){
+      render();
+      if (silent) return Promise.resolve();
+    }
+    return api("/api/month?month=" + MONTH_ANCHOR).then(function(j){
+      MONTH_DATA = j;
+      render();
+    }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
   } else {
-    return api("/api/week?date=" + ANCHOR).then(function(j){ DATA = j; render(); })
-      .catch(function(e){ if (e.message !== "unauth") toast(e.message); });
+    if (DATA){
+      render();
+      if (silent) return Promise.resolve();
+    }
+    return api("/api/week?date=" + ANCHOR).then(function(j){
+      DATA = j;
+      render();
+      // 预取月历手账数据，实现后续点击零延迟秒开
+      if (!MONTH_DATA){
+        api("/api/month?month=" + MONTH_ANCHOR).then(function(mj){ MONTH_DATA = mj; }).catch(function(){});
+      }
+    }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
   }
 }
 
@@ -1610,9 +1627,9 @@ document.addEventListener("click", function(e){
       inp.value = phrase;
       inp.focus();
     }
-  } else if (act === "prev"){ ANCHOR = shiftISO(ANCHOR, -7); load(); }
-  else if (act === "next"){ ANCHOR = shiftISO(ANCHOR, 7); load(); }
-  else if (act === "today"){ ANCHOR = todayISO(); load(); }
+  } else if (act === "prev"){ ANCHOR = shiftISO(ANCHOR, -7); DATA = null; load(); }
+  else if (act === "next"){ ANCHOR = shiftISO(ANCHOR, 7); DATA = null; load(); }
+  else if (act === "today"){ ANCHOR = todayISO(); DATA = null; load(); }
   else if (act === "open-add"){ $("#ovAdd").classList.add("show"); }
   else if (act === "set-theme"){
     var theme = el.getAttribute("data-theme");
@@ -1648,16 +1665,19 @@ document.addEventListener("click", function(e){
     var p = MONTH_ANCHOR.split("-"), y = +p[0], m = +p[1] - 1;
     if (m < 1){ m = 12; y--; }
     MONTH_ANCHOR = y + "-" + pad(m);
+    MONTH_DATA = null;
     load();
   }
   else if (act === "month-next"){
     var p = MONTH_ANCHOR.split("-"), y = +p[0], m = +p[1] + 1;
     if (m > 12){ m = 1; y++; }
     MONTH_ANCHOR = y + "-" + pad(m);
+    MONTH_DATA = null;
     load();
   }
   else if (act === "month-cur"){
     MONTH_ANCHOR = todayISO().slice(0, 7);
+    MONTH_DATA = null;
     load();
   }
   else if (act === "open-day-diary"){
