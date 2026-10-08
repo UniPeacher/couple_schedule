@@ -100,6 +100,7 @@ public class PushManager {
 
             @Override
             public void onFailure(WebSocket ws, Throwable t, Response response) {
+                Log.e(TAG, "WebSocket failure: " + (t != null ? t.getMessage() : "unknown"), t);
                 isConnecting = false;
                 webSocket = null;
                 scheduleReconnect();
