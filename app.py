@@ -2523,7 +2523,7 @@ function renderMonthApp(){
         }
       } else {
         if (item.date === dtStr){
-          dayBadges.push('<span class="mday-badge" title="' + esc(item.title) + '">🎯</span>');
+          dayBadges.push('<span class="mday-badge" title="' + esc(item.title) + ' 倒计时">⏳</span>');
         }
       }
     });
