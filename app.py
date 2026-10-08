@@ -437,6 +437,30 @@ def push_summary_to_both(summary_type="day"):
     return summary, sent_count
 
 
+NTFY_TOPIC_PREFIX = "couple_schedule_uni_"
+
+def send_ntfy_push(target_uid, title, content, target_action=""):
+    if not target_uid:
+        return
+    def _do_send():
+        try:
+            topic = f"{NTFY_TOPIC_PREFIX}{target_uid}"
+            url = f"http://127.0.0.1:8075/{topic}"
+            headers = {
+                "Title": title.encode("utf-8"),
+                "Priority": "4",
+                "Tags": "dog,heart",
+            }
+            if target_action:
+                headers["X-Click"] = f"schedule://open?action={target_action}"
+                headers["Click"] = f"schedule://open?action={target_action}"
+            req = urllib.request.Request(url, data=content.encode("utf-8"), headers=headers, method="POST")
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            sys.stderr.write(f"ntfy push error: {e}\n")
+    threading.Thread(target=_do_send, daemon=True).start()
+
+
 def push_system_notice(target_uid, title, content, target_action=""):
     if not target_uid:
         return
@@ -449,6 +473,8 @@ def push_system_notice(target_uid, title, content, target_action=""):
                 "INSERT INTO notifications(target_uid, title, content, target_action, is_read, is_pushed, created_at) VALUES(?,?,?,?,0,0,?)",
                 (target_uid, title, clean_content, target_action or "", created)
             )
+        # 同步向 ntfy 推送服务发送实时 push
+        send_ntfy_push(target_uid, title, clean_content, target_action)
     except Exception as e:
         print("[push_system_notice] error:", e)
 
@@ -882,6 +908,11 @@ html.dark{
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
+html,body{
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-focus-ring-color: transparent !important;
+  outline: none !important;
+}
 body{
   font-family:var(--font-main);
   background-color:var(--bg-page);
@@ -892,6 +923,7 @@ body{
   padding-bottom:100px;
   -webkit-tap-highlight-color:transparent;
   min-height:100vh;
+  overscroll-behavior-y: none;
 }
 button,input,select,textarea{font-family:inherit}
 
