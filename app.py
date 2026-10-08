@@ -1713,10 +1713,13 @@ function modalsHTML(){
 
     '<div class="overlay" id="ovDiaryDay"><div class="modal" id="ovDiaryDayBox"></div></div>' +
 
-    '<div class="overlay" id="ovPhotoViewer" style="background:rgba(0,0,0,0.88);z-index:9999;display:none;align-items:center;justify-content:center">' +
-      '<div style="position:relative;max-width:92vw;max-height:88vh;display:flex;align-items:center;justify-content:center">' +
-        '<img id="pvImage" src="" style="max-width:100%;max-height:85vh;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.5);object-fit:contain">' +
-        '<button type="button" data-act="close-photo" style="position:absolute;top:-18px;right:-18px;background:#ef4444;color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4)">✕</button>' +
+    '<div class="overlay" id="ovPhotoViewer" style="background:rgba(0,0,0,0.92);z-index:9999;display:none;align-items:center;justify-content:center;touch-action:none">' +
+      '<div style="position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden" id="pvContainer">' +
+        '<img id="pvImage" src="" style="max-width:94vw;max-height:86vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.6);object-fit:contain;transition:transform .2s ease, opacity .2s ease;user-select:none;-webkit-user-select:none">' +
+        '<div id="pvIndicator" style="position:absolute;top:20px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,0.5);padding:4px 12px;border-radius:20px;font-size:13px;font-weight:700">1 / 1</div>' +
+        '<button type="button" data-act="pv-prev" id="pvBtnPrev" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.25);border:none;border-radius:50%;width:42px;height:42px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">‹</button>' +
+        '<button type="button" data-act="pv-next" id="pvBtnNext" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.25);border:none;border-radius:50%;width:42px;height:42px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">›</button>' +
+        '<button type="button" data-act="close-photo" style="position:absolute;top:18px;right:18px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.5)">✕</button>' +
       '</div>' +
     '</div>' +
 
@@ -1749,7 +1752,7 @@ function modalsHTML(){
           '</div>' +
         '</div>' +
         '<div class="field"><label>手账碎碎念 / 美好回忆</label><textarea id="df_content" rows="3" placeholder="今天遇到了什么好玩的事，拍了什么照片..." style="width:100%;border:1.5px solid var(--line-strong);border-radius:12px;padding:8px;font-family:inherit;font-size:13px"></textarea></div>' +
-        '<div class="field"><label>拍立得照片（支持多张，自动压缩秒传 📷）</label>' +
+        '<div class="field"><label>拍立得照片（单篇最多可传 18 张，自动压缩秒传 📷）</label>' +
           '<div style="margin:4px 0 6px">' +
             '<button type="button" class="p-btn" data-act="trigger-upload-photo" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;font-size:12px;background:#fef3c7;border-color:#f59e0b">' +
               '📷 从手机相册选照片' +
@@ -1769,6 +1772,22 @@ function modalsHTML(){
 
 /* ---------------- 日程详情与情侣留言 ---------------- */
 var curDetail = null;
+var pvPhotosList = [];
+var pvCurrentIndex = 0;
+
+function updatePhotoViewer(){
+  var img = $("#pvImage");
+  var ind = $("#pvIndicator");
+  var bPrev = $("#pvBtnPrev");
+  var bNext = $("#pvBtnNext");
+  if (!img) return;
+  var total = pvPhotosList.length;
+  if (total === 0) return;
+  img.src = pvPhotosList[pvCurrentIndex];
+  if (ind) ind.textContent = (pvCurrentIndex + 1) + " / " + total;
+  if (bPrev) bPrev.style.display = total > 1 ? "flex" : "none";
+  if (bNext) bNext.style.display = total > 1 ? "flex" : "none";
+}
 
 function renderAnnivList(){
   var box = $("#annivListContainer");
@@ -1808,10 +1827,11 @@ function openDayDiaries(dtStr){
       list.forEach(function(d){
         var photosHtml = "";
         if (d.photos && d.photos.length > 0){
+          var pListJson = encodeURIComponent(JSON.stringify(d.photos.map(function(p){ return "/photos/" + p.file_name; })));
           photosHtml = '<div class="polaroid-gallery">' +
-            d.photos.map(function(p){
+            d.photos.map(function(p, pIdx){
               return '<div class="polaroid-card">' +
-                '<img src="/photos/' + p.file_name + '" class="polaroid-img" alt="" data-act="preview-photo" data-src="/photos/' + p.file_name + '">' +
+                '<img src="/photos/' + p.file_name + '" class="polaroid-img" alt="" data-act="preview-photo" data-idx="' + pIdx + '" data-list="' + pListJson + '">' +
               '</div>';
             }).join("") +
           '</div>';
@@ -2000,16 +2020,34 @@ document.addEventListener("click", function(e){
     $("#ovAddDiary").classList.add("show");
   }
   else if (act === "preview-photo"){
-    var src = el.getAttribute("data-src");
+    try {
+      var rawList = el.getAttribute("data-list");
+      pvPhotosList = rawList ? JSON.parse(decodeURIComponent(rawList)) : [];
+      pvCurrentIndex = +el.getAttribute("data-idx") || 0;
+    } catch(e){
+      pvPhotosList = [el.getAttribute("data-src") || el.src];
+      pvCurrentIndex = 0;
+    }
+    updatePhotoViewer();
     var pv = $("#ovPhotoViewer");
-    var img = $("#pvImage");
-    if (pv && img && src){
-      img.src = src;
+    if (pv){
       pv.style.display = "flex";
       pv.classList.add("show");
       try {
         history.pushState({modal:"photo"}, "");
       } catch(e){}
+    }
+  }
+  else if (act === "pv-prev"){
+    if (pvPhotosList.length > 1){
+      pvCurrentIndex = (pvCurrentIndex - 1 + pvPhotosList.length) % pvPhotosList.length;
+      updatePhotoViewer();
+    }
+  }
+  else if (act === "pv-next"){
+    if (pvPhotosList.length > 1){
+      pvCurrentIndex = (pvCurrentIndex + 1) % pvPhotosList.length;
+      updatePhotoViewer();
     }
   }
   else if (act === "close-photo"){
@@ -2289,13 +2327,22 @@ document.addEventListener("change", function(e){
 });
 
 document.addEventListener("keydown", function(e){
+  var pv = $("#ovPhotoViewer");
+  var isOpen = pv && pv.style.display !== "none";
   if (e.key === "Escape"){
-    var pv = $("#ovPhotoViewer");
-    if (pv && pv.style.display !== "none"){
+    if (isOpen){
       pv.style.display = "none";
       pv.classList.remove("show");
       return;
     }
+  }
+  if (isOpen && (e.key === "ArrowLeft" || e.key === "ArrowUp")){
+    var bP = $("#pvBtnPrev"); if (bP) bP.click();
+    return;
+  }
+  if (isOpen && (e.key === "ArrowRight" || e.key === "ArrowDown")){
+    var bN = $("#pvBtnNext"); if (bN) bN.click();
+    return;
   }
   if (e.target && e.target.id === "cmtText" && e.key === "Enter"){
     e.preventDefault();
@@ -2303,6 +2350,36 @@ document.addEventListener("keydown", function(e){
     if (btn) btn.click();
   }
 });
+
+/* 手势左右滑动切图支持 */
+(function(){
+  var startX = 0, startY = 0;
+  document.addEventListener("touchstart", function(e){
+    var pv = $("#ovPhotoViewer");
+    if (!pv || pv.style.display === "none") return;
+    if (e.touches && e.touches.length === 1){
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }
+  }, {passive:true});
+
+  document.addEventListener("touchend", function(e){
+    var pv = $("#ovPhotoViewer");
+    if (!pv || pv.style.display === "none") return;
+    if (e.changedTouches && e.changedTouches.length === 1){
+      var diffX = e.changedTouches[0].clientX - startX;
+      var diffY = e.changedTouches[0].clientY - startY;
+      // 水平滑动距离大于 45px 且大于垂直滑动距离，触发左右切图
+      if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY)){
+        if (diffX > 0){
+          var bP = $("#pvBtnPrev"); if (bP) bP.click();
+        } else {
+          var bN = $("#pvBtnNext"); if (bN) bN.click();
+        }
+      }
+    }
+  }, {passive:true});
+})();
 
 window.addEventListener("popstate", function(e){
   var pv = $("#ovPhotoViewer");
@@ -2785,7 +2862,7 @@ class Handler(BaseHTTPRequestHandler):
         saved_photos = []
 
         import base64
-        for idx, p_b64 in enumerate(photos_base64[:9]):  # 最多支持9张
+        for idx, p_b64 in enumerate(photos_base64[:18]):  # 放宽至最多18张
             try:
                 if "," in p_b64:
                     p_b64 = p_b64.split(",", 1)[1]
@@ -2852,7 +2929,7 @@ class Handler(BaseHTTPRequestHandler):
         os.makedirs(PHOTOS_DIR, exist_ok=True)
         import base64
         new_saved_photos = []
-        for idx, p_b64 in enumerate(photos_base64[:9]):
+        for idx, p_b64 in enumerate(photos_base64[:18]):  # 放宽至最多18张
             try:
                 if "," in p_b64:
                     p_b64 = p_b64.split(",", 1)[1]
