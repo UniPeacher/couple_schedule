@@ -2468,6 +2468,25 @@ class Handler(BaseHTTPRequestHandler):
                 "VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (uid, title, location, note, repeat, weekday, ev_date, tstart, tend, week_spec))
             eid = cur.lastrowid
+
+        # 微信推送新日程提醒给对方狗狗
+        users = get_users()
+        other_uid = "b" if uid == "a" else "a"
+        target_token = users[other_uid]["wx_uid"]
+        if target_token:
+            author_name = users[uid]["name"]
+            wd_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+            when_str = f"每周{wd_names[weekday]} {tstart}~{tend}" if repeat == "weekly" else f"{ev_date} {tstart}~{tend}"
+            loc_str = f" · 📍 {location}" if location else ""
+            note_str = f"<br>📝 备注：{note}" if note else ""
+            msg_title = f"🐾 {author_name} 添加了新日程"
+            html_content = (
+                f"🐶 <strong>{author_name}</strong> 记下了新日程：<br>"
+                f"📌 <strong>【{title}】</strong>{loc_str}<br>"
+                f"⏰ 时间：{when_str}{note_str}"
+            )
+            send_wechat_notice(target_token, msg_title, html_content)
+
         return self.send_json({"ok": True, "id": eid})
 
     def save_settings(self, d):
