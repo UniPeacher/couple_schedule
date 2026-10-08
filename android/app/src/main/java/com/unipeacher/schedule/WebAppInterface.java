@@ -33,6 +33,19 @@ public class WebAppInterface {
     }
 
     @JavascriptInterface
+    public void saveAuthUid(String uid) {
+        if (uid != null && !uid.trim().isEmpty()) {
+            SharedPreferences pref = mContext.getSharedPreferences("schedule_pref", Context.MODE_PRIVATE);
+            pref.edit().putString("auth_uid", uid.trim()).apply();
+            // 确保 WebView 的 Cookie 立即持久化写入闪存
+            try {
+                CookieManager.getInstance().flush();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    @JavascriptInterface
     public void requestBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             try {
