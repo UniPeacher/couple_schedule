@@ -1724,13 +1724,22 @@ function modalsHTML(){
         '<div class="field"><label>游玩主题 / 事项</label><input id="df_title" required maxlength="80" placeholder="如：迪士尼一日游 🎡 / 武康路散步吃冰淇淋 🍦"></div>' +
         '<div class="row2">' +
           '<div class="field"><label>地点</label><input id="df_loc" maxlength="100" placeholder="如：上海迪士尼 / 外滩"></div>' +
-          '<div class="field"><label>心情小贴纸</label><select id="df_mood">' +
-            '<option value="🥰 幸福贴贴">🥰 幸福贴贴</option>' +
-            '<option value="🥳 快乐狂欢">🥳 快乐狂欢</option>' +
-            '<option value="😋 撑成小猪">😋 撑成小猪</option>' +
-            '<option value="🥱 累并快乐">🥱 累并快乐</option>' +
-            '<option value="✨ 仪式感满满">✨ 仪式感满满</option>' +
-          '</select></div>' +
+          '<div class="field"><label>心情小贴纸</label>' +
+            '<div style="display:flex;gap:4px">' +
+              '<select id="df_mood" style="flex:1">' +
+                '<option value="🥰 幸福贴贴">🥰 幸福贴贴</option>' +
+                '<option value="🥳 快乐狂欢">🥳 快乐狂欢</option>' +
+                '<option value="😋 撑成小猪">😋 撑成小猪</option>' +
+                '<option value="🥱 累并快乐">🥱 累并快乐</option>' +
+                '<option value="✨ 仪式感满满">✨ 仪式感满满</option>' +
+                '<option value="💖 浪漫约会">💖 浪漫约会</option>' +
+                '<option value="🍰 甜品治愈">🍰 甜品治愈</option>' +
+                '<option value="🏕️ 户外露营">🏕️ 户外露营</option>' +
+                '<option value="__custom__">✏️ 自定义心情...</option>' +
+              '</select>' +
+            '</div>' +
+            '<input id="df_mood_custom" maxlength="30" placeholder="输入自定义心情（如：🐱 吸猫满足）" style="display:none;margin-top:4px">' +
+          '</div>' +
         '</div>' +
         '<div class="field"><label>手账碎碎念 / 美好回忆</label><textarea id="df_content" rows="3" placeholder="今天遇到了什么好玩的事，拍了什么照片..." style="width:100%;border:1.5px solid var(--line-strong);border-radius:12px;padding:8px;font-family:inherit;font-size:13px"></textarea></div>' +
         '<div class="field"><label>拍立得照片（支持多张，自动压缩秒传 📷）</label>' +
@@ -1977,6 +1986,7 @@ document.addEventListener("click", function(e){
     if ($("#df_title")) $("#df_title").value = "";
     if ($("#df_loc")) $("#df_loc").value = "";
     if ($("#df_mood")) $("#df_mood").value = "🥰 幸福贴贴";
+    if ($("#df_mood_custom")){ $("#df_mood_custom").value = ""; $("#df_mood_custom").style.display = "none"; }
     if ($("#df_content")) $("#df_content").value = "";
     if ($("#df_files")) $("#df_files").value = "";
     diaryPhotosToUpload = [];
@@ -1998,7 +2008,14 @@ document.addEventListener("click", function(e){
       if ($("#df_date")) $("#df_date").value = d.date;
       if ($("#df_title")) $("#df_title").value = d.title;
       if ($("#df_loc")) $("#df_loc").value = d.location || "";
-      if ($("#df_mood")) $("#df_mood").value = d.mood || "🥰 幸福贴贴";
+      var standardMoods = ["🥰 幸福贴贴", "🥳 快乐狂欢", "😋 撑成小猪", "🥱 累并快乐", "✨ 仪式感满满", "💖 浪漫约会", "🍰 甜品治愈", "🏕️ 户外露营"];
+      if (standardMoods.indexOf(d.mood) !== -1){
+        if ($("#df_mood")) $("#df_mood").value = d.mood;
+        if ($("#df_mood_custom")){ $("#df_mood_custom").value = ""; $("#df_mood_custom").style.display = "none"; }
+      } else {
+        if ($("#df_mood")) $("#df_mood").value = "__custom__";
+        if ($("#df_mood_custom")){ $("#df_mood_custom").value = d.mood || ""; $("#df_mood_custom").style.display = "block"; }
+      }
       if ($("#df_content")) $("#df_content").value = d.content || "";
       if ($("#df_files")) $("#df_files").value = "";
       diaryPhotosToUpload = [];
@@ -2148,11 +2165,15 @@ document.addEventListener("submit", function(e){
       var fn = el.getAttribute("data-file");
       if (fn) keepPhotos.push(fn);
     });
+    var mVal = $("#df_mood").value;
+    if (mVal === "__custom__"){
+      mVal = ($("#df_mood_custom") ? $("#df_mood_custom").value.trim() : "") || "✨ 特别的心情";
+    }
     var body = {
       date: $("#df_date").value,
       title: $("#df_title").value.trim(),
       location: $("#df_loc").value.trim(),
-      mood: $("#df_mood").value,
+      mood: mVal,
       content: $("#df_content").value.trim(),
       photos: diaryPhotosToUpload
     };
@@ -2175,6 +2196,17 @@ document.addEventListener("submit", function(e){
 });
 
 document.addEventListener("change", function(e){
+  if (e.target && e.target.id === "df_mood"){
+    var custInput = $("#df_mood_custom");
+    if (custInput){
+      if (e.target.value === "__custom__"){
+        custInput.style.display = "block";
+        custInput.focus();
+      } else {
+        custInput.style.display = "none";
+      }
+    }
+  }
   if (e.target && e.target.id === "df_files"){
     var files = Array.from(e.target.files);
     var prev = $("#df_preview");
