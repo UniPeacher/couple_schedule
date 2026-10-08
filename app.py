@@ -1708,9 +1708,9 @@ function renderMonthApp(){
     '<div class="month-grid">' + cellsHtml + '</div>' +
   '</div>' +
 
-  '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>';
+  html += '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>';
   html += bottomNavHTML();
-  modalsHTML();
+  html += modalsHTML();
 
   $("#app").innerHTML = html;
 }
@@ -1846,9 +1846,9 @@ function renderApp(){
     '</div>' +
   '</div>' +
 
-  '<button class="fab" data-act="open-add">🐾 记新日程 ＋</button>';
+  html += '<button class="fab" data-act="open-add">🐾 记新日程 ＋</button>';
   html += bottomNavHTML();
-  modalsHTML();
+  html += modalsHTML();
 
   $("#app").innerHTML = html;
 }
