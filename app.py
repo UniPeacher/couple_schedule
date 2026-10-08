@@ -17,7 +17,7 @@ import sqlite3
 import sys
 import threading
 import time
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request
@@ -1707,8 +1707,8 @@ function renderMonthApp(){
 
     '<div class="month-grid">' + cellsHtml + '</div>' +
   '</div>' +
+  '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>';
 
-  html += '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>';
   html += bottomNavHTML();
   html += modalsHTML();
 
@@ -1845,8 +1845,8 @@ function renderApp(){
       '<div class="walker step-4"><img src="/img/dog-walk4.png" alt="线条小狗"></div>' +
     '</div>' +
   '</div>' +
+  '<button class="fab" data-act="open-add">🐾 记新日程 ＋</button>';
 
-  html += '<button class="fab" data-act="open-add">🐾 记新日程 ＋</button>';
   html += bottomNavHTML();
   html += modalsHTML();
 
