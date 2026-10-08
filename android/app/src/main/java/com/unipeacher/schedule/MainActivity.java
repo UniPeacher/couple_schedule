@@ -58,6 +58,8 @@ public class MainActivity extends AppCompatActivity {
         // 调度高频保活服务与周期拉取
         startKeepaliveService();
         ScheduleSyncWorker.enqueuePeriodicWork(this);
+        // 启动 ntfy 毫秒级原生 WebSocket 推送监听
+        PushManager.getInstance(this).start();
 
         swipeRefresh = findViewById(R.id.swipeRefresh);
         webView = findViewById(R.id.webView);

@@ -46,7 +46,9 @@ public class ScheduleSyncService extends Service {
             scheduler.shutdownNow();
         }
         scheduler = Executors.newSingleThreadScheduledExecutor();
-        // 每 25 秒轻量检查一次后台通知
+        // 确保长连接 WebSocket 保持活跃
+        PushManager.getInstance(this).start();
+        // 每 25 秒轻量检查一次后台通知兜底
         scheduler.scheduleWithFixedDelay(this::checkNotifications, 2, 25, TimeUnit.SECONDS);
     }
 
