@@ -2436,15 +2436,53 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
     }
   });
 
+  window.handleTargetAction = function(action) {
+    if (!action || typeof action !== "string") return;
+    var parts = action.split(":");
+    var type = parts[0];
+    var val = parts.slice(1).join(":");
+
+    if (type === "event") {
+      var eid = parseInt(val);
+      if (!isNaN(eid)) {
+        if (CURRENT_VIEW !== "week") {
+          CURRENT_VIEW = "week";
+          load().then(function(){
+            setTimeout(function(){ openDetail(eid); }, 150);
+          });
+        } else {
+          openDetail(eid);
+        }
+      }
+    } else if (type === "diary") {
+      if (CURRENT_VIEW !== "month") {
+        CURRENT_VIEW = "month";
+        load().then(function(){
+          if (val) setTimeout(function(){ openDayDiaries(val); }, 150);
+        });
+      } else {
+        if (val) openDayDiaries(val);
+      }
+    } else if (type === "view") {
+      if (val && val !== CURRENT_VIEW) {
+        CURRENT_VIEW = val;
+        load();
+      }
+    }
+  };
+
   function pollNotifications() {
     if (!ME) return;
     api("/api/notifications/poll").then(function(res){
       if (res && res.ok && res.notifications && res.notifications.length > 0) {
         res.notifications.forEach(function(item){
           if (window.AndroidApp && window.AndroidApp.postNotification) {
-            window.AndroidApp.postNotification(item.title, item.content);
+            window.AndroidApp.postNotification(item.title, item.content, item.target_action || "");
           } else {
             toast(item.title + ": " + item.content);
+            if (item.target_action) {
+              window.handleTargetAction(item.target_action);
+            }
           }
         });
       }

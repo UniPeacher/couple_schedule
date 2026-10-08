@@ -33,10 +33,17 @@ public class NotificationHelper {
     }
 
     public static void showNotification(Context context, int id, String title, String content) {
+        showNotification(context, id, title, content, "");
+    }
+
+    public static void showNotification(Context context, int id, String title, String content, String targetAction) {
         createNotificationChannel(context);
 
         Intent intent = new Intent(context, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (targetAction != null && !targetAction.isEmpty()) {
+            intent.putExtra("target_action", targetAction);
+        }
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 context, id, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE

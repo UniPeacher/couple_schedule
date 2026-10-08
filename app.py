@@ -97,12 +97,13 @@ CREATE TABLE IF NOT EXISTS summary_cache(
   summary_json TEXT NOT NULL,
   updated_at  TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS notifications(
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  target_uid  TEXT NOT NULL,
-  title       TEXT NOT NULL,
-  content     TEXT NOT NULL,
-  is_read     INTEGER DEFAULT 0,
-  created_at  TEXT NOT NULL);
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_uid    TEXT NOT NULL,
+  title         TEXT NOT NULL,
+  content       TEXT NOT NULL,
+  target_action TEXT DEFAULT '',
+  is_read       INTEGER DEFAULT 0,
+  created_at    TEXT NOT NULL);
 """
 
 # 首次初始化时预置的两人示例日程（uid, 标题, 地点, 备注, repeat, 星期0-6, 单次日期, 开始, 结束, 周次）
@@ -417,7 +418,7 @@ def push_summary_to_both(summary_type="day"):
     users = get_users()
     sent_count = 0
     for uid in ("a", "b"):
-        push_system_notice(uid, title, content)
+        push_system_notice(uid, title, content, "view:summary")
         token = users[uid]["wx_uid"]
         if token:
             send_wechat_notice(token, title, content)
@@ -425,7 +426,7 @@ def push_summary_to_both(summary_type="day"):
     return summary, sent_count
 
 
-def push_system_notice(target_uid, title, content):
+def push_system_notice(target_uid, title, content, target_action=""):
     if not target_uid:
         return
     try:
@@ -434,8 +435,8 @@ def push_system_notice(target_uid, title, content):
         created = time.strftime("%Y-%m-%d %H:%M:%S")
         with LOCK:
             CONN.execute(
-                "INSERT INTO notifications(target_uid, title, content, is_read, created_at) VALUES(?,?,?,0,?)",
-                (target_uid, title, clean_content, created)
+                "INSERT INTO notifications(target_uid, title, content, target_action, is_read, created_at) VALUES(?,?,?,?,0,?)",
+                (target_uid, title, clean_content, target_action or "", created)
             )
     except Exception as e:
         print("[push_system_notice] error:", e)
@@ -510,6 +511,10 @@ def init_db():
     CONN.execute("PRAGMA busy_timeout=15000")
     with LOCK:
         CONN.executescript(SCHEMA)
+        try:
+            CONN.execute("ALTER TABLE notifications ADD COLUMN target_action TEXT DEFAULT ''")
+        except Exception:
+            pass
         n_user = CONN.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
         if n_user == 0:
             pw_a = secrets.token_urlsafe(6)
@@ -3171,15 +3176,53 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
     }
   });
 
+  window.handleTargetAction = function(action) {
+    if (!action || typeof action !== "string") return;
+    var parts = action.split(":");
+    var type = parts[0];
+    var val = parts.slice(1).join(":");
+
+    if (type === "event") {
+      var eid = parseInt(val);
+      if (!isNaN(eid)) {
+        if (CURRENT_VIEW !== "week") {
+          CURRENT_VIEW = "week";
+          load().then(function(){
+            setTimeout(function(){ openDetail(eid); }, 150);
+          });
+        } else {
+          openDetail(eid);
+        }
+      }
+    } else if (type === "diary") {
+      if (CURRENT_VIEW !== "month") {
+        CURRENT_VIEW = "month";
+        load().then(function(){
+          if (val) setTimeout(function(){ openDayDiaries(val); }, 150);
+        });
+      } else {
+        if (val) openDayDiaries(val);
+      }
+    } else if (type === "view") {
+      if (val && val !== CURRENT_VIEW) {
+        CURRENT_VIEW = val;
+        load();
+      }
+    }
+  };
+
   function pollNotifications() {
     if (!ME) return;
     api("/api/notifications/poll").then(function(res){
       if (res && res.ok && res.notifications && res.notifications.length > 0) {
         res.notifications.forEach(function(item){
           if (window.AndroidApp && window.AndroidApp.postNotification) {
-            window.AndroidApp.postNotification(item.title, item.content);
+            window.AndroidApp.postNotification(item.title, item.content, item.target_action || "");
           } else {
             toast(item.title + ": " + item.content);
+            if (item.target_action) {
+              window.handleTargetAction(item.target_action);
+            }
           }
         });
       }
@@ -3342,7 +3385,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"ok": True, "notifications": []})
                 with LOCK:
                     rows = CONN.execute(
-                        "SELECT id, title, content, created_at FROM notifications WHERE target_uid=? AND is_read=0 ORDER BY id ASC",
+                        "SELECT id, title, content, target_action, created_at FROM notifications WHERE target_uid=? AND is_read=0 ORDER BY id ASC",
                         (uid,)
                     ).fetchall()
                     if rows:
@@ -3388,7 +3431,7 @@ class Handler(BaseHTTPRequestHandler):
                     uid = d.get("uid") or "a"
                 users = get_users()
                 u_name = users.get(uid, {}).get("name", "小狗")
-                push_system_notice(uid, "🐾 线条小狗原生通知测试", f"汪！{u_name}，你的手机通知权限已成功打通！后续日程与留言有新动态将实时提醒你！")
+                push_system_notice(uid, "🐾 线条小狗原生通知测试", f"汪！{u_name}，你的手机通知权限已成功打通！点击此通知可直达小窝设置页面 🐾", "view:settings")
                 return self.send_json({"ok": True})
 
             if path == "/api/events":
@@ -3429,7 +3472,7 @@ class Handler(BaseHTTPRequestHandler):
                 ev_title = ev_row["title"]
                 notice_title = f"🐾 {sender_name} 给你的日程留了言！"
                 notice_content = f"{sender_name} 在【{ev_title}】留言：{text}"
-                push_system_notice(other_uid, notice_title, notice_content)
+                push_system_notice(other_uid, notice_title, notice_content, f"event:{eid}")
 
                 target_token = users[other_uid]["wx_uid"]
                 if target_token:
@@ -3556,7 +3599,7 @@ class Handler(BaseHTTPRequestHandler):
         loc_str = f" · 📍 {location}" if location else ""
         notice_title = f"🐾 {author_name} 添加了新日程"
         notice_content = f"【{title}】{loc_str}，时间：{when_str}"
-        push_system_notice(other_uid, notice_title, notice_content)
+        push_system_notice(other_uid, notice_title, notice_content, f"event:{eid}")
 
         target_token = users[other_uid]["wx_uid"]
         if target_token:
@@ -3757,7 +3800,7 @@ class Handler(BaseHTTPRequestHandler):
         loc_str = f" · 📍 {location}" if location else ""
         mood_str = f" [{mood}]" if mood else ""
         content_snippet = content[:80] if content else "拍下了美好瞬间~ 📷"
-        push_system_notice(other_uid, diary_title, f"【{title}{mood_str}】{loc_str}: {content_snippet}")
+        push_system_notice(other_uid, diary_title, f"【{title}{mood_str}】{loc_str}: {content_snippet}", f"diary:{dt}")
 
         target_token = users[other_uid]["wx_uid"]
         if target_token:

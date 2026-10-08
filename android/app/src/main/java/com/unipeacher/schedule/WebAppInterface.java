@@ -21,8 +21,13 @@ public class WebAppInterface {
 
     @JavascriptInterface
     public void postNotification(String title, String content) {
+        postNotification(title, content, "");
+    }
+
+    @JavascriptInterface
+    public void postNotification(String title, String content, String targetAction) {
         int id = (int) (System.currentTimeMillis() % 100000000);
-        NotificationHelper.showNotification(mContext, id, title, content);
+        NotificationHelper.showNotification(mContext, id, title, content, targetAction);
     }
 
     @JavascriptInterface
