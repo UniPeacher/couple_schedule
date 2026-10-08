@@ -1687,7 +1687,28 @@ function load(opts){
   }
 }
 
-/* ---------------- 渲染 ---------------- */
+/* 模态框打开与关闭（支持原生历史记录与物理/手势返回键） */
+function openModal(modalId){
+  var el = $(modalId);
+  if (!el) return;
+  el.classList.add("show");
+  history.pushState({type:"modal", id:modalId}, "");
+}
+
+function closeAllModals(fromPop){
+  var showed = false;
+  document.querySelectorAll(".overlay.show").forEach(function(o){
+    o.classList.remove("show");
+    showed = true;
+  });
+  var pv = $("#ovPhotoViewer");
+  if (pv && pv.style.display !== "none"){
+    pv.style.display = "none";
+    pv.classList.remove("show");
+    showed = true;
+  }
+  return showed;
+}
 function renderTopBar(){
   var myIsA = ME.uid === "a";
   var myPill = '<span class="user-pill ' + ME.uid + '">' + (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) + '</span>';
@@ -2471,7 +2492,7 @@ function openDayDiaries(dtStr){
 
     html += '<div class="foot" style="margin-top:14px"><button type="button" class="p-btn" data-act="close">关闭</button></div>';
     $("#ovDiaryDayBox").innerHTML = html;
-    $("#ovDiaryDay").classList.add("show");
+    openModal("#ovDiaryDay");
   }).catch(function(err){ if (err.message !== "unauth") toast(err.message); });
 }
 
@@ -2479,7 +2500,7 @@ function openDetail(id, date){
   curDetail = {id: +id, date: date};
   api("/api/event/" + id).then(function(j){
     $("#ovDetailBox").innerHTML = detailHTML(j);
-    $("#ovDetail").classList.add("show");
+    openModal("#ovDetail");
   }).catch(function(err){ if (err.message !== "unauth") toast(err.message); });
 }
 
@@ -2595,7 +2616,7 @@ document.addEventListener("click", function(e){
       });
     }
   }
-  else if (act === "open-add"){ $("#ovAdd").classList.add("show"); }
+  else if (act === "open-add"){ openModal("#ovAdd"); }
   else if (act === "set-theme"){
     var theme = el.getAttribute("data-theme");
     var isDark = theme === "dark";
@@ -2626,6 +2647,11 @@ document.addEventListener("click", function(e){
     if (act === "open-settings") targetV = "settings";
     else if (act === "open-summary") targetV = "summary";
     else if (act === "open-anniv" || act === "open-anniv-list") targetV = "anniv";
+
+    // 记录切换视图的历史记录（支持浏览器/手机返回键返回上一页）
+    if (targetV !== CURRENT_VIEW){
+      history.pushState({type:"view", v:targetV}, "");
+    }
 
     if (targetV === "week"){
       CURRENT_VIEW = "week";
@@ -2680,7 +2706,7 @@ document.addEventListener("click", function(e){
     diaryPhotosToUpload = [];
     var prev = $("#df_preview");
     if (prev) prev.innerHTML = "";
-    $("#ovAddDiary").classList.add("show");
+    openModal("#ovAddDiary");
   }
   else if (act === "preview-photo"){
     try {
@@ -2754,7 +2780,7 @@ document.addEventListener("click", function(e){
           '</div>';
         }).join("");
       }
-      $("#ovAddDiary").classList.add("show");
+      openModal("#ovAddDiary");
     } catch(e){}
   }
   else if (act === "remove-edit-photo"){
@@ -2829,7 +2855,13 @@ document.addEventListener("click", function(e){
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   }
-  else if (act === "close"){ document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); }); }
+  else if (act === "close"){
+    if (history.state && history.state.type === "modal"){
+      history.back();
+    } else {
+      closeAllModals();
+    }
+  }
   else if (act === "logout"){
     api("/api/logout", {method:"POST"}).catch(function(){}).then(function(){
       document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
@@ -3066,10 +3098,20 @@ document.addEventListener("keydown", function(e){
 })();
 
 window.addEventListener("popstate", function(e){
-  var pv = $("#ovPhotoViewer");
-  if (pv && pv.style.display !== "none"){
-    pv.style.display = "none";
-    pv.classList.remove("show");
+  // 1. 若当前有弹窗或照片大图打开，物理返回优先平滑关闭弹窗
+  var closed = closeAllModals(true);
+  if (closed) return;
+
+  // 2. 若是从其他页面返回，按状态恢复视图
+  if (e.state && e.state.v){
+    CURRENT_VIEW = e.state.v;
+    render();
+  } else if (!e.state || !e.state.v){
+    // 默认回到最核心的课表主页
+    if (CURRENT_VIEW !== "week"){
+      CURRENT_VIEW = "week";
+      render();
+    }
   }
 });
 
