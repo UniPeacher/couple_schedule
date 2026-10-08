@@ -63,7 +63,8 @@ public class ScheduleSyncWorker extends Worker {
             if (!serverUrl.endsWith("/")) {
                 serverUrl = serverUrl + "/";
             }
-            String pollUrl = serverUrl + "api/notifications/poll";
+            String authUid = pref.getString("auth_uid", "");
+            String pollUrl = serverUrl + "api/notifications/poll" + (authUid.isEmpty() ? "" : ("?uid=" + authUid));
 
             URL url = new URL(pollUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();

@@ -2196,7 +2196,14 @@ document.addEventListener("submit", function(e){
   if (f.id === "loginForm"){
     e.preventDefault();
     api("/api/login", {method:"POST", body:{uid:loginUid, password:$("#loginPw").value}})
-      .then(function(j){ ME = {uid:j.uid, name:j.name}; ANCHOR = todayISO(); toast("欢迎回家，" + j.name + " 🐾"); load(); })
+      .then(function(j){
+        ME = {uid:j.uid, name:j.name};
+        ANCHOR = todayISO();
+        if (window.AndroidApp && window.AndroidApp.saveAuthUid) {
+          window.AndroidApp.saveAuthUid(j.uid);
+        }
+        toast("欢迎回家，" + j.name + " 🐾"); load();
+      })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   } else if (f.id === "addForm"){
     e.preventDefault();
@@ -2437,6 +2444,9 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
   .catch(function(){})
   .then(function(){
     if (ME) {
+      if (window.AndroidApp && window.AndroidApp.saveAuthUid) {
+        window.AndroidApp.saveAuthUid(ME.uid);
+      }
       load().then(function(){
         if (CURRENT_VIEW === "week") setTimeout(scrollToToday, 100);
       });
