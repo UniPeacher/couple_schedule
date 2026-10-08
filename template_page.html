@@ -1220,10 +1220,13 @@ function renderSettingsPage(){
           '<div class="field" style="margin-top:16px"><label>🔔 手机原生通知（Android App）</label></div>' +
           '<div style="background:var(--bg-chip,#fff5ea);padding:10px 14px;border-radius:12px;font-size:12px;color:var(--ink-secondary);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
             '<div>' +
-              '<span>客户端状态：<strong>' + (window.AndroidApp ? '🟢 原生通知已接入' : '⚪ 网页浏览器环境') + '</strong></span>' +
-              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">' + (window.AndroidApp ? '新日程、留言将通过手机顶部横幅实时提醒' : '使用 Android 客户端登录即可自动开启系统通知') + '</div>' +
+              '<span>客户端状态：<strong>' + (window.AndroidApp ? '🟢 前后台常驻守护已就绪' : '⚪ 网页浏览器环境') + '</strong></span>' +
+              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">' + (window.AndroidApp ? '新日程、留言将通过手机顶部横幅实时提醒，支持后台静默守护' : '使用 Android 客户端登录即可自动开启系统通知') + '</div>' +
             '</div>' +
-            '<button type="button" class="p-btn" data-act="test-app-notice" style="padding:5px 12px;font-size:11px">🔔 测试手机通知</button>' +
+            '<div style="display:flex;gap:6px">' +
+              (window.AndroidApp ? '<button type="button" class="p-btn" data-act="battery-protect" style="padding:5px 10px;font-size:11px">🔋 后台防杀</button>' : '') +
+              '<button type="button" class="p-btn" data-act="test-app-notice" style="padding:5px 12px;font-size:11px">🔔 测试通知</button>' +
+            '</div>' +
           '</div>' +
 
           llmConfigHtml +
@@ -2173,6 +2176,12 @@ document.addEventListener("click", function(e){
       api("/api/notifications/test", {method:"POST"}).then(function(){
         toast("已向后端写入测试通知 🐾");
       }).catch(function(err){ toast(err.message || "请求失败"); });
+    }
+  } else if (act === "battery-protect"){
+    if (window.AndroidApp && window.AndroidApp.requestBatteryOptimization) {
+      window.AndroidApp.requestBatteryOptimization();
+    } else {
+      toast("请在 Android 手机客户端中使用此功能 🐾");
     }
   } else if (act === "del"){
     if (!confirm("确定删除这条日程？")) return;
