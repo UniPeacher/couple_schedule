@@ -1388,20 +1388,19 @@ function renderMessagesList(){
 function renderWishesPage(){
   var html = renderTopBar() +
     '<div class="page-container">' +
+      '<div style="margin-bottom:12px">' +
+        '<div class="seg" style="margin-bottom:0">' +
+          '<div class="opt" data-act="switch-view" data-v="month">📔 足迹手账</div>' +
+          '<div class="opt on" data-act="switch-view" data-v="wishes">✨ 心愿备忘</div>' +
+        '</div>' +
+      '</div>' +
+
       '<div class="page-header-card">' +
         '<div>' +
           '<div class="page-header-title">✨ 俩汪心愿备忘录</div>' +
           '<div class="page-header-desc">🐾 一起想去的地方、想吃的美食与心愿清单</div>' +
         '</div>' +
         '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-couple.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
-      '</div>' +
-
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">' +
-        '<div class="seg" style="margin-bottom:0;max-width:240px">' +
-          '<div class="opt" data-act="switch-view" data-v="month">📔 足迹手账</div>' +
-          '<div class="opt on" data-act="switch-view" data-v="wishes">✨ 心愿备忘</div>' +
-        '</div>' +
-        '<button class="p-btn pri" data-act="open-add-wish" style="font-size:12px;padding:6px 14px">✨ 许新心愿 ＋</button>' +
       '</div>' +
 
       '<div class="wish-progress-box" id="wishProgressBox">' +
@@ -1424,7 +1423,8 @@ function renderWishesPage(){
         '</div>' +
         '<div id="wishesListContainer"></div>' +
       '</div>' +
-    '</div>';
+    '</div>' +
+    '<button class="fab" data-act="open-add-wish" title="许下一个新心愿">✨ 许新愿 +</button>';
 
   html += bottomNavHTML();
   html += modalsHTML();
@@ -1793,14 +1793,16 @@ function renderMonthApp(){
     '</header>' +
   '</div>' +
 
-  '<div class="month-cal-wrap">' +
-    '<div class="month-topcard">' +
-      '<div style="display:flex;align-items:center;justify-content:center;margin-bottom:12px">' +
-        '<div class="seg" style="margin-bottom:0;width:100%;max-width:280px">' +
-          '<div class="opt on" data-act="switch-view" data-v="month">📔 足迹手账</div>' +
-          '<div class="opt" data-act="switch-view" data-v="wishes">✨ 心愿备忘</div>' +
-        '</div>' +
+  '<div class="page-container">' +
+    '<div style="margin-bottom:12px">' +
+      '<div class="seg" style="margin-bottom:0">' +
+        '<div class="opt on" data-act="switch-view" data-v="month">📔 足迹手账</div>' +
+        '<div class="opt" data-act="switch-view" data-v="wishes">✨ 心愿备忘</div>' +
       '</div>' +
+    '</div>' +
+
+    '<div class="month-cal-wrap" style="padding:0">' +
+      '<div class="month-topcard">' +
       '<div class="week-nav">' +
         '<button class="p-btn" data-act="month-prev">‹ 上月</button>' +
         '<button class="p-btn pri" data-act="month-cur">🐾 本月</button>' +
@@ -1815,6 +1817,7 @@ function renderMonthApp(){
     '</div>' +
 
     '<div class="month-grid">' + cellsHtml + '</div>' +
+    '</div>' +
   '</div>' +
   '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>';
 
