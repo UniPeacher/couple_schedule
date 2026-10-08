@@ -156,8 +156,12 @@ def send_wechat_notice(token, title, content):
         try:
             # 1. 息知 (xizhi, 纯免费微信推送，以 xz 开头或常规字符串)
             if token.lower().startswith("xz") or len(token) > 20:
-                # 息知接口：https://xz.qqoq.net/[KEY].send?title=xx&content=xx
-                url = f"https://xz.qqoq.net/{token}.send"
+                # 息知接口：https://xizhi.qqoq.net/[KEY].send
+                # 兼容用户贴完整 url 或者单个 key
+                actual_key = token
+                if "xizhi.qqoq.net/" in token or "xz.qqoq.net/" in token:
+                    actual_key = token.split("/")[-1].replace(".send", "")
+                url = f"https://xizhi.qqoq.net/{actual_key}.send"
                 payload = json.dumps({"title": title, "content": content}).encode("utf-8")
                 req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
                 urllib.request.urlopen(req, timeout=8)
@@ -1664,7 +1668,7 @@ function modalsHTML(){
           '<div class="field"><label>🐾 b 微信 Key</label><input id="s_wxb" placeholder="贴入 b 的微信推送Key" value="' + esc((u.b.wx_uid)||"") + '"></div>' +
         '</div>' +
         '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
-          '💡 微信打开 <strong>xz.qqoq.net</strong> 扫码关注即得专属免费 Key，对方留言时你的微信会秒收卡片提醒。' +
+          '💡 微信打开 <strong>xz.qqoq.net</strong> 扫码关注即得专属免费 Key（可贴整个链接或XZ开头的Key）。' +
         '</p>' +
         '<div class="field" style="margin-top:14px"><label>修改当前身份（' + esc(ME.name) + '）密码</label></div>' +
         '<div class="row2">' +
