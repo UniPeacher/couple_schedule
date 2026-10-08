@@ -1734,7 +1734,13 @@ function modalsHTML(){
         '</div>' +
         '<div class="field"><label>手账碎碎念 / 美好回忆</label><textarea id="df_content" rows="3" placeholder="今天遇到了什么好玩的事，拍了什么照片..." style="width:100%;border:1.5px solid var(--line-strong);border-radius:12px;padding:8px;font-family:inherit;font-size:13px"></textarea></div>' +
         '<div class="field"><label>拍立得照片（支持多张，自动压缩秒传 📷）</label>' +
-          '<input type="file" id="df_files" accept="image/*" multiple style="font-size:12px;display:block;width:100%">' +
+          '<div style="margin:4px 0 6px">' +
+            '<button type="button" class="p-btn" data-act="trigger-upload-photo" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;font-size:12px;background:#fef3c7;border-color:#f59e0b">' +
+              '📷 从手机相册选照片' +
+            '</button>' +
+            '<span id="df_photo_status" style="font-size:11px;color:var(--ink-muted);margin-left:8px"></span>' +
+          '</div>' +
+          '<input type="file" id="df_files" accept="image/*" multiple style="display:none">' +
           '<div id="df_preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>' +
         '</div>' +
         '<div class="foot">' +
@@ -1977,6 +1983,10 @@ document.addEventListener("click", function(e){
     var prev = $("#df_preview");
     if (prev) prev.innerHTML = "";
     $("#ovAddDiary").classList.add("show");
+  }
+  else if (act === "trigger-upload-photo"){
+    var fi = $("#df_files");
+    if (fi) fi.click();
   }
   else if (act === "edit-diary"){
     try {
