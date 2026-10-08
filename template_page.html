@@ -1357,6 +1357,15 @@ function modalsHTML(){
         '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
           '💡 支持 <strong>虾推啥 (xtuis.cn)</strong>，对方留言或新手账时，微信卡片秒弹并直接显示对方说的话。' +
         '</p>' +
+        '<div class="field" style="margin-top:14px"><label>🤖 AI 时光小信大模型配置（OpenAI 通用兼容）</label></div>' +
+        '<div class="field"><label>API 基础地址 (Base URL)</label><input id="s_llm_base" placeholder="如: https://api.deepseek.com/v1" value="' + esc(s.llm_api_base||"") + '"></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>API Key 密钥</label><input type="password" id="s_llm_key" placeholder="sk-..." value="' + esc(s.llm_api_key||"") + '"></div>' +
+          '<div class="field"><label>模型名称 (Model)</label><input id="s_llm_model" placeholder="如: deepseek-chat" value="' + esc(s.llm_model||"deepseek-chat") + '"></div>' +
+        '</div>' +
+        '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
+          '💡 支持 DeepSeek、通义千问、Kimi、OpenAI 等标准兼容 API。配置后，时光简报将由 AI 以线条小狗口吻深情撰写！' +
+        '</p>' +
         '<div class="field" style="margin-top:14px"><label>🌓 外观主题模式</label></div>' +
         '<div style="margin-bottom:12px">' +
           '<div class="seg" id="themeSeg">' +
@@ -1390,8 +1399,11 @@ function modalsHTML(){
         '<div class="opt" data-act="summary-tab" data-tab="month">📔 月度胶囊</div>' +
       '</div>' +
       '<div id="summaryContentBox" style="min-height:160px;font-size:13.5px;line-height:1.6"></div>' +
-      '<div class="foot" style="justify-content:space-between;align-items:center;margin-top:14px">' +
-        '<button type="button" class="p-btn pri" data-act="send-summary-wx" style="font-size:12px">📲 推送到俩人微信</button>' +
+      '<div class="foot" style="justify-content:space-between;align-items:center;margin-top:14px;flex-wrap:wrap;gap:8px">' +
+        '<div style="display:flex;gap:6px">' +
+          '<button type="button" class="p-btn pri" data-act="send-summary-wx" style="font-size:12px">📲 推送到俩人微信</button>' +
+          '<button type="button" class="p-btn" data-act="refresh-summary" title="让AI重新构思写一封" style="font-size:12px">🔄 重新生成</button>' +
+        '</div>' +
         '<button type="button" class="p-btn" data-act="close">关闭</button>' +
       '</div>' +
     '</div></div>' +
@@ -1516,11 +1528,12 @@ function updatePhotoViewer(){
 var curSummaryTab = "day";
 var curSummaryData = null;
 
-function loadSummary(tab){
+function loadSummary(tab, force){
   curSummaryTab = tab || "day";
   var box = $("#summaryContentBox");
-  if (box) box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted)">🐾 正在生成浪漫时光总结...</div>';
-  api("/api/summary?type=" + curSummaryTab).then(function(res){
+  if (box) box.innerHTML = '<div style="text-align:center;padding:34px 0;color:var(--ink-muted);font-weight:700">🐶 线条小狗正在用心为你构思温馨时光信...<br><span style="font-size:11px;font-weight:normal;opacity:0.8">（若已配置AI模型，将由大模型深情撰写）</span></div>';
+  var url = "/api/summary?type=" + curSummaryTab + (force ? "&refresh=1" : "");
+  api(url).then(function(res){
     curSummaryData = res;
     renderSummaryBox();
   }).catch(function(e){
@@ -1532,11 +1545,12 @@ function renderSummaryBox(){
   var box = $("#summaryContentBox");
   if (!box || !curSummaryData) return;
   var d = curSummaryData;
+  var aiTag = d.is_ai ? '<span style="font-size:10px;background:linear-gradient(135deg,#ff758c,#ff7eb3);color:#fff;padding:2px 7px;border-radius:10px;margin-left:auto;font-weight:800">✨ AI 专属小信</span>' : '';
   var html = '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:16px;padding:14px;box-shadow:var(--shadow-sm)">' +
-    '<div style="font-size:15px;font-weight:800;color:var(--ink-primary);margin-bottom:8px;display:flex;align-items:center;gap:6px">' +
-      '<span>' + esc(d.title) + '</span>' +
+    '<div style="font-size:14.5px;font-weight:800;color:var(--ink-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px">' +
+      '<span>' + esc(d.title) + '</span>' + aiTag +
     '</div>' +
-    '<div style="color:var(--ink-secondary);font-size:13px;line-height:1.65;white-space:pre-wrap;margin-bottom:10px">' + esc(d.content) + '</div>';
+    '<div style="color:var(--ink-secondary);font-size:13px;line-height:1.75;white-space:pre-wrap;margin-bottom:10px;letter-spacing:0.2px">' + esc(d.content) + '</div>';
 
   if (d.stats && d.stats.length > 0){
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line-strong)">' +
@@ -1936,6 +1950,9 @@ document.addEventListener("click", function(e){
     });
     loadSummary(tab);
   }
+  else if (act === "refresh-summary"){
+    loadSummary(curSummaryTab, true);
+  }
   else if (act === "send-summary-wx"){
     api("/api/summary/push", {method:"POST", body:{type: curSummaryTab}}).then(function(res){
       toast("💌 时光简报已推送至双方微信！");
@@ -2029,7 +2046,10 @@ document.addEventListener("submit", function(e){
       window_start: $("#s_ws").value, window_end: $("#s_we").value,
       min_gap: +$("#s_mg").value,
       wx_a: $("#s_wxa") ? $("#s_wxa").value.trim() : "",
-      wx_b: $("#s_wxb") ? $("#s_wxb").value.trim() : ""
+      wx_b: $("#s_wxb") ? $("#s_wxb").value.trim() : "",
+      llm_api_base: $("#s_llm_base") ? $("#s_llm_base").value.trim() : "",
+      llm_api_key: $("#s_llm_key") ? $("#s_llm_key").value.trim() : "",
+      llm_model: $("#s_llm_model") ? $("#s_llm_model").value.trim() : "deepseek-chat"
     };
     var pwOld = $("#s_old").value, pwNew = $("#s_new").value;
     api("/api/settings", {method:"POST", body:body}).then(function(){

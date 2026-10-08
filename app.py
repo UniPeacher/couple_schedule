@@ -92,6 +92,10 @@ CREATE TABLE IF NOT EXISTS diary_photos(
   diary_id    INTEGER NOT NULL,
   file_name   TEXT NOT NULL,
   sort_order  INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS summary_cache(
+  cache_key   TEXT PRIMARY KEY,
+  summary_json TEXT NOT NULL,
+  updated_at  TEXT NOT NULL);
 """
 
 # 首次初始化时预置的两人示例日程（uid, 标题, 地点, 备注, repeat, 星期0-6, 单次日期, 开始, 结束, 周次）
@@ -148,14 +152,80 @@ def get_users():
         return {r["uid"]: dict(name=r["name"], week1=r["week1"], pw_hash=r["pw_hash"], wx_uid=r["wx_uid"] or "") for r in rows}
 
 
-def generate_period_summary(summary_type="day"):
+def call_llm_api(system_prompt, user_prompt):
+    api_url = (get_setting("llm_api_base") or "").strip()
+    api_key = (get_setting("llm_api_key") or "").strip()
+    model_name = (get_setting("llm_model") or "deepseek-chat").strip()
+    if not api_url or not api_key:
+        return None
+
+    if not api_url.endswith("/chat/completions"):
+        api_url = api_url.rstrip("/") + "/chat/completions"
+
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": 0.8,
+        "max_tokens": 800
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        api_url, data=data,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "sched-share-doggo/1.0"
+        }
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            res_json = json.loads(resp.read().decode("utf-8"))
+            choices = res_json.get("choices") or []
+            if choices:
+                return choices[0].get("message", {}).get("content", "").strip()
+    except Exception as e:
+        sys.stderr.write(f"[LLM API Error]: {e}\n")
+    return None
+
+
+def generate_period_summary(summary_type="day", force_refresh=False):
     today = date.today()
     users = get_users()
     name_a = users["a"]["name"]
     name_b = users["b"]["name"]
 
+    # 缓存键：按日/周/月为单位
     if summary_type == "day":
-        # 当日统计
+        cache_key = f"day_{today.isoformat()}"
+    elif summary_type == "week":
+        mon = monday_of(today)
+        cache_key = f"week_{mon.isoformat()}"
+    else:
+        cache_key = f"month_{today.strftime('%Y-%m')}"
+
+    if not force_refresh:
+        with LOCK:
+            cached = CONN.execute("SELECT summary_json FROM summary_cache WHERE cache_key=?", (cache_key,)).fetchone()
+            if cached:
+                try:
+                    return json.loads(cached["summary_json"])
+                except Exception:
+                    pass
+
+    system_prompt = (
+        "你是一对恩爱甜蜜的年轻情侣专属的AI爱情管家，你的角色是'线条小狗'（小金毛与小白狗的化身）。\n"
+        "你的语气极其温暖、俏皮、可爱、治愈，喜欢用小狗的口吻（如摇尾巴、汪汪、贴贴、小狗爪印、小零食）表达细腻的关心。\n"
+        "请根据下面提供的今日/本周/本月情侣两人的真实生活轨迹数据，写一篇富有陪伴感、深情又生动的时光小信或总结。\n"
+        "要求：\n"
+        "1. 结合两人各自的具体日程与打卡，夸夸各自的认真努力；\n"
+        "2. 抓住两人的空闲贴贴时光、手账细节或留言小纸条，写出专属于他们的小温馨；\n"
+        "3. 分段自然（2~3段），适度搭配小狗和爱心 Emoji，字数在 200~320 字左右，不要写得像机械公文，要像手写的温度情书！"
+    )
+
+    if summary_type == "day":
         target_date = today
         dt_str = target_date.isoformat()
         w_payload = week_payload(dt_str)
@@ -178,32 +248,45 @@ def generate_period_summary(summary_type="day"):
             ).fetchall()
 
         title = f"🌅 俩汪今日晚安总结 · {dt_str}"
-        lines = [f"亲爱的小窝主人，今天也辛苦啦！🐾"]
-        if free_hours > 0:
-            lines.append(f"💕 今日默契贴贴时长：{free_hours} 小时（共同空闲）！")
+        stats = [
+            {"k": "共同空闲时长", "v": f"{free_hours}h"},
+            {"k": "今日日程总数", "v": f"{len(evs_a) + len(evs_b)}项"},
+            {"k": "手账足迹", "v": f"{len(diaries)}篇"},
+            {"k": "贴心留言", "v": f"{len(comments)}条"},
+        ]
+
+        # 尝试调用 LLM 生成深度情感小信
+        user_prompt = (
+            f"【今日数据档案 ({dt_str})】\n"
+            f"- 伴侣：{name_a}（小金毛）与 {name_b}（小白狗）\n"
+            f"- 今日两人重合空闲时长：{free_hours} 小时\n"
+            f"- {name_a} 的日程安排：{[e['title'] for e in evs_a] or '今天放假/自主安排'}\n"
+            f"- {name_b} 的日程安排：{[e['title'] for e in evs_b] or '今天放假/自主安排'}\n"
+            f"- 今日手账游玩记录：{[d['title'] + '（' + (d['mood'] or '') + '）' for d in diaries] or '暂无新足迹'}\n"
+            f"- 今日双方互动留言：{[c['name'] + '说:' + c['text'] for c in comments] or '今日都在专注各自事务，心里挂念着对方'}\n\n"
+            f"请以线条小狗第一人称，为他们写一封今晚温暖治愈的晚安心语。"
+        )
+        ai_content = call_llm_api(system_prompt, user_prompt)
+
+        if ai_content:
+            res_content = ai_content
         else:
-            lines.append("💤 今天各自都有在认真奔波，晚上记得早点贴贴休息哦！")
+            lines = [f"亲爱的小窝主人，今天也辛苦啦！🐾"]
+            if free_hours > 0:
+                lines.append(f"💕 今日默契贴贴时长：{free_hours} 小时（共同空闲）！")
+            else:
+                lines.append("💤 今天各自都有在认真奔波，晚上记得早点贴贴休息哦！")
+            if evs_a or evs_b:
+                lines.append(f"📋 今日足迹：{name_a} 完成了 {len(evs_a)} 项日程，{name_b} 完成了 {len(evs_b)} 项日程。")
+            if diaries:
+                d_titles = "、".join([d["title"] for d in diaries])
+                lines.append(f"📔 今日手账更新了：《{d_titles}》，留下了美好的瞬间！✨")
+            if comments:
+                lines.append(f"💬 今天小纸条留言互动了 {len(comments)} 次，心里都在挂念着对方呢～")
+            lines.append("🌙 无论今天遇到什么，小狗都最喜欢你啦。晚安，明天继续加油！🦴")
+            res_content = "\n\n".join(lines)
 
-        if evs_a or evs_b:
-            lines.append(f"📋 今日足迹：{name_a} 完成了 {len(evs_a)} 项日程，{name_b} 完成了 {len(evs_b)} 项日程。")
-        if diaries:
-            d_titles = "、".join([d["title"] for d in diaries])
-            lines.append(f"📔 今日手账更新了：《{d_titles}》，留下了美好的瞬间！✨")
-        if comments:
-            lines.append(f"💬 今天小纸条留言互动了 {len(comments)} 次，心里都在挂念着对方呢～")
-        
-        lines.append("🌙 无论今天遇到什么，小狗都最喜欢你啦。晚安，明天继续加油！🦴")
-
-        return {
-            "title": title,
-            "content": "\n\n".join(lines),
-            "stats": [
-                {"k": "共同空闲时长", "v": f"{free_hours}h"},
-                {"k": "今日日程总数", "v": f"{len(evs_a) + len(evs_b)}项"},
-                {"k": "手账足迹", "v": f"{len(diaries)}篇"},
-                {"k": "贴心留言", "v": f"{len(comments)}条"},
-            ]
-        }
+        res = {"title": title, "content": res_content, "stats": stats, "is_ai": bool(ai_content)}
 
     elif summary_type == "week":
         # 本周统计
@@ -226,24 +309,37 @@ def generate_period_summary(summary_type="day"):
             n_cmts = comments["cnt"] if comments else 0
 
         title = f"💌 俩汪本周心动周报 · ({mon_str} ~ {sun_str})"
-        lines = [
-            f"叮咚！这一周俩汪的默契生活报告出炉啦~ 🐾",
-            f"💖 本周俩人共同重叠贴贴空闲时间高达 {total_free_hours} 小时！陪伴是最长情的告白。",
-            f"🎒 这一周两人一共并肩完成了 {total_evs} 项课业与日程，每一个努力的瞬间都闪闪发光。",
-            f"📷 手账本里新增了 {len(diaries)} 篇游玩回忆，互动留言小纸条 {n_cmts} 条。",
-            "✨ 下周又是全新的七天，俩汪继续认真生活，努力奔向彼此吧！💕"
+        stats = [
+            {"k": "本周贴贴总长", "v": f"{total_free_hours}h"},
+            {"k": "共同日程打卡", "v": f"{total_evs}项"},
+            {"k": "新增游玩手账", "v": f"{len(diaries)}篇"},
+            {"k": "互动留言小纸条", "v": f"{n_cmts}条"},
         ]
 
-        return {
-            "title": title,
-            "content": "\n\n".join(lines),
-            "stats": [
-                {"k": "本周贴贴总长", "v": f"{total_free_hours}h"},
-                {"k": "共同日程打卡", "v": f"{total_evs}项"},
-                {"k": "新增游玩手账", "v": f"{len(diaries)}篇"},
-                {"k": "互动留言小纸条", "v": f"{n_cmts}条"},
+        user_prompt = (
+            f"【本周爱情周报档案 ({mon_str} ~ {sun_str})】\n"
+            f"- 伴侣：{name_a}（小金毛）与 {name_b}（小白狗）\n"
+            f"- 整周两人重合贴贴总时长：{total_free_hours} 小时\n"
+            f"- 两人并肩完成的课业与日程打卡总计：{total_evs} 项\n"
+            f"- 本周手账本记录数：{len(diaries)} 篇\n"
+            f"- 纸条留言互动次数：{n_cmts} 条\n\n"
+            f"请以线条小狗第一人称，为他们写一封充满爱意、总结这一周并展望下一周的周报小情信。"
+        )
+        ai_content = call_llm_api(system_prompt, user_prompt)
+
+        if ai_content:
+            res_content = ai_content
+        else:
+            lines = [
+                f"叮咚！这一周俩汪的默契生活报告出炉啦~ 🐾",
+                f"💖 本周俩人共同重叠贴贴空闲时间高达 {total_free_hours} 小时！陪伴是最长情的告白。",
+                f"🎒 这一周两人一共并肩完成了 {total_evs} 项课业与日程，每一个努力的瞬间都闪闪发光。",
+                f"📷 手账本里新增了 {len(diaries)} 篇游玩回忆，互动留言小纸条 {n_cmts} 条。",
+                "✨ 下周又是全新的七天，俩汪继续认真生活，努力奔向彼此吧！💕"
             ]
-        }
+            res_content = "\n\n".join(lines)
+
+        res = {"title": title, "content": res_content, "stats": stats, "is_ai": bool(ai_content)}
 
     elif summary_type == "month":
         # 本月胶囊
@@ -256,7 +352,6 @@ def generate_period_summary(summary_type="day"):
             ).fetchone()
             n_photos = photos["cnt"] if photos else 0
 
-            # 统计心情
             moods = {}
             for d in diaries:
                 m = d["mood"] or "💖 幸福贴贴"
@@ -264,23 +359,49 @@ def generate_period_summary(summary_type="day"):
             top_mood = sorted(moods.items(), key=lambda x: x[1], reverse=True)[0][0] if moods else "🥰 幸福贴贴"
 
         title = f"📔 俩汪月度时光胶囊 · {today.year}年{today.month}月"
-        lines = [
-            f"岁月漫漫，有你常在。这里是属于你们的 {today.month} 月时光胶囊！🐾",
-            f"✨ 这个月你们一共踏出了足迹，写下了 {len(diaries)} 篇手账日记，定格了 {n_photos} 张拍立得拍立得照片！",
-            f"🌤️ 本月最高频心动贴纸是【{top_mood}】，充满着甜蜜与治愈。",
-            "🐾 时光会走远，但爱与照片永远留在小窝里。下个月也要创造更多回忆呀！💖"
+        stats = [
+            {"k": "本月手账日记", "v": f"{len(diaries)}篇"},
+            {"k": "拍立得照片", "v": f"{n_photos}张"},
+            {"k": "本月代表心情", "v": top_mood.split(" ")[0]},
+            {"k": "相伴日子", "v": "30天+"},
         ]
 
-        return {
-            "title": title,
-            "content": "\n\n".join(lines),
-            "stats": [
-                {"k": "本月手账日记", "v": f"{len(diaries)}篇"},
-                {"k": "拍立得照片", "v": f"{n_photos}张"},
-                {"k": "本月代表心情", "v": top_mood.split(" ")[0]},
-                {"k": "相伴日子", "v": "30天+"},
+        user_prompt = (
+            f"【月度时光胶囊档案 ({ym})】\n"
+            f"- 伴侣：{name_a}（小金毛）与 {name_b}（小白狗）\n"
+            f"- 整月留下的手账日记：{len(diaries)} 篇\n"
+            f"- 拍下的拍立得合照回忆：{n_photos} 张\n"
+            f"- 本月最频繁的心情贴纸：{top_mood}\n\n"
+            f"请以线条小狗第一人称，为他们写一封感动浪漫、纪念这个月点点滴滴的时光胶囊序言。"
+        )
+        ai_content = call_llm_api(system_prompt, user_prompt)
+
+        if ai_content:
+            res_content = ai_content
+        else:
+            lines = [
+                f"岁月漫漫，有你常在。这里是属于你们的 {today.month} 月时光胶囊！🐾",
+                f"✨ 这个月你们一共踏出了足迹，写下了 {len(diaries)} 篇手账日记，定格了 {n_photos} 张拍立得照片！",
+                f"🌤️ 本月最高频心动贴纸是【{top_mood}】，充满着甜蜜与治愈。",
+                "🐾 时光会走远，但爱与照片永远留在小窝里。下个月也要创造更多回忆呀！💖"
             ]
-        }
+            res_content = "\n\n".join(lines)
+
+        res = {"title": title, "content": res_content, "stats": stats, "is_ai": bool(ai_content)}
+
+    # 存入缓存
+    try:
+        with LOCK:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            CONN.execute(
+                "INSERT INTO summary_cache(cache_key, summary_json, updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(cache_key) DO UPDATE SET summary_json=excluded.summary_json, updated_at=excluded.updated_at",
+                (cache_key, json.dumps(res, ensure_ascii=False), now_str)
+            )
+    except Exception as e:
+        sys.stderr.write(f"[Cache save error]: {e}\n")
+
+    return res
 
 def push_summary_to_both(summary_type="day"):
     summary = generate_period_summary(summary_type)
@@ -532,7 +653,12 @@ def week_payload(anchor_iso):
         "week_end": days[-1].isoformat(),
         "users": {uid: {"name": u["name"], "week1": u["week1"]} for uid, u in users.items()},
         "weeknums": {uid: week_num(u["week1"], mon) for uid, u in users.items()},
-        "settings": {"window_start": m2t(ws), "window_end": m2t(we), "min_gap": min_gap},
+        "settings": {
+            "window_start": m2t(ws), "window_end": m2t(we), "min_gap": min_gap,
+            "llm_api_base": get_setting("llm_api_base", ""),
+            "llm_api_key": get_setting("llm_api_key", ""),
+            "llm_model": get_setting("llm_model", "deepseek-chat")
+        },
         "days": out_days,
         "anniversaries": get_anniversaries(),
     }
@@ -1940,6 +2066,15 @@ function modalsHTML(){
         '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
           '💡 支持 <strong>虾推啥 (xtuis.cn)</strong>，对方留言或新手账时，微信卡片秒弹并直接显示对方说的话。' +
         '</p>' +
+        '<div class="field" style="margin-top:14px"><label>🤖 AI 时光小信大模型配置（OpenAI 通用兼容）</label></div>' +
+        '<div class="field"><label>API 基础地址 (Base URL)</label><input id="s_llm_base" placeholder="如: https://api.deepseek.com/v1" value="' + esc(s.llm_api_base||"") + '"></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>API Key 密钥</label><input type="password" id="s_llm_key" placeholder="sk-..." value="' + esc(s.llm_api_key||"") + '"></div>' +
+          '<div class="field"><label>模型名称 (Model)</label><input id="s_llm_model" placeholder="如: deepseek-chat" value="' + esc(s.llm_model||"deepseek-chat") + '"></div>' +
+        '</div>' +
+        '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
+          '💡 支持 DeepSeek、通义千问、Kimi、OpenAI 等标准兼容 API。配置后，时光简报将由 AI 以线条小狗口吻深情撰写！' +
+        '</p>' +
         '<div class="field" style="margin-top:14px"><label>🌓 外观主题模式</label></div>' +
         '<div style="margin-bottom:12px">' +
           '<div class="seg" id="themeSeg">' +
@@ -1973,8 +2108,11 @@ function modalsHTML(){
         '<div class="opt" data-act="summary-tab" data-tab="month">📔 月度胶囊</div>' +
       '</div>' +
       '<div id="summaryContentBox" style="min-height:160px;font-size:13.5px;line-height:1.6"></div>' +
-      '<div class="foot" style="justify-content:space-between;align-items:center;margin-top:14px">' +
-        '<button type="button" class="p-btn pri" data-act="send-summary-wx" style="font-size:12px">📲 推送到俩人微信</button>' +
+      '<div class="foot" style="justify-content:space-between;align-items:center;margin-top:14px;flex-wrap:wrap;gap:8px">' +
+        '<div style="display:flex;gap:6px">' +
+          '<button type="button" class="p-btn pri" data-act="send-summary-wx" style="font-size:12px">📲 推送到俩人微信</button>' +
+          '<button type="button" class="p-btn" data-act="refresh-summary" title="让AI重新构思写一封" style="font-size:12px">🔄 重新生成</button>' +
+        '</div>' +
         '<button type="button" class="p-btn" data-act="close">关闭</button>' +
       '</div>' +
     '</div></div>' +
@@ -2099,11 +2237,12 @@ function updatePhotoViewer(){
 var curSummaryTab = "day";
 var curSummaryData = null;
 
-function loadSummary(tab){
+function loadSummary(tab, force){
   curSummaryTab = tab || "day";
   var box = $("#summaryContentBox");
-  if (box) box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted)">🐾 正在生成浪漫时光总结...</div>';
-  api("/api/summary?type=" + curSummaryTab).then(function(res){
+  if (box) box.innerHTML = '<div style="text-align:center;padding:34px 0;color:var(--ink-muted);font-weight:700">🐶 线条小狗正在用心为你构思温馨时光信...<br><span style="font-size:11px;font-weight:normal;opacity:0.8">（若已配置AI模型，将由大模型深情撰写）</span></div>';
+  var url = "/api/summary?type=" + curSummaryTab + (force ? "&refresh=1" : "");
+  api(url).then(function(res){
     curSummaryData = res;
     renderSummaryBox();
   }).catch(function(e){
@@ -2115,11 +2254,12 @@ function renderSummaryBox(){
   var box = $("#summaryContentBox");
   if (!box || !curSummaryData) return;
   var d = curSummaryData;
+  var aiTag = d.is_ai ? '<span style="font-size:10px;background:linear-gradient(135deg,#ff758c,#ff7eb3);color:#fff;padding:2px 7px;border-radius:10px;margin-left:auto;font-weight:800">✨ AI 专属小信</span>' : '';
   var html = '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:16px;padding:14px;box-shadow:var(--shadow-sm)">' +
-    '<div style="font-size:15px;font-weight:800;color:var(--ink-primary);margin-bottom:8px;display:flex;align-items:center;gap:6px">' +
-      '<span>' + esc(d.title) + '</span>' +
+    '<div style="font-size:14.5px;font-weight:800;color:var(--ink-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px">' +
+      '<span>' + esc(d.title) + '</span>' + aiTag +
     '</div>' +
-    '<div style="color:var(--ink-secondary);font-size:13px;line-height:1.65;white-space:pre-wrap;margin-bottom:10px">' + esc(d.content) + '</div>';
+    '<div style="color:var(--ink-secondary);font-size:13px;line-height:1.75;white-space:pre-wrap;margin-bottom:10px;letter-spacing:0.2px">' + esc(d.content) + '</div>';
 
   if (d.stats && d.stats.length > 0){
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line-strong)">' +
@@ -2519,6 +2659,9 @@ document.addEventListener("click", function(e){
     });
     loadSummary(tab);
   }
+  else if (act === "refresh-summary"){
+    loadSummary(curSummaryTab, true);
+  }
   else if (act === "send-summary-wx"){
     api("/api/summary/push", {method:"POST", body:{type: curSummaryTab}}).then(function(res){
       toast("💌 时光简报已推送至双方微信！");
@@ -2612,7 +2755,10 @@ document.addEventListener("submit", function(e){
       window_start: $("#s_ws").value, window_end: $("#s_we").value,
       min_gap: +$("#s_mg").value,
       wx_a: $("#s_wxa") ? $("#s_wxa").value.trim() : "",
-      wx_b: $("#s_wxb") ? $("#s_wxb").value.trim() : ""
+      wx_b: $("#s_wxb") ? $("#s_wxb").value.trim() : "",
+      llm_api_base: $("#s_llm_base") ? $("#s_llm_base").value.trim() : "",
+      llm_api_key: $("#s_llm_key") ? $("#s_llm_key").value.trim() : "",
+      llm_model: $("#s_llm_model") ? $("#s_llm_model").value.trim() : "deepseek-chat"
     };
     var pwOld = $("#s_old").value, pwNew = $("#s_new").value;
     api("/api/settings", {method:"POST", body:body}).then(function(){
@@ -2965,7 +3111,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 qs = parse_qs(urlparse(self.path).query)
                 stype = (qs.get("type") or ["day"])[0]
-                return self.send_json(generate_period_summary(stype))
+                force = (qs.get("refresh") or ["0"])[0] == "1"
+                return self.send_json(generate_period_summary(stype, force_refresh=force))
             return self.send_json({"error": "not found"}, 404)
         except Exception:
             self.log_error("GET %s failed: %s", path, sys.exc_info()[1])
@@ -3190,12 +3337,20 @@ class Handler(BaseHTTPRequestHandler):
         nb = str(d.get("name_b") or "").strip()[:30] or users["b"]["name"]
         wx_a = str(d.get("wx_a") or "").strip()[:100]
         wx_b = str(d.get("wx_b") or "").strip()[:100]
+        llm_base = str(d.get("llm_api_base") or "").strip()[:200]
+        llm_key = str(d.get("llm_api_key") or "").strip()[:200]
+        llm_model = str(d.get("llm_model") or "deepseek-chat").strip()[:60]
         with LOCK:
             CONN.execute("UPDATE users SET name=?, week1=?, wx_uid=? WHERE uid='a'", (na, w1(d.get("week1_a")), wx_a))
             CONN.execute("UPDATE users SET name=?, week1=?, wx_uid=? WHERE uid='b'", (nb, w1(d.get("week1_b")), wx_b))
-            for k, v in (("window_start", ws), ("window_end", we), ("min_gap", str(mg))):
+            for k, v in (
+                ("window_start", ws), ("window_end", we), ("min_gap", str(mg)),
+                ("llm_api_base", llm_base), ("llm_api_key", llm_key), ("llm_model", llm_model)
+            ):
                 CONN.execute("INSERT INTO meta(key,value) VALUES(?,?) "
                              "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, v))
+            # 清理历史缓存，使配置的新模型立即生效
+            CONN.execute("DELETE FROM summary_cache")
         return self.send_json({"ok": True})
 
     def change_password(self, d):
