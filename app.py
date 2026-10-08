@@ -1713,6 +1713,13 @@ function modalsHTML(){
 
     '<div class="overlay" id="ovDiaryDay"><div class="modal" id="ovDiaryDayBox"></div></div>' +
 
+    '<div class="overlay" id="ovPhotoViewer" style="background:rgba(0,0,0,0.88);z-index:9999;display:none;align-items:center;justify-content:center">' +
+      '<div style="position:relative;max-width:92vw;max-height:88vh;display:flex;align-items:center;justify-content:center">' +
+        '<img id="pvImage" src="" style="max-width:100%;max-height:85vh;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.5);object-fit:contain">' +
+        '<button type="button" data-act="close-photo" style="position:absolute;top:-18px;right:-18px;background:#ef4444;color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4)">✕</button>' +
+      '</div>' +
+    '</div>' +
+
     '<div class="overlay" id="ovAddDiary"><div class="modal">' +
       '<div class="mhead">' +
         '<div class="mhead-left"><h3 id="df_modal_title">记下今天去哪玩啦 🐾</h3></div>' +
@@ -1804,9 +1811,7 @@ function openDayDiaries(dtStr){
           photosHtml = '<div class="polaroid-gallery">' +
             d.photos.map(function(p){
               return '<div class="polaroid-card">' +
-                '<a href="/photos/' + p.file_name + '" target="_blank">' +
-                  '<img src="/photos/' + p.file_name + '" class="polaroid-img" alt="">' +
-                '</a>' +
+                '<img src="/photos/' + p.file_name + '" class="polaroid-img" alt="" data-act="preview-photo" data-src="/photos/' + p.file_name + '">' +
               '</div>';
             }).join("") +
           '</div>';
@@ -1993,6 +1998,26 @@ document.addEventListener("click", function(e){
     var prev = $("#df_preview");
     if (prev) prev.innerHTML = "";
     $("#ovAddDiary").classList.add("show");
+  }
+  else if (act === "preview-photo"){
+    var src = el.getAttribute("data-src");
+    var pv = $("#ovPhotoViewer");
+    var img = $("#pvImage");
+    if (pv && img && src){
+      img.src = src;
+      pv.style.display = "flex";
+      pv.classList.add("show");
+      try {
+        history.pushState({modal:"photo"}, "");
+      } catch(e){}
+    }
+  }
+  else if (act === "close-photo"){
+    var pv = $("#ovPhotoViewer");
+    if (pv){
+      pv.style.display = "none";
+      pv.classList.remove("show");
+    }
   }
   else if (act === "trigger-upload-photo"){
     var fi = $("#df_files");
@@ -2264,10 +2289,26 @@ document.addEventListener("change", function(e){
 });
 
 document.addEventListener("keydown", function(e){
+  if (e.key === "Escape"){
+    var pv = $("#ovPhotoViewer");
+    if (pv && pv.style.display !== "none"){
+      pv.style.display = "none";
+      pv.classList.remove("show");
+      return;
+    }
+  }
   if (e.target && e.target.id === "cmtText" && e.key === "Enter"){
     e.preventDefault();
     var btn = document.querySelector('[data-act="send-cmt"]');
     if (btn) btn.click();
+  }
+});
+
+window.addEventListener("popstate", function(e){
+  var pv = $("#ovPhotoViewer");
+  if (pv && pv.style.display !== "none"){
+    pv.style.display = "none";
+    pv.classList.remove("show");
   }
 });
 
