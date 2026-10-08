@@ -712,14 +712,33 @@ button,input,select,textarea{font-family:inherit}
   contain:layout style paint;
 }
 
+/* 底部萌系导航栏 */
+.bottom-nav{
+  position:fixed;bottom:12px;left:50%;transform:translateX(-50%);
+  z-index:45;width:calc(100% - 24px);max-width:440px;
+  background:var(--bg-card);border:1.5px solid var(--line-strong);
+  border-radius:28px;box-shadow:var(--shadow-lg);
+  display:flex;align-items:center;justify-content:space-around;
+  padding:6px 8px;backdrop-filter:blur(10px);
+}
+.b-tab{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  flex:1;cursor:pointer;padding:4px 0;border-radius:18px;
+  color:var(--ink-muted);transition:all .18s ease;user-select:none;gap:2px;
+}
+.b-tab .b-ico{font-size:18px;line-height:1}
+.b-tab .b-txt{font-size:11px;font-weight:700;line-height:1}
+.b-tab:hover{color:var(--ink-primary);background:var(--bg-card-subtle)}
+.b-tab.on{
+  color:var(--dog-a-text);background:var(--dog-a-bg);
+}
+.b-tab.on .b-txt{font-weight:800}
+
 /* 顶部导航 */
 .topbar{
-  padding:6px 10px;
-  display:flex;align-items:center;gap:6px;
-  flex-wrap:nowrap;white-space:nowrap;overflow:hidden;
-}
-.icon-btn{
-  flex-shrink:0;padding:4px 8px;font-size:12px;
+  padding:8px 14px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:nowrap;white-space:nowrap;
 }
 .brand{
   display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
@@ -734,7 +753,9 @@ button,input,select,textarea{font-family:inherit}
   color:var(--ink-primary);display:inline-flex;align-items:center;gap:2px;
   white-space:nowrap;
 }
-.spacer{flex:1;min-width:4px}
+.top-actions{
+  display:flex;align-items:center;gap:6px;flex-shrink:0;
+}
 
 /* 用户状态徽章与按钮 */
 .user-pill{
@@ -1152,11 +1173,11 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 
 /* FAB 悬浮添加按钮 */
 .fab{
-  position:fixed;right:22px;bottom:24px;
+  position:fixed;right:20px;bottom:78px;
   background:linear-gradient(135deg, var(--dog-a) 0%, #ff85a2 100%);
   color:#fff;border:none;border-radius:var(--radius-pill);
-  padding:12px 22px;font-size:14.5px;font-weight:800;
-  box-shadow:0 8px 24px rgba(255,96,136,0.4);
+  padding:11px 20px;font-size:14px;font-weight:800;
+  box-shadow:0 8px 24px rgba(255,96,136,0.38);
   cursor:pointer;z-index:30;
   display:inline-flex;align-items:center;gap:6px;
   transition:all .2s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1386,7 +1407,7 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
   .school-badge{font-size:10px;padding:1px 5px}
   .legend-card{font-size:10.5px;gap:6px}
   .modal{padding:18px 16px}
-  .fab{right:16px;bottom:18px;padding:10px 18px;font-size:13.5px}
+  .fab{right:16px;bottom:76px;padding:9px 16px;font-size:13px}
   .anniv-bar{padding:0 6px;margin:2px auto 4px}
   .anniv-capsule{font-size:11px;padding:2px 8px}
 }
@@ -1659,18 +1680,13 @@ function renderMonthApp(){
       '<div class="brand">' +
         '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
         '<span class="brand-title">两人日程 🐾</span>' +
-        '<div class="view-seg">' +
-          '<span class="view-seg-opt' + (CURRENT_VIEW==="week"?" on":"") + '" data-act="switch-view" data-v="week">🗓️ 课表</span>' +
-          '<span class="view-seg-opt' + (CURRENT_VIEW==="month"?" on":"") + '" data-act="switch-view" data-v="month">📔 手账</span>' +
-        '</div>' +
       '</div>' +
-      '<span class="spacer"></span>' +
-      '<button class="p-btn icon-btn" data-act="open-summary" title="时光总结与周报/月报">💌<span class="btn-txt"> 简报</span></button>' +
-      '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
-        (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
-      '</button>' +
-      '<button class="p-btn icon-btn" data-act="open-anniv" title="纪念日与倒计时">💖<span class="btn-txt"> 纪念日</span></button>' +
-      '<button class="p-btn icon-btn" data-act="open-settings" title="设置">⚙️<span class="btn-txt"> 设置</span></button>' +
+      '<div class="top-actions">' +
+        myPill +
+        '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
+          (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
+        '</button>' +
+      '</div>' +
     '</header>' +
   '</div>' +
 
@@ -1692,7 +1708,8 @@ function renderMonthApp(){
     '<div class="month-grid">' + cellsHtml + '</div>' +
   '</div>' +
 
-  '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>' +
+  '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>';
+  html += bottomNavHTML();
   modalsHTML();
 
   $("#app").innerHTML = html;
@@ -1780,24 +1797,22 @@ function renderApp(){
     '</div>';
   }
 
+  var myIsA = ME.uid === "a";
+  var myPill = '<span class="user-pill ' + ME.uid + '">' + (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) + '</span>';
+
   var html =
   '<div class="header-box" id="headerBox">' +
     '<header class="topbar">' +
       '<div class="brand">' +
         '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
         '<span class="brand-title">两人日程 🐾</span>' +
-        '<div class="view-seg">' +
-          '<span class="view-seg-opt' + (CURRENT_VIEW==="week"?" on":"") + '" data-act="switch-view" data-v="week">🗓️ 课表</span>' +
-          '<span class="view-seg-opt' + (CURRENT_VIEW==="month"?" on":"") + '" data-act="switch-view" data-v="month">📔 手账</span>' +
-        '</div>' +
       '</div>' +
-      '<span class="spacer"></span>' +
-      '<button class="p-btn icon-btn" data-act="open-summary" title="时光总结与周报/月报">💌<span class="btn-txt"> 简报</span></button>' +
-      '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
-        (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
-      '</button>' +
-      '<button class="p-btn icon-btn" data-act="open-anniv" title="纪念日与倒计时">💖<span class="btn-txt"> 纪念日</span></button>' +
-      '<button class="p-btn icon-btn" data-act="open-settings" title="设置">⚙️<span class="btn-txt"> 设置</span></button>' +
+      '<div class="top-actions">' +
+        myPill +
+        '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
+          (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
+        '</button>' +
+      '</div>' +
     '</header>' +
 
     '<div class="weekbar-wrap">' +
@@ -1831,10 +1846,33 @@ function renderApp(){
     '</div>' +
   '</div>' +
 
-  '<button class="fab" data-act="open-add">🐾 记新日程 ＋</button>' +
+  '<button class="fab" data-act="open-add">🐾 记新日程 ＋</button>';
+  html += bottomNavHTML();
   modalsHTML();
 
   $("#app").innerHTML = html;
+}
+
+function bottomNavHTML(){
+  var isWeek = CURRENT_VIEW === "week";
+  var isMonth = CURRENT_VIEW === "month";
+  return '<nav class="bottom-nav">' +
+    '<div class="b-tab' + (isWeek ? ' on' : '') + '" data-act="switch-view" data-v="week">' +
+      '<span class="b-ico">🗓️</span><span class="b-txt">课表</span>' +
+    '</div>' +
+    '<div class="b-tab' + (isMonth ? ' on' : '') + '" data-act="switch-view" data-v="month">' +
+      '<span class="b-ico">📔</span><span class="b-txt">手账</span>' +
+    '</div>' +
+    '<div class="b-tab" data-act="open-summary">' +
+      '<span class="b-ico">💌</span><span class="b-txt">时光简报</span>' +
+    '</div>' +
+    '<div class="b-tab" data-act="open-anniv">' +
+      '<span class="b-ico">💖</span><span class="b-txt">纪念日</span>' +
+    '</div>' +
+    '<div class="b-tab" data-act="open-settings">' +
+      '<span class="b-ico">⚙️</span><span class="b-txt">设置</span>' +
+    '</div>' +
+  '</nav>';
 }
 
 function modalsHTML(){
