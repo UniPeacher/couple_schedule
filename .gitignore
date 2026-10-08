@@ -6,12 +6,16 @@ data/
 *.txt
 !requirements.txt
 
-# 备份与临时文件
+# 备份与私有脚本/日志
 *.bak*
 *.tmp
 *.swp
 *.swo
 release_apk/
+*.log
+backup.log
+remote_backup.log
+remote_backup.py
 
 # Python 缓存
 __pycache__/
