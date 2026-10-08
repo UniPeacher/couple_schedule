@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS notifications(
   content       TEXT NOT NULL,
   target_action TEXT DEFAULT '',
   is_read       INTEGER DEFAULT 0,
+  is_pushed     INTEGER DEFAULT 0,
   created_at    TEXT NOT NULL);
 """
 
@@ -435,7 +436,7 @@ def push_system_notice(target_uid, title, content, target_action=""):
         created = time.strftime("%Y-%m-%d %H:%M:%S")
         with LOCK:
             CONN.execute(
-                "INSERT INTO notifications(target_uid, title, content, target_action, is_read, created_at) VALUES(?,?,?,?,0,?)",
+                "INSERT INTO notifications(target_uid, title, content, target_action, is_read, is_pushed, created_at) VALUES(?,?,?,?,0,0,?)",
                 (target_uid, title, clean_content, target_action or "", created)
             )
     except Exception as e:
@@ -513,6 +514,14 @@ def init_db():
         CONN.executescript(SCHEMA)
         try:
             CONN.execute("ALTER TABLE notifications ADD COLUMN target_action TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            CONN.execute("ALTER TABLE notifications ADD COLUMN is_pushed INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            CONN.execute("UPDATE notifications SET is_pushed=1 WHERE is_pushed=0 AND is_read=1")
         except Exception:
             pass
         n_user = CONN.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
@@ -625,7 +634,18 @@ def merge_ivs(ivs):
     return out
 
 
-def week_payload(anchor_iso):
+def get_unread_notifications_count(uid):
+    if not uid:
+        return 0
+    try:
+        with LOCK:
+            row = CONN.execute("SELECT COUNT(*) c FROM notifications WHERE target_uid=? AND is_read=0", (uid,)).fetchone()
+            return row["c"] if row else 0
+    except Exception:
+        return 0
+
+
+def week_payload(anchor_iso, uid=None):
     anchor = date.fromisoformat(anchor_iso)
     mon = monday_of(anchor)
     days = [mon + timedelta(days=i) for i in range(7)]
@@ -641,11 +661,11 @@ def week_payload(anchor_iso):
     out_days = []
     for d in days:
         per = {}
-        for uid in ("a", "b"):
-            u = users[uid]
+        for u_id in ("a", "b"):
+            u = users[u_id]
             evs, ivs = [], []
             for ev in events:
-                if ev["uid"] != uid or not occurs_on(ev, d, u["week1"]):
+                if ev["uid"] != u_id or not occurs_on(ev, d, u["week1"]):
                     continue
                 evs.append({
                     "id": ev["id"], "title": ev["title"], "location": ev["location"],
@@ -655,7 +675,7 @@ def week_payload(anchor_iso):
                 })
                 ivs.append([t2m(ev["tstart"]), t2m(ev["tend"])])
             evs.sort(key=lambda x: (x["tstart"], x["tend"]))
-            per[uid] = {"events": evs, "busy": merge_ivs(ivs)}
+            per[u_id] = {"events": evs, "busy": merge_ivs(ivs)}
         both = merge_ivs(per["a"]["busy"] + per["b"]["busy"])
         free, cur = [], ws
         for s, e in both:
@@ -682,8 +702,8 @@ def week_payload(anchor_iso):
     return {
         "week_start": days[0].isoformat(),
         "week_end": days[-1].isoformat(),
-        "users": {uid: {"name": u["name"], "week1": u["week1"], "wx_uid": u.get("wx_uid", "")} for uid, u in users.items()},
-        "weeknums": {uid: week_num(u["week1"], mon) for uid, u in users.items()},
+        "users": {u_id: {"name": u["name"], "week1": u["week1"], "wx_uid": u.get("wx_uid", "")} for u_id, u in users.items()},
+        "weeknums": {u_id: week_num(u["week1"], mon) for u_id, u in users.items()},
         "settings": {
             "window_start": m2t(ws), "window_end": m2t(we), "min_gap": min_gap,
             "llm_api_base": get_setting("llm_api_base", ""),
@@ -692,6 +712,7 @@ def week_payload(anchor_iso):
         },
         "days": out_days,
         "anniversaries": get_anniversaries(),
+        "unread_count": get_unread_notifications_count(uid),
     }
 
 
@@ -883,13 +904,74 @@ button,input,select,textarea{font-family:inherit}
   flex:1;cursor:pointer;padding:4px 0;border-radius:18px;
   color:var(--ink-muted);transition:all .18s ease;user-select:none;gap:2px;
 }
-.b-tab .b-ico{font-size:18px;line-height:1}
+.b-tab .b-ico{font-size:18px;line-height:1;position:relative;display:inline-flex;align-items:center;justify-content:center}
 .b-tab .b-txt{font-size:11px;font-weight:700;line-height:1}
 .b-tab:hover{color:var(--ink-primary);background:var(--bg-card-subtle)}
 .b-tab.on{
   color:var(--dog-a-text);background:var(--dog-a-bg);
 }
 .b-tab.on .b-txt{font-weight:800}
+
+/* 底部导航未读角标 */
+.b-badge{
+  position:absolute;top:-6px;right:-10px;
+  background:#ff4757;color:#ffffff;
+  font-size:9.5px;font-weight:900;line-height:1;
+  padding:2.5px 4.5px;border-radius:10px;
+  min-width:15px;height:14px;
+  box-sizing:border-box;
+  display:inline-flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 5px rgba(255,71,87,0.4);
+  border:1.5px solid var(--bg-card);
+  pointer-events:none;
+}
+
+/* 消息中心卡片样式 */
+.msg-card{
+  background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:16px;
+  padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow-sm);
+  cursor:pointer;transition:all .18s ease;display:flex;flex-direction:column;gap:6px;
+  position:relative;
+}
+.msg-card:hover{
+  border-color:var(--dog-a-bd);transform:translateY(-1px);box-shadow:var(--shadow-md);
+}
+.msg-card.unread{
+  border-color:var(--dog-a-bd);background:var(--dog-a-bg);
+  box-shadow:0 2px 10px rgba(234,138,21,0.08);
+}
+.msg-card-top{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+}
+.msg-card-title{
+  font-size:13.5px;font-weight:800;color:var(--ink-primary);display:flex;align-items:center;gap:6px;
+}
+.msg-unread-tag{
+  background:#ff4757;color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:6px;
+}
+.msg-card-time{
+  font-size:11px;color:var(--ink-muted);font-weight:600;flex-shrink:0;
+}
+.msg-card-body{
+  font-size:12.5px;color:var(--ink-secondary);line-height:1.5;word-break:break-word;
+}
+.msg-card-footer{
+  display:flex;align-items:center;justify-content:space-between;margin-top:2px;
+}
+.msg-action-hint{
+  font-size:11px;color:var(--dog-a-text);font-weight:700;
+}
+.msg-btn-sm{
+  border:1px solid var(--line-strong);background:var(--bg-card);border-radius:8px;
+  font-size:10.5px;font-weight:700;color:var(--ink-secondary);padding:2px 7px;
+  cursor:pointer;transition:all .15s ease;
+}
+.msg-btn-sm:hover{
+  background:var(--bg-card-subtle);border-color:var(--dog-a-bd);color:var(--dog-a-text);
+}
+.msg-btn-sm.del:hover{
+  border-color:#ff4757;color:#ff4757;
+}
 
 /* 顶部导航 */
 .topbar{
@@ -1608,13 +1690,33 @@ var ME = null, DATA = null, ANCHOR = null, META = null;
   } catch(e){}
 })();
 
-var CURRENT_VIEW = "week"; // "week" | "month"
+var CURRENT_VIEW = "week"; // "week" | "month" | "summary" | "messages" | "anniv" | "settings"
 var MONTH_ANCHOR = todayISO().slice(0, 7); // YYYY-MM
 var MONTH_DATA = null;
+var UNREAD_COUNT = 0;
+var MESSAGES_DATA = [];
+var curMsgFilter = "all";
 var diaryPhotosToUpload = []; // base64 list
 var curEditingDiary = null;
 var activeDiaryDate = "";
 var addUid = "a", addRep = "weekly", loginUid = "a", annivType = "love";
+
+function setUnreadCount(count){
+  UNREAD_COUNT = Math.max(0, parseInt(count) || 0);
+  var badge = $("#bUnreadBadge");
+  if (badge){
+    if (UNREAD_COUNT > 0){
+      badge.textContent = UNREAD_COUNT > 99 ? "99+" : UNREAD_COUNT;
+      badge.style.display = "inline-flex";
+    } else {
+      badge.style.display = "none";
+    }
+  }
+  var unreadTab = document.querySelector('#msgFilterSeg .opt[data-v="unread"]');
+  if (unreadTab){
+    unreadTab.textContent = '未读' + (UNREAD_COUNT > 0 ? ' (' + UNREAD_COUNT + ')' : '');
+  }
+}
 
 function $(s){ return document.querySelector(s); }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
@@ -1688,8 +1790,13 @@ function load(opts){
     }
     return api("/api/month?month=" + MONTH_ANCHOR).then(function(j){
       MONTH_DATA = j;
+      if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
       render();
     }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
+  } else if (CURRENT_VIEW === "messages"){
+    render();
+    if (silent) return Promise.resolve();
+    return Promise.resolve();
   } else if (CURRENT_VIEW === "summary" || CURRENT_VIEW === "anniv" || CURRENT_VIEW === "settings"){
     if (DATA){
       render();
@@ -1698,6 +1805,7 @@ function load(opts){
     }
     return api("/api/week?date=" + ANCHOR).then(function(j){
       DATA = j;
+      if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
       render();
     }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
   } else {
@@ -1707,10 +1815,14 @@ function load(opts){
     }
     return api("/api/week?date=" + ANCHOR).then(function(j){
       DATA = j;
+      if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
       render();
       // 预取月历手账数据，实现后续点击零延迟秒开
       if (!MONTH_DATA){
-        api("/api/month?month=" + MONTH_ANCHOR).then(function(mj){ MONTH_DATA = mj; }).catch(function(){});
+        api("/api/month?month=" + MONTH_ANCHOR).then(function(mj){
+          MONTH_DATA = mj;
+          if (mj && mj.unread_count !== undefined) setUnreadCount(mj.unread_count);
+        }).catch(function(){});
       }
     }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
   }
@@ -1761,6 +1873,7 @@ function render(){
   if (!ME){ renderLogin(); } else {
     if (CURRENT_VIEW === "month") renderMonthApp();
     else if (CURRENT_VIEW === "summary") renderSummaryPage();
+    else if (CURRENT_VIEW === "messages") renderMessagesPage();
     else if (CURRENT_VIEW === "anniv") renderAnnivPage();
     else if (CURRENT_VIEW === "settings") renderSettingsPage();
     else renderApp();
@@ -1854,6 +1967,111 @@ function renderSummaryPage(){
   html += modalsHTML();
   $("#app").innerHTML = html;
   loadSummary(curSummaryTab);
+}
+
+function renderMessagesPage(){
+  var html = renderTopBar() +
+    '<div class="page-container">' +
+      '<div class="page-header-card">' +
+        '<div>' +
+          '<div class="page-header-title">💬 汪汪信箱 · 消息通知</div>' +
+          '<div class="page-header-desc">🐾 日程变动、温馨留言与手账动态提醒</div>' +
+        '</div>' +
+        '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-wave.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+      '</div>' +
+
+      '<div class="page-main-card">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">' +
+          '<div class="seg" id="msgFilterSeg" style="max-width:200px;margin-bottom:0">' +
+            '<div class="opt' + (curMsgFilter==="all"?" on":"") + '" data-act="msg-filter" data-v="all">全部</div>' +
+            '<div class="opt' + (curMsgFilter==="unread"?" on":"") + '" data-act="msg-filter" data-v="unread">未读' + (UNREAD_COUNT > 0 ? ' (' + UNREAD_COUNT + ')' : '') + '</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:6px">' +
+            '<button type="button" class="p-btn" data-act="read-all-msgs" style="font-size:11.5px;padding:4px 10px" title="将所有未读消息标记为已读">✨ 一键已读</button>' +
+            '<button type="button" class="p-btn" data-act="clear-read-msgs" style="font-size:11.5px;padding:4px 10px" title="清理所有已读通知">🧹 清理已读</button>' +
+            '<button type="button" class="p-btn" data-act="refresh-msgs" style="font-size:11.5px;padding:4px 8px" title="刷新消息列表">🔄</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="messagesListContainer"></div>' +
+      '</div>' +
+    '</div>';
+
+  html += bottomNavHTML();
+  html += modalsHTML();
+  $("#app").innerHTML = html;
+  loadMessages();
+}
+
+function loadMessages(){
+  var box = $("#messagesListContainer");
+  if (box && (!MESSAGES_DATA || MESSAGES_DATA.length === 0)){
+    box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted);font-weight:700">🐶 正在拉取信箱通知...</div>';
+  }
+  api("/api/messages").then(function(res){
+    if (res && res.ok){
+      MESSAGES_DATA = res.messages || [];
+      setUnreadCount(res.unread_count);
+      renderMessagesList();
+    }
+  }).catch(function(err){
+    if (box) box.innerHTML = '<div style="color:red;padding:20px 0;text-align:center">加载失败：' + esc(err.message) + '</div>';
+  });
+}
+
+function renderMessagesList(){
+  var box = $("#messagesListContainer");
+  if (!box) return;
+  var list = MESSAGES_DATA || [];
+  if (curMsgFilter === "unread"){
+    list = list.filter(function(m){ return !m.is_read; });
+  }
+  if (list.length === 0){
+    box.innerHTML = '<div style="text-align:center;padding:40px 10px;color:var(--ink-muted)">' +
+      '<div style="width:72px;height:72px;margin:0 auto 10px;opacity:0.85"><img src="/img/dogrest.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+      '<div style="font-size:14px;font-weight:800;color:var(--ink-primary);margin-bottom:4px">' + (curMsgFilter==="unread" ? "太棒啦，所有消息都已读完汪~ 🎉" : "信箱空空如也汪~ 📭") + '</div>' +
+      '<div style="font-size:12px;opacity:0.8">对方添加新日程、发表留言或更新手账时，都会第一时间在这里提醒你 🐾</div>' +
+    '</div>';
+    return;
+  }
+
+  box.innerHTML = list.map(function(m){
+    var isUnread = !m.is_read;
+    var icon = "🔔";
+    if (m.title.indexOf("留言") !== -1 || m.content.indexOf("留言") !== -1) icon = "💬";
+    else if (m.title.indexOf("日程") !== -1 || m.content.indexOf("日程") !== -1) icon = "🗓️";
+    else if (m.title.indexOf("手账") !== -1 || m.content.indexOf("手账") !== -1) icon = "📔";
+    else if (m.title.indexOf("信") !== -1 || m.title.indexOf("简报") !== -1) icon = "💌";
+    else if (m.title.indexOf("测试") !== -1) icon = "🐶";
+
+    var actionHint = "";
+    if (m.target_action){
+      if (m.target_action.indexOf("event:") === 0) actionHint = '<span class="msg-action-hint">查看相关日程 ➜</span>';
+      else if (m.target_action.indexOf("diary:") === 0) actionHint = '<span class="msg-action-hint">查看相关手账 ➜</span>';
+      else if (m.target_action.indexOf("view:summary") === 0) actionHint = '<span class="msg-action-hint">查看时光简报 ➜</span>';
+      else if (m.target_action.indexOf("view:settings") === 0) actionHint = '<span class="msg-action-hint">前往设置 ➜</span>';
+    }
+
+    var timeStr = esc(m.created_at || "");
+
+    return '<div class="msg-card' + (isUnread ? ' unread' : '') + '" data-act="open-msg" data-mid="' + m.id + '" data-target-action="' + esc(m.target_action || "") + '">' +
+      '<div class="msg-card-top">' +
+        '<div class="msg-card-title">' +
+          '<span>' + icon + '</span>' +
+          '<span>' + esc(m.title) + '</span>' +
+          (isUnread ? '<span class="msg-unread-tag">NEW</span>' : '') +
+        '</div>' +
+        '<div class="msg-card-time">' + timeStr + '</div>' +
+      '</div>' +
+      '<div class="msg-card-body">' + esc(m.content) + '</div>' +
+      '<div class="msg-card-footer">' +
+        '<div>' + actionHint + '</div>' +
+        '<div style="display:flex;gap:6px" onclick="event.stopPropagation()">' +
+          (isUnread ? '<button type="button" class="msg-btn-sm" data-act="read-one-msg" data-mid="' + m.id + '" title="标为已读">✓ 标为已读</button>' : '') +
+          '<button type="button" class="msg-btn-sm del" data-act="del-one-msg" data-mid="' + m.id + '" title="删除此消息">🗑️</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join("");
 }
 
 function renderAnnivPage(){
@@ -1977,6 +2195,15 @@ function renderSettingsPage(){
               '<div class="opt' + (!document.documentElement.classList.contains("dark") ? " on" : "") + '" data-act="set-theme" data-theme="light">☀️ 浅色温暖</div>' +
               '<div class="opt' + (document.documentElement.classList.contains("dark") ? " on" : "") + '" data-act="set-theme" data-theme="dark">🌙 暗夜黑夜</div>' +
             '</div>' +
+          '</div>' +
+
+          '<div class="field" style="margin-top:16px"><label>💖 纪念日与倒计时</label></div>' +
+          '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:14px" data-act="open-anniv-list">' +
+            '<div>' +
+              '<div style="font-size:13.5px;font-weight:800;color:var(--ink-primary)">💖 管理纪念日与倒计时列表</div>' +
+              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">相恋天数累计、生日倒计时与重要日子管理</div>' +
+            '</div>' +
+            '<span style="font-size:12px;color:var(--dog-a-text);font-weight:800">前往 ➜</span>' +
           '</div>' +
 
           '<div class="field" style="margin-top:16px"><label>修改当前身份（' + esc(ME.name) + '）密码</label></div>' +
@@ -2278,8 +2505,8 @@ function bottomNavHTML(){
     '<div class="b-tab' + (v === "summary" ? ' on' : '') + '" data-act="switch-view" data-v="summary">' +
       '<span class="b-ico">💌</span><span class="b-txt">时光简报</span>' +
     '</div>' +
-    '<div class="b-tab' + (v === "anniv" ? ' on' : '') + '" data-act="switch-view" data-v="anniv">' +
-      '<span class="b-ico">💖</span><span class="b-txt">纪念日</span>' +
+    '<div class="b-tab' + (v === "messages" ? ' on' : '') + '" data-act="switch-view" data-v="messages">' +
+      '<span class="b-ico">💬' + (UNREAD_COUNT > 0 ? ('<span class="b-badge" id="bUnreadBadge">' + (UNREAD_COUNT > 99 ? '99+' : UNREAD_COUNT) + '</span>') : '<span class="b-badge" id="bUnreadBadge" style="display:none"></span>') + '</span><span class="b-txt">消息</span>' +
     '</div>' +
     '<div class="b-tab' + (v === "settings" ? ' on' : '') + '" data-act="switch-view" data-v="settings">' +
       '<span class="b-ico">⚙️</span><span class="b-txt">设置</span>' +
@@ -2908,15 +3135,76 @@ document.addEventListener("click", function(e){
       document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
       ME = null; render();
     });
-  } else if (act === "test-app-notice"){
+  else if (act === "msg-filter"){
+    curMsgFilter = el.getAttribute("data-v") || "all";
+    document.querySelectorAll("#msgFilterSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-v") === curMsgFilter);
+    });
+    renderMessagesList();
+  }
+  else if (act === "read-all-msgs"){
+    api("/api/messages/read", {method:"POST", body:{all:true}}).then(function(res){
+      toast("已全部标为已读 ✨");
+      if (res && res.unread_count !== undefined) setUnreadCount(res.unread_count);
+      else setUnreadCount(0);
+      (MESSAGES_DATA || []).forEach(function(m){ m.is_read = 1; });
+      renderMessagesList();
+    }).catch(function(err){ toast(err.message || "操作失败"); });
+  }
+  else if (act === "clear-read-msgs"){
+    if (!confirm("确定清理所有已读通知？")) return;
+    api("/api/messages/delete", {method:"POST", body:{clear_read:true}}).then(function(res){
+      toast("已清理已读通知 🧹");
+      loadMessages();
+    }).catch(function(err){ toast(err.message || "清理失败"); });
+  }
+  else if (act === "refresh-msgs"){
+    loadMessages();
+  }
+  else if (act === "read-one-msg"){
+    var mid = +el.getAttribute("data-mid");
+    api("/api/messages/read", {method:"POST", body:{id:mid}}).then(function(res){
+      if (res && res.unread_count !== undefined) setUnreadCount(res.unread_count);
+      var m = (MESSAGES_DATA || []).find(function(x){ return x.id === mid; });
+      if (m) m.is_read = 1;
+      renderMessagesList();
+    }).catch(function(err){ toast(err.message || "操作失败"); });
+  }
+  else if (act === "del-one-msg"){
+    var mid = +el.getAttribute("data-mid");
+    api("/api/messages/delete", {method:"POST", body:{id:mid}}).then(function(res){
+      toast("已删除消息 🐾");
+      MESSAGES_DATA = (MESSAGES_DATA || []).filter(function(x){ return x.id !== mid; });
+      if (res && res.unread_count !== undefined) setUnreadCount(res.unread_count);
+      renderMessagesList();
+    }).catch(function(err){ toast(err.message || "删除失败"); });
+  }
+  else if (act === "open-msg"){
+    var mid = +el.getAttribute("data-mid");
+    var targetAction = el.getAttribute("data-target-action");
+    var m = (MESSAGES_DATA || []).find(function(x){ return x.id === mid; });
+    if (m && !m.is_read){
+      m.is_read = 1;
+      api("/api/messages/read", {method:"POST", body:{id:mid}}).then(function(res){
+        if (res && res.unread_count !== undefined) setUnreadCount(res.unread_count);
+      }).catch(function(){});
+    }
+    if (targetAction){
+      window.handleTargetAction(targetAction);
+    } else {
+      renderMessagesList();
+    }
+  }
+  else if (act === "test-app-notice"){
     if (window.AndroidApp && window.AndroidApp.postNotification) {
       window.AndroidApp.postNotification("🐾 线条小狗通知测试", "手机原生通知权限已正常开启！后续对方日程与留言都将直接推送给你 🐾");
       toast("已触发手机通知 🐾");
-    } else {
-      api("/api/notifications/test", {method:"POST"}).then(function(){
-        toast("已向后端写入测试通知 🐾");
-      }).catch(function(err){ toast(err.message || "请求失败"); });
     }
+    api("/api/notifications/test", {method:"POST"}).then(function(){
+      if (!window.AndroidApp) toast("已向后端写入测试通知 🐾");
+      pollMessages();
+    }).catch(function(err){ toast(err.message || "请求失败"); });
+  }
   } else if (act === "battery-protect"){
     if (window.AndroidApp && window.AndroidApp.requestBatteryOptimization) {
       window.AndroidApp.requestBatteryOptimization();
@@ -2942,7 +3230,9 @@ document.addEventListener("submit", function(e){
         if (window.AndroidApp && window.AndroidApp.saveAuthUid) {
           window.AndroidApp.saveAuthUid(j.uid);
         }
-        toast("欢迎回家，" + j.name + " 🐾"); load();
+        toast("欢迎回家，" + j.name + " 🐾");
+        if (j.unread_count !== undefined) setUnreadCount(j.unread_count);
+        load().then(function(){ pollMessages(); });
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   } else if (f.id === "addForm"){
@@ -3189,6 +3479,7 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
       }
       load().then(function(){
         if (CURRENT_VIEW === "week") setTimeout(scrollToToday, 100);
+        pollMessages();
       });
     } else {
       render();
@@ -3230,24 +3521,28 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
     }
   };
 
-  function pollNotifications() {
+  function pollMessages() {
     if (!ME) return;
-    api("/api/notifications/poll").then(function(res){
-      if (res && res.ok && res.notifications && res.notifications.length > 0) {
-        res.notifications.forEach(function(item){
-          if (window.AndroidApp && window.AndroidApp.postNotification) {
-            window.AndroidApp.postNotification(item.title, item.content, item.target_action || "");
+    api("/api/messages").then(function(res){
+      if (res && res.ok) {
+        var prevCount = UNREAD_COUNT;
+        setUnreadCount(res.unread_count);
+        if (CURRENT_VIEW === "messages") {
+          MESSAGES_DATA = res.messages || [];
+          renderMessagesList();
+        } else if (res.unread_count > prevCount && prevCount >= 0) {
+          var diff = res.unread_count - prevCount;
+          var latest = (res.messages && res.messages[0]) ? res.messages[0] : null;
+          if (latest) {
+            toast("🔔 " + latest.title + "\n" + latest.content);
           } else {
-            toast(item.title + ": " + item.content);
-            if (item.target_action) {
-              window.handleTargetAction(item.target_action);
-            }
+            toast("🐾 收到 " + diff + " 条新消息提醒！");
           }
-        });
+        }
       }
     }).catch(function(){});
   }
-  setInterval(pollNotifications, 25000);
+  setInterval(pollMessages, 15000);
 </script>
 </body>
 </html>
@@ -3350,7 +3645,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not uid:
                     return self.send_json({"error": "未登录"}, 401)
                 users = get_users()
-                return self.send_json({"uid": uid, "name": users[uid]["name"]})
+                return self.send_json({
+                    "uid": uid,
+                    "name": users[uid]["name"],
+                    "unread_count": get_unread_notifications_count(uid)
+                })
             if path.startswith("/photos/"):
                 fn = os.path.basename(path[8:])
                 fp = os.path.join(PHOTOS_DIR, fn)
@@ -3363,6 +3662,7 @@ class Handler(BaseHTTPRequestHandler):
                                                extra=[("Cache-Control", "public, max-age=604800")])
                 return self.send_json({"error": "not found"}, 404)
             if path == "/api/week":
+                uid = self.authed()
                 if self.authed() is None:
                     return
                 qs = parse_qs(urlparse(self.path).query)
@@ -3373,15 +3673,16 @@ class Handler(BaseHTTPRequestHandler):
                     date.fromisoformat(d)
                 except ValueError:
                     return self.send_json({"error": "日期格式无效"}, 400)
-                return self.send_json(week_payload(d))
+                return self.send_json(week_payload(d, uid=uid))
             if path == "/api/month":
+                uid = self.authed()
                 if self.authed() is None:
                     return
                 qs = parse_qs(urlparse(self.path).query)
                 ym = (qs.get("month") or [""])[0]
                 if not re.match(r"^\d{4}-\d{2}$", ym):
                     ym = date.today().strftime("%Y-%m")
-                return self.send_json(self.month_payload(ym))
+                return self.send_json(self.month_payload(ym, uid=uid))
             if path == "/api/diaries":
                 if self.authed() is None:
                     return
@@ -3395,6 +3696,24 @@ class Handler(BaseHTTPRequestHandler):
                 stype = (qs.get("type") or ["day"])[0]
                 force = (qs.get("refresh") or ["0"])[0] == "1"
                 return self.send_json(generate_period_summary(stype, force_refresh=force))
+            if path in ("/api/messages", "/api/notifications"):
+                uid = self.authed()
+                if uid is None:
+                    return
+                with LOCK:
+                    cnt = CONN.execute(
+                        "SELECT COUNT(*) c FROM notifications WHERE target_uid=? AND is_read=0",
+                        (uid,)
+                    ).fetchone()["c"]
+                    rows = CONN.execute(
+                        "SELECT id, title, content, target_action, is_read, created_at FROM notifications WHERE target_uid=? ORDER BY id DESC LIMIT 100",
+                        (uid,)
+                    ).fetchall()
+                return self.send_json({
+                    "ok": True,
+                    "unread_count": cnt,
+                    "messages": [dict(r) for r in rows]
+                })
             if path == "/api/notifications/poll":
                 uid = self.current_uid()
                 if not uid:
@@ -3404,13 +3723,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"ok": True, "notifications": []})
                 with LOCK:
                     rows = CONN.execute(
-                        "SELECT id, title, content, target_action, created_at FROM notifications WHERE target_uid=? AND is_read=0 ORDER BY id ASC",
+                        "SELECT id, title, content, target_action, is_read, created_at FROM notifications WHERE target_uid=? AND is_pushed=0 ORDER BY id ASC",
                         (uid,)
                     ).fetchall()
                     if rows:
                         ids = [r["id"] for r in rows]
                         q_marks = ",".join("?" * len(ids))
-                        CONN.execute(f"UPDATE notifications SET is_read=1 WHERE id IN ({q_marks})", ids)
+                        CONN.execute(f"UPDATE notifications SET is_pushed=1 WHERE id IN ({q_marks})", ids)
                 return self.send_json({"ok": True, "notifications": [dict(r) for r in rows]})
             return self.send_json({"error": "not found"}, 404)
         except Exception:
@@ -3434,8 +3753,12 @@ class Handler(BaseHTTPRequestHandler):
                     secure = (self.headers.get("X-Forwarded-Proto") == "https")
                     cookie = "%s=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%d%s" % (
                         COOKIE, token, SESSION_DAYS * 86400, "; Secure" if secure else "")
-                    return self.send_json({"ok": True, "uid": uid, "name": users[uid]["name"]},
-                                          extra=[("Set-Cookie", cookie)])
+                    return self.send_json({
+                        "ok": True,
+                        "uid": uid,
+                        "name": users[uid]["name"],
+                        "unread_count": get_unread_notifications_count(uid)
+                    }, extra=[("Set-Cookie", cookie)])
                 rate_fail(ip)
                 time.sleep(0.4)
                 return self.send_json({"error": "身份或密码不正确"}, 401)
@@ -3443,6 +3766,43 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/logout":
                 cookie = "%s=deleted; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" % COOKIE
                 return self.send_json({"ok": True}, extra=[("Set-Cookie", cookie)])
+
+            if path in ("/api/messages/read", "/api/notifications/read"):
+                uid = self.authed()
+                if uid is None:
+                    return
+                mark_all = d.get("all")
+                mid = d.get("id")
+                with LOCK:
+                    if mark_all:
+                        CONN.execute("UPDATE notifications SET is_read=1 WHERE target_uid=?", (uid,))
+                    elif mid:
+                        CONN.execute("UPDATE notifications SET is_read=1 WHERE target_uid=? AND id=?", (uid, int(mid)))
+                    cnt = CONN.execute(
+                        "SELECT COUNT(*) c FROM notifications WHERE target_uid=? AND is_read=0",
+                        (uid,)
+                    ).fetchone()["c"]
+                return self.send_json({"ok": True, "unread_count": cnt})
+
+            if path in ("/api/messages/delete", "/api/notifications/delete"):
+                uid = self.authed()
+                if uid is None:
+                    return
+                del_all = d.get("all")
+                clear_read = d.get("clear_read")
+                mid = d.get("id")
+                with LOCK:
+                    if clear_read:
+                        CONN.execute("DELETE FROM notifications WHERE target_uid=? AND is_read=1", (uid,))
+                    elif del_all:
+                        CONN.execute("DELETE FROM notifications WHERE target_uid=?", (uid,))
+                    elif mid:
+                        CONN.execute("DELETE FROM notifications WHERE target_uid=? AND id=?", (uid, int(mid)))
+                    cnt = CONN.execute(
+                        "SELECT COUNT(*) c FROM notifications WHERE target_uid=? AND is_read=0",
+                        (uid,)
+                    ).fetchone()["c"]
+                return self.send_json({"ok": True, "unread_count": cnt})
 
             if path == "/api/notifications/test":
                 uid = self.current_uid()
@@ -3722,7 +4082,7 @@ class Handler(BaseHTTPRequestHandler):
             CONN.execute("DELETE FROM anniversaries WHERE id=?", (aid,))
         return self.send_json({"ok": True})
 
-    def month_payload(self, ym):
+    def month_payload(self, ym, uid=None):
         # ym: YYYY-MM
         users = get_users()
         with LOCK:
@@ -3747,7 +4107,8 @@ class Handler(BaseHTTPRequestHandler):
             "diaries_by_date": by_date,
             "total_count": len(diaries),
             "anniversaries": annivs,
-            "users": {u: {"name": users[u]["name"], "wx_uid": users[u].get("wx_uid", "")} for u in ("a", "b")}
+            "users": {u: {"name": users[u]["name"], "wx_uid": users[u].get("wx_uid", "")} for u in ("a", "b")},
+            "unread_count": get_unread_notifications_count(uid),
         }
 
     def get_diaries_by_date(self, dt):
