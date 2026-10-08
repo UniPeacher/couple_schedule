@@ -33,15 +33,17 @@ public class NotificationHelper {
             channel.setLightColor(Color.parseColor("#ff9bb2"));
             manager.createNotificationChannel(channel);
 
-            // 2. 低优先级保活渠道（静默常驻，防止系统杀后台，无声音震动）
+            // 2. 低优先级保活渠道（设为 MIN 最低静默级别，完全不占通知栏大卡片，不显示角标）
             NotificationChannel keepaliveChannel = new NotificationChannel(
                     KEEPALIVE_CHANNEL_ID,
                     KEEPALIVE_CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_MIN
             );
             keepaliveChannel.setDescription("用于在后台静默保持二人日程与留言及时触达");
             keepaliveChannel.enableVibration(false);
             keepaliveChannel.setSound(null, null);
+            keepaliveChannel.setShowBadge(false);
+            keepaliveChannel.setLockscreenVisibility(android.app.Notification.VISIBILITY_SECRET);
             manager.createNotificationChannel(keepaliveChannel);
         }
     }
@@ -59,7 +61,8 @@ public class NotificationHelper {
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle("🐾 线条小狗日程守护中")
                 .setContentText("正在后台守护二人日程与留言实时提醒")
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setPriority(NotificationCompat.PRIORITY_MIN)
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET)
                 .setOngoing(true)
                 .setContentIntent(pendingIntent)
                 .build();
