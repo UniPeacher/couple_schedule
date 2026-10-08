@@ -2162,7 +2162,7 @@ function renderMessagesList(){
       '<div class="msg-card-body">' + esc(m.content) + '</div>' +
       '<div class="msg-card-footer">' +
         '<div>' + actionHint + '</div>' +
-        '<div style="display:flex;gap:6px" onclick="event.stopPropagation()">' +
+        '<div style="display:flex;gap:6px">' +
           (isUnread ? '<button type="button" class="msg-btn-sm" data-act="read-one-msg" data-mid="' + m.id + '" title="标为已读">✓ 标为已读</button>' : '') +
           '<button type="button" class="msg-btn-sm del" data-act="del-one-msg" data-mid="' + m.id + '" title="删除此消息">🗑️</button>' +
         '</div>' +
@@ -3473,9 +3473,7 @@ document.addEventListener("click", function(e){
     var mid = +el.getAttribute("data-mid");
     api("/api/messages/delete", {method:"POST", body:{id:mid}}).then(function(res){
       toast("已删除消息 🐾");
-      MESSAGES_DATA = (MESSAGES_DATA || []).filter(function(x){ return x.id !== mid; });
-      if (res && res.unread_count !== undefined) setUnreadCount(res.unread_count);
-      renderMessagesList();
+      loadMessages();
     }).catch(function(err){ toast(err.message || "删除失败"); });
   }
   else if (act === "open-msg"){
@@ -4202,7 +4200,7 @@ class Handler(BaseHTTPRequestHandler):
                         CONN.execute("DELETE FROM notifications WHERE target_uid=? AND is_read=1", (uid,))
                     elif del_all:
                         CONN.execute("DELETE FROM notifications WHERE target_uid=?", (uid,))
-                    elif mid:
+                    elif mid is not None:
                         CONN.execute("DELETE FROM notifications WHERE target_uid=? AND id=?", (uid, int(mid)))
                     cnt = CONN.execute(
                         "SELECT COUNT(*) c FROM notifications WHERE target_uid=? AND is_read=0",
