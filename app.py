@@ -568,9 +568,9 @@ button,input,select,textarea{font-family:inherit}
 
 /* 顶部导航 */
 .topbar{
-  padding:6px 14px;
-  display:flex;align-items:center;gap:8px;
-  flex-wrap:nowrap;white-space:nowrap;
+  padding:6px 10px;
+  display:flex;align-items:center;gap:6px;
+  flex-wrap:nowrap;white-space:nowrap;overflow:hidden;
 }
 .icon-btn{
   flex-shrink:0;padding:4px 8px;font-size:12px;
@@ -1223,13 +1223,13 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
 
 /* 响应式调整 */
 @media (max-width:640px){
-  .topbar{padding:5px 8px;gap:5px}
-  .brand-img{height:20px}
-  .brand-title{font-size:13.5px}
-  .view-seg{margin-left:2px;padding:1.5px}
-  .view-seg-opt{padding:2px 6px;font-size:10.5px}
-  .icon-btn{padding:3px 6px;font-size:11px}
-  .btn-txt{display:none} /* 移动端仅保留图标 ⚙️ / 💖，省出横向空间 */
+  .topbar{padding:5px 6px;gap:4px}
+  .brand-img{height:18px}
+  .brand-title{font-size:13px;letter-spacing:0}
+  .view-seg{margin-left:1px;padding:1px}
+  .view-seg-opt{padding:2px 5px;font-size:10px}
+  .icon-btn{padding:3px 6px;font-size:12px;border-radius:10px}
+  .btn-txt{display:none} /* 移动端仅保留图标，省出横向空间 */
   .spacer{min-width:0}
   .user-pill{padding:2px 7px;font-size:11px}
   .p-btn{padding:3px 7px;font-size:11.5px}
@@ -1737,6 +1737,13 @@ function modalsHTML(){
         '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
           '💡 支持 <strong>虾推啥 (xtuis.cn)</strong>，对方留言或新手账时，微信卡片秒弹并直接显示对方说的话。' +
         '</p>' +
+        '<div class="field" style="margin-top:14px"><label>🌓 外观主题模式</label></div>' +
+        '<div style="margin-bottom:12px">' +
+          '<div class="seg" id="themeSeg">' +
+            '<div class="opt' + (!document.documentElement.classList.contains("dark") ? " on" : "") + '" data-act="set-theme" data-theme="light">☀️ 浅色温暖</div>' +
+            '<div class="opt' + (document.documentElement.classList.contains("dark") ? " on" : "") + '" data-act="set-theme" data-theme="dark">🌙 暗夜黑夜</div>' +
+          '</div>' +
+        '</div>' +
         '<div class="field" style="margin-top:14px"><label>修改当前身份（' + esc(ME.name) + '）密码</label></div>' +
         '<div class="row2">' +
           '<div class="field"><input type="password" id="s_old" placeholder="旧密码（不改留空）" autocomplete="current-password"></div>' +
@@ -2044,6 +2051,21 @@ document.addEventListener("click", function(e){
   else if (act === "next"){ ANCHOR = shiftISO(ANCHOR, 7); load(); }
   else if (act === "today"){ ANCHOR = todayISO(); load(); }
   else if (act === "open-add"){ $("#ovAdd").classList.add("show"); }
+  else if (act === "set-theme"){
+    var theme = el.getAttribute("data-theme");
+    var isDark = theme === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+    try {
+      localStorage.setItem("sched_dark_mode", isDark ? "1" : "0");
+    } catch(e){}
+    document.querySelectorAll("#themeSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-theme") === theme);
+    });
+    var btn = $("#darkToggleBtn");
+    if (btn){
+      btn.innerHTML = isDark ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>';
+    }
+  }
   else if (act === "toggle-dark"){
     var isDark = document.documentElement.classList.toggle("dark");
     try {
