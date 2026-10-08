@@ -1,11 +1,13 @@
 package com.unipeacher.schedule;
 
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import android.widget.Toast;
-
-import androidx.core.content.ContextCompat;
 
 public class WebAppInterface {
     private final Context mContext;
@@ -28,6 +30,30 @@ public class WebAppInterface {
     public void postNotification(String title, String content, String targetAction) {
         int id = (int) (System.currentTimeMillis() % 100000000);
         NotificationHelper.showNotification(mContext, id, title, content, targetAction);
+    }
+
+    @JavascriptInterface
+    public void requestBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                PowerManager pm = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
+                if (pm != null && !pm.isIgnoringBatteryOptimizations(mContext.getPackageName())) {
+                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                    intent.setData(Uri.parse("package:" + mContext.getPackageName()));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    mContext.startActivity(intent);
+                } else {
+                    Toast.makeText(mContext, "已处于电池无限制白名单中 🐾", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    mContext.startActivity(intent);
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     @JavascriptInterface
