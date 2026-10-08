@@ -55,8 +55,8 @@ public class MainActivity extends AppCompatActivity {
         NotificationHelper.createNotificationChannel(this);
         checkNotificationPermission();
 
-        // 调度系统原生 WorkManager 静默后台同步任务（无需常驻前台服务，0 通知栏占用）
-        stopLegacyKeepaliveService();
+        // 调度高频保活服务与周期拉取
+        startKeepaliveService();
         ScheduleSyncWorker.enqueuePeriodicWork(this);
 
         swipeRefresh = findViewById(R.id.swipeRefresh);
@@ -123,10 +123,14 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void stopLegacyKeepaliveService() {
+    private void startKeepaliveService() {
         try {
             Intent serviceIntent = new Intent(this, ScheduleSyncService.class);
-            stopService(serviceIntent);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
         } catch (Exception ignored) {
         }
     }
