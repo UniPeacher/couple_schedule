@@ -1,11 +1,14 @@
 package com.unipeacher.schedule;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
@@ -22,6 +25,8 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 public class MainActivity extends AppCompatActivity {
@@ -29,6 +34,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String PREF_NAME = "schedule_pref";
     private static final String KEY_SERVER_URL = "server_url";
     private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
+    private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 2001;
 
     private WebView webView;
     private SwipeRefreshLayout swipeRefresh;
@@ -41,6 +47,13 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // 初始化通知渠道并动态请求权限
+        NotificationHelper.createNotificationChannel(this);
+        checkNotificationPermission();
+
+        // 调度后台周期拉取服务
+        ScheduleSyncWorker.enqueuePeriodicWork(this);
+
         swipeRefresh = findViewById(R.id.swipeRefresh);
         webView = findViewById(R.id.webView);
 
@@ -49,6 +62,19 @@ public class MainActivity extends AppCompatActivity {
 
         initWebView();
         loadServerUrl();
+    }
+
+    private void checkNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                        this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                        NOTIFICATION_PERMISSION_REQUEST_CODE
+                );
+            }
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -65,6 +91,9 @@ public class MainActivity extends AppCompatActivity {
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
         cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+        // 注入 AndroidApp 桥接接口供网页 JS 交互
+        webView.addJavascriptInterface(new WebAppInterface(this), "AndroidApp");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
