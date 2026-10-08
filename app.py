@@ -1570,7 +1570,7 @@ function renderApp(){
 
   DATA.days.forEach(function(d){
     var isToday = d.date === todayISO();
-    head += '<div class="dh' + (isToday ? ' today' : '') + '">' +
+    head += '<div class="dh' + (isToday ? ' today' : '') + '"' + (isToday ? ' id="colTodayHeader"' : '') + '>' +
       '<div class="dh-title">' +
         '<span class="dh-weekday">' + WD[d.weekday] + '</span>' +
         '<span class="dh-date">' + d.date.slice(5) + '</span>' +
@@ -1583,7 +1583,7 @@ function renderApp(){
     '</div>';
 
     var emptyDay = d.users.a.events.length === 0 && d.users.b.events.length === 0;
-    body += '<div class="dcol" style="height:' + CALH + 'px"><div class="divider"></div>' +
+    body += '<div class="dcol' + (isToday ? ' today' : '') + '"' + (isToday ? ' id="colToday"' : '') + ' style="height:' + CALH + 'px"><div class="divider"></div>' +
       (emptyDay ?
         '<div class="sleepy" title="今天俩汪都没安排，睡大觉~">' +
           '<div class="sleep-box">' +
@@ -1866,6 +1866,19 @@ var curDetail = null;
 var pvPhotosList = [];
 var pvCurrentIndex = 0;
 
+function scrollToToday(){
+  var wrap = document.querySelector(".calwrap");
+  var target = document.querySelector("#colTodayHeader") || document.querySelector("#colToday");
+  if (wrap && target){
+    var offset = target.offsetLeft - 58; // 扣除左侧时间轴宽度
+    if (offset < 0) offset = 0;
+    wrap.scrollTo({
+      left: Math.max(0, offset - 10),
+      behavior: "smooth"
+    });
+  }
+}
+
 function updatePhotoViewer(){
   var img = $("#pvImage");
   var ind = $("#pvIndicator");
@@ -2066,7 +2079,18 @@ document.addEventListener("click", function(e){
     }
   } else if (act === "prev"){ ANCHOR = shiftISO(ANCHOR, -7); DATA = null; load(); }
   else if (act === "next"){ ANCHOR = shiftISO(ANCHOR, 7); DATA = null; load(); }
-  else if (act === "today"){ ANCHOR = todayISO(); DATA = null; load(); }
+  else if (act === "today"){
+    var curT = todayISO();
+    if (ANCHOR === curT){
+      scrollToToday();
+    } else {
+      ANCHOR = curT;
+      DATA = null;
+      load().then(function(){
+        setTimeout(scrollToToday, 60);
+      });
+    }
+  }
   else if (act === "open-add"){ $("#ovAdd").classList.add("show"); }
   else if (act === "set-theme"){
     var theme = el.getAttribute("data-theme");
@@ -2512,7 +2536,15 @@ ANCHOR = todayISO();
 api("/api/meta").then(function(j){ META = j; }).catch(function(){})
   .then(function(){ return api("/api/me").then(function(j){ ME = j; }); })
   .catch(function(){})
-  .then(function(){ if (ME) { load(); } else { render(); } });
+  .then(function(){
+    if (ME) {
+      load().then(function(){
+        if (CURRENT_VIEW === "week") setTimeout(scrollToToday, 100);
+      });
+    } else {
+      render();
+    }
+  });
 </script>
 </body>
 </html>
