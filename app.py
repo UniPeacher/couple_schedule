@@ -2329,8 +2329,9 @@ function renderAnnivPage(){
         '<form id="annivForm">' +
           '<div class="field"><label>日子类型</label>' +
             '<div class="seg" id="annivTypeSeg">' +
-              '<div class="opt on" data-act="anniv-type" data-v="love">💖 相恋/相爱纪念日（累计天数）</div>' +
-              '<div class="opt" data-act="anniv-type" data-v="birthday">🎂 生日/特殊节日（每年倒计时）</div>' +
+              '<div class="opt on" data-act="anniv-type" data-v="love">💖 相恋纪念（累计天数）</div>' +
+              '<div class="opt" data-act="anniv-type" data-v="birthday">🎂 生日/节日（每年倒计时）</div>' +
+              '<div class="opt" data-act="anniv-type" data-v="countdown">⏳ 目标/大事件（单次倒计时）</div>' +
             '</div>' +
           '</div>' +
           '<div class="field"><label>纪念日名称</label><input id="an_title" required maxlength="60" placeholder="如: 我们相恋啦 / 菁宝生日 🎂"></div>' +
@@ -3374,6 +3375,12 @@ document.addEventListener("click", function(e){
       toast("💌 时光简报已成功推送至微信！(已发送至 " + res.sent_count + " 人的微信)");
     }).catch(function(err){
       toast("❌ " + err.message);
+    });
+  }
+  else if (act === "anniv-type"){
+    annivType = el.getAttribute("data-v") || "love";
+    document.querySelectorAll("#annivTypeSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-v") === annivType);
     });
   }
   else if (act === "del-anniv"){
