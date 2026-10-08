@@ -154,10 +154,20 @@ def send_wechat_notice(token, title, content):
     token = token.strip()
     def _do_send():
         try:
-            # 1. 息知 (xizhi, 纯免费微信推送，以 xz 开头或常规字符串)
-            if token.lower().startswith("xz") or len(token) > 20:
-                # 息知接口：https://xizhi.qqoq.net/[KEY].send
-                # 兼容用户贴完整 url 或者单个 key
+            # 1. 优先使用 虾推啥 (xtuis, 纯免费免认证且微信卡片直显标题)
+            # 虾推啥 Token 为 25 位左右的字母数字组合（如 N2gMZytstbsWdeShGQNS9mPC2）
+            if not token.lower().startswith("xz") and not token.lower().startswith("sct") and len(token) >= 20:
+                url = f"https://wx.xtuis.cn/{token}.send"
+                post_data = urllib.parse.urlencode({"text": title, "desp": content}).encode("utf-8")
+                req = urllib.request.Request(
+                    url, data=post_data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0"}
+                )
+                urllib.request.urlopen(req, timeout=8)
+                return
+
+            # 2. 息知 (xizhi)
+            if token.lower().startswith("xz"):
                 actual_key = token
                 if "xizhi.qqoq.net/" in token or "xz.qqoq.net/" in token:
                     actual_key = token.split("/")[-1].replace(".send", "")
@@ -167,24 +177,13 @@ def send_wechat_notice(token, title, content):
                 urllib.request.urlopen(req, timeout=8)
                 return
 
-            # 2. Server酱 (以 sct 开头)
+            # 3. Server酱 (以 sct 开头)
             if token.lower().startswith("sct"):
                 url = f"https://sctapi.ftqq.com/{token}.send"
                 payload = json.dumps({"title": title, "desp": content}).encode("utf-8")
                 req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
                 urllib.request.urlopen(req, timeout=8)
                 return
-
-            # 3. PushPlus 备用
-            url = "http://www.pushplus.plus/send"
-            payload = json.dumps({
-                "token": token,
-                "title": title,
-                "content": content,
-                "template": "html"
-            }).encode("utf-8")
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=8)
         except Exception as e:
             sys.stderr.write(f"WeChat push error: {e}\n")
 
@@ -1662,13 +1661,13 @@ function modalsHTML(){
         '<p style="font-size:11.5px;color:var(--ink-muted);line-height:1.45;margin-top:4px">' +
           '💡 周次与单双周换算基于各自「第1周周一」。两校可分别设定校历起始日期。' +
         '</p>' +
-        '<div class="field" style="margin-top:14px"><label>📲 微信消息提醒（免费免认证·息知/Server酱）</label></div>' +
+        '<div class="field" style="margin-top:14px"><label>📲 微信消息提醒（虾推啥/息知/Server酱）</label></div>' +
         '<div class="row2">' +
-          '<div class="field"><label>🐶 a 微信 Key</label><input id="s_wxa" placeholder="贴入 a 的微信推送Key" value="' + esc((u.a.wx_uid)||"") + '"></div>' +
-          '<div class="field"><label>🐾 b 微信 Key</label><input id="s_wxb" placeholder="贴入 b 的微信推送Key" value="' + esc((u.b.wx_uid)||"") + '"></div>' +
+          '<div class="field"><label>🐶 a 微信 Token</label><input id="s_wxa" placeholder="贴入 a 的微信推送Token" value="' + esc((u.a.wx_uid)||"") + '"></div>' +
+          '<div class="field"><label>🐾 b 微信 Token</label><input id="s_wxb" placeholder="贴入 b 的微信推送Token" value="' + esc((u.b.wx_uid)||"") + '"></div>' +
         '</div>' +
         '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
-          '💡 微信打开 <strong>xz.qqoq.net</strong> 扫码关注即得专属免费 Key（可贴整个链接或XZ开头的Key）。' +
+          '💡 支持 <strong>虾推啥 (xtuis.cn)</strong>，对方留言或新手账时，微信卡片秒弹并直接显示对方说的话。' +
         '</p>' +
         '<div class="field" style="margin-top:14px"><label>修改当前身份（' + esc(ME.name) + '）密码</label></div>' +
         '<div class="row2">' +
