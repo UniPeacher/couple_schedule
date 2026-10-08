@@ -2015,6 +2015,30 @@ function modalsHTML(){
   var s = (DATA && DATA.settings) || {window_start:"08:00",window_end:"22:00",min_gap:20};
   var wStart = (DATA && DATA.week_start) || todayISO();
 
+  var isAdmin = ME && ME.uid === "a";
+  var llmConfigHtml = isAdmin ? (
+    '<div class="field" style="margin-top:14px;display:flex;align-items:center;justify-content:space-between">' +
+      '<label style="margin-bottom:0">🤖 AI 时光小信大模型配置</label>' +
+      '<span style="font-size:10px;background:var(--dog-a-bg);color:var(--dog-a-text);border:1px solid var(--dog-a-bd);padding:1px 6px;border-radius:10px;font-weight:700">👑 管理员专属 (仅需配置一次两人共享)</span>' +
+    '</div>' +
+    '<div class="field"><label>API 基础地址 (Base URL)</label><input id="s_llm_base" placeholder="如: https://api.deepseek.com/v1" value="' + esc(s.llm_api_base||"") + '"></div>' +
+    '<div class="row2">' +
+      '<div class="field"><label>API Key 密钥</label><input type="password" id="s_llm_key" placeholder="sk-..." value="' + esc(s.llm_api_key||"") + '"></div>' +
+      '<div class="field"><label>模型名称 (Model)</label><input id="s_llm_model" placeholder="如: deepseek-chat" value="' + esc(s.llm_model||"deepseek-chat") + '"></div>' +
+    '</div>' +
+    '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
+      '💡 支持 DeepSeek、通义千问、Kimi、OpenAI 等标准兼容 API。配置后两人共同生效！' +
+    '</p>'
+  ) : (
+    '<div class="field" style="margin-top:14px;display:flex;align-items:center;justify-content:space-between">' +
+      '<label style="margin-bottom:0">🤖 AI 时光小信大模型配置</label>' +
+      '<span style="font-size:10px;color:var(--ink-muted)">（已由寰宇管理员统一配置）</span>' +
+    '</div>' +
+    '<p style="font-size:11.5px;color:var(--ink-secondary);background:var(--bg-card-subtle);border:1px dashed var(--line-strong);padding:8px 12px;border-radius:10px;line-height:1.5">' +
+      '🐾 当前小窝已由 <strong>寰宇</strong> 配置守护，时光简报将自动由 AI 为你们两人专属生成，楚菁无需单独配置哦～✨' +
+    '</p>'
+  );
+
   return '<div class="overlay" id="ovAdd"><div class="modal">' +
     '<div class="mhead">' +
       '<div class="mhead-left"><h3>添加日程 🐾</h3></div>' +
@@ -2066,15 +2090,7 @@ function modalsHTML(){
         '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
           '💡 支持 <strong>虾推啥 (xtuis.cn)</strong>，对方留言或新手账时，微信卡片秒弹并直接显示对方说的话。' +
         '</p>' +
-        '<div class="field" style="margin-top:14px"><label>🤖 AI 时光小信大模型配置（OpenAI 通用兼容）</label></div>' +
-        '<div class="field"><label>API 基础地址 (Base URL)</label><input id="s_llm_base" placeholder="如: https://api.deepseek.com/v1" value="' + esc(s.llm_api_base||"") + '"></div>' +
-        '<div class="row2">' +
-          '<div class="field"><label>API Key 密钥</label><input type="password" id="s_llm_key" placeholder="sk-..." value="' + esc(s.llm_api_key||"") + '"></div>' +
-          '<div class="field"><label>模型名称 (Model)</label><input id="s_llm_model" placeholder="如: deepseek-chat" value="' + esc(s.llm_model||"deepseek-chat") + '"></div>' +
-        '</div>' +
-        '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
-          '💡 支持 DeepSeek、通义千问、Kimi、OpenAI 等标准兼容 API。配置后，时光简报将由 AI 以线条小狗口吻深情撰写！' +
-        '</p>' +
+        llmConfigHtml +
         '<div class="field" style="margin-top:14px"><label>🌓 外观主题模式</label></div>' +
         '<div style="margin-bottom:12px">' +
           '<div class="seg" id="themeSeg">' +
@@ -3313,6 +3329,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json({"ok": True, "id": eid})
 
     def save_settings(self, d):
+        uid = self.current_uid()
         users = get_users()
 
         def w1(v):
@@ -3337,20 +3354,27 @@ class Handler(BaseHTTPRequestHandler):
         nb = str(d.get("name_b") or "").strip()[:30] or users["b"]["name"]
         wx_a = str(d.get("wx_a") or "").strip()[:100]
         wx_b = str(d.get("wx_b") or "").strip()[:100]
-        llm_base = str(d.get("llm_api_base") or "").strip()[:200]
-        llm_key = str(d.get("llm_api_key") or "").strip()[:200]
-        llm_model = str(d.get("llm_model") or "deepseek-chat").strip()[:60]
+        
+        # 仅管理员(uid="a", 汤寰宇)有权更新大模型配置
+        llm_meta_updates = []
+        if uid == "a" and "llm_api_base" in d:
+            llm_base = str(d.get("llm_api_base") or "").strip()[:200]
+            llm_key = str(d.get("llm_api_key") or "").strip()[:200]
+            llm_model = str(d.get("llm_model") or "deepseek-chat").strip()[:60]
+            llm_meta_updates = [
+                ("llm_api_base", llm_base),
+                ("llm_api_key", llm_key),
+                ("llm_model", llm_model)
+            ]
+
         with LOCK:
             CONN.execute("UPDATE users SET name=?, week1=?, wx_uid=? WHERE uid='a'", (na, w1(d.get("week1_a")), wx_a))
             CONN.execute("UPDATE users SET name=?, week1=?, wx_uid=? WHERE uid='b'", (nb, w1(d.get("week1_b")), wx_b))
-            for k, v in (
-                ("window_start", ws), ("window_end", we), ("min_gap", str(mg)),
-                ("llm_api_base", llm_base), ("llm_api_key", llm_key), ("llm_model", llm_model)
-            ):
+            for k, v in [("window_start", ws), ("window_end", we), ("min_gap", str(mg))] + llm_meta_updates:
                 CONN.execute("INSERT INTO meta(key,value) VALUES(?,?) "
                              "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, v))
-            # 清理历史缓存，使配置的新模型立即生效
-            CONN.execute("DELETE FROM summary_cache")
+            if llm_meta_updates:
+                CONN.execute("DELETE FROM summary_cache")
         return self.send_json({"ok": True})
 
     def change_password(self, d):
