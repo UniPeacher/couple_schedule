@@ -1082,6 +1082,7 @@ function renderMonthApp(){
         '</div>' +
       '</div>' +
       '<span class="spacer"></span>' +
+      '<button class="p-btn icon-btn" data-act="open-summary" title="时光总结与周报/月报">💌<span class="btn-txt"> 简报</span></button>' +
       '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
         (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
       '</button>' +
@@ -1208,6 +1209,7 @@ function renderApp(){
         '</div>' +
       '</div>' +
       '<span class="spacer"></span>' +
+      '<button class="p-btn icon-btn" data-act="open-summary" title="时光总结与周报/月报">💌<span class="btn-txt"> 简报</span></button>' +
       '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
         (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
       '</button>' +
@@ -1339,6 +1341,23 @@ function modalsHTML(){
         '</div>' +
       '</form></div></div>' +
 
+    '<div class="overlay" id="ovSummary"><div class="modal" style="max-width:520px">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>俩汪时光简报与胶囊 💌</h3></div>' +
+        '<img src="/img/dogheads.png" alt="" class="mhead-img">' +
+      '</div>' +
+      '<div class="seg" id="summaryTabSeg" style="margin-bottom:14px">' +
+        '<div class="opt on" data-act="summary-tab" data-tab="day">🌅 今日晚安</div>' +
+        '<div class="opt" data-act="summary-tab" data-tab="week">💌 心动周报</div>' +
+        '<div class="opt" data-act="summary-tab" data-tab="month">📔 月度胶囊</div>' +
+      '</div>' +
+      '<div id="summaryContentBox" style="min-height:160px;font-size:13.5px;line-height:1.6"></div>' +
+      '<div class="foot" style="justify-content:space-between;align-items:center;margin-top:14px">' +
+        '<button type="button" class="p-btn pri" data-act="send-summary-wx" style="font-size:12px">📲 推送到俩人微信</button>' +
+        '<button type="button" class="p-btn" data-act="close">关闭</button>' +
+      '</div>' +
+    '</div></div>' +
+
     '<div class="overlay" id="ovAnniv"><div class="modal">' +
       '<div class="mhead">' +
         '<div class="mhead-left"><h3>情侣纪念日与倒计时 💖</h3></div>' +
@@ -1454,6 +1473,45 @@ function updatePhotoViewer(){
   if (ind) ind.textContent = (pvCurrentIndex + 1) + " / " + total;
   if (bPrev) bPrev.style.display = total > 1 ? "flex" : "none";
   if (bNext) bNext.style.display = total > 1 ? "flex" : "none";
+}
+
+var curSummaryTab = "day";
+var curSummaryData = null;
+
+function loadSummary(tab){
+  curSummaryTab = tab || "day";
+  var box = $("#summaryContentBox");
+  if (box) box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted)">🐾 正在生成浪漫时光总结...</div>';
+  api("/api/summary?type=" + curSummaryTab).then(function(res){
+    curSummaryData = res;
+    renderSummaryBox();
+  }).catch(function(e){
+    if (box) box.innerHTML = '<div style="color:red;padding:20px 0">加载失败：' + esc(e.message) + '</div>';
+  });
+}
+
+function renderSummaryBox(){
+  var box = $("#summaryContentBox");
+  if (!box || !curSummaryData) return;
+  var d = curSummaryData;
+  var html = '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:16px;padding:14px;box-shadow:var(--shadow-sm)">' +
+    '<div style="font-size:15px;font-weight:800;color:var(--ink-primary);margin-bottom:8px;display:flex;align-items:center;gap:6px">' +
+      '<span>' + esc(d.title) + '</span>' +
+    '</div>' +
+    '<div style="color:var(--ink-secondary);font-size:13px;line-height:1.65;white-space:pre-wrap;margin-bottom:10px">' + esc(d.content) + '</div>';
+
+  if (d.stats && d.stats.length > 0){
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line-strong)">' +
+      d.stats.map(function(s){
+        return '<div style="background:var(--bg-card);border:1px solid var(--line-strong);border-radius:10px;padding:8px;text-align:center">' +
+          '<div style="font-size:11px;color:var(--ink-muted)">' + esc(s.k) + '</div>' +
+          '<div style="font-size:14px;font-weight:800;color:var(--dog-a);margin-top:2px">' + esc(s.v) + '</div>' +
+        '</div>';
+      }).join("") +
+    '</div>';
+  }
+  html += '</div>';
+  box.innerHTML = html;
 }
 
 function renderAnnivList(){
@@ -1813,6 +1871,24 @@ document.addEventListener("click", function(e){
         if (activeDiaryDate) openDayDiaries(activeDiaryDate);
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  }
+  else if (act === "open-summary"){
+    $("#ovSummary").classList.add("show");
+    loadSummary("day");
+  }
+  else if (act === "summary-tab"){
+    var tab = el.getAttribute("data-tab");
+    document.querySelectorAll("#summaryTabSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-tab") === tab);
+    });
+    loadSummary(tab);
+  }
+  else if (act === "send-summary-wx"){
+    api("/api/summary/push", {method:"POST", body:{type: curSummaryTab}}).then(function(res){
+      toast("💌 时光简报已推送至双方微信！");
+    }).catch(function(err){
+      toast("推送失败: " + err.message);
+    });
   }
   else if (act === "open-anniv" || act === "open-anniv-list"){
     renderAnnivList();
