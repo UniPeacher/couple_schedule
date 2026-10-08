@@ -2361,8 +2361,23 @@ document.addEventListener("click", function(e){
   }
   else if (act === "open-settings"){ $("#ovSet").classList.add("show"); }
   else if (act === "switch-view"){
-    CURRENT_VIEW = el.getAttribute("data-v");
-    load();
+    var targetV = el.getAttribute("data-v");
+    if (targetV === "week"){
+      var wasMonth = CURRENT_VIEW === "month";
+      CURRENT_VIEW = "week";
+      var curT = todayISO();
+      // 如果当前周次不是本周，重置为今天所在周
+      if (ANCHOR !== curT){
+        ANCHOR = curT;
+        DATA = null;
+      }
+      load().then(function(){
+        setTimeout(scrollToToday, 60);
+      });
+    } else {
+      CURRENT_VIEW = targetV;
+      load();
+    }
   }
   else if (act === "month-prev"){
     var p = MONTH_ANCHOR.split("-"), y = +p[0], m = +p[1] - 1;
