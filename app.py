@@ -105,6 +105,16 @@ CREATE TABLE IF NOT EXISTS notifications(
   is_read       INTEGER DEFAULT 0,
   is_pushed     INTEGER DEFAULT 0,
   created_at    TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS wishes(
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  creator_uid  TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  category     TEXT DEFAULT 'life',
+  priority     INTEGER DEFAULT 0,
+  note         TEXT DEFAULT '',
+  is_done      INTEGER DEFAULT 0,
+  done_at      TEXT DEFAULT '',
+  created_at   TEXT NOT NULL);
 """
 
 # 首次初始化时预置的两人示例日程（uid, 标题, 地点, 备注, repeat, 星期0-6, 单次日期, 开始, 结束, 周次）
@@ -522,6 +532,21 @@ def init_db():
             pass
         try:
             CONN.execute("UPDATE notifications SET is_pushed=1 WHERE is_pushed=0 AND is_read=1")
+        except Exception:
+            pass
+        try:
+            CONN.execute("""
+            CREATE TABLE IF NOT EXISTS wishes(
+              id           INTEGER PRIMARY KEY AUTOINCREMENT,
+              creator_uid  TEXT NOT NULL,
+              title        TEXT NOT NULL,
+              category     TEXT DEFAULT 'life',
+              priority     INTEGER DEFAULT 0,
+              note         TEXT DEFAULT '',
+              is_done      INTEGER DEFAULT 0,
+              done_at      TEXT DEFAULT '',
+              created_at   TEXT NOT NULL)
+            """)
         except Exception:
             pass
         n_user = CONN.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
@@ -971,6 +996,72 @@ button,input,select,textarea{font-family:inherit}
 }
 .msg-btn-sm.del:hover{
   border-color:#ff4757;color:#ff4757;
+}
+
+/* 心愿备忘录样式 */
+.wish-card{
+  background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:18px;
+  padding:14px 16px;margin-bottom:12px;box-shadow:var(--shadow-sm);
+  transition:all .18s ease;display:flex;align-items:flex-start;gap:12px;position:relative;
+}
+.wish-card:hover{
+  border-color:var(--dog-a-bd);box-shadow:var(--shadow-md);transform:translateY(-1px);
+}
+.wish-card.priority{
+  border-color:var(--dog-a-bd);background:var(--bg-card-subtle);
+  box-shadow:0 3px 12px rgba(234,138,21,0.09);
+}
+.wish-card.done{
+  opacity:0.75;background:var(--free-bg,#f0fdf4);border-color:var(--free-bd,#bbf7d0);
+}
+.wish-card.done .wish-title{
+  text-decoration:line-through;color:var(--ink-muted);
+}
+.wish-check-btn{
+  width:28px;height:28px;border-radius:50%;border:2px solid var(--line-strong);
+  background:var(--bg-card);display:flex;align-items:center;justify-content:center;
+  font-size:13px;cursor:pointer;flex-shrink:0;margin-top:2px;transition:all .18s ease;user-select:none;
+}
+.wish-check-btn:hover{
+  border-color:var(--free-accent,#10b981);transform:scale(1.1);
+}
+.wish-card.done .wish-check-btn{
+  background:var(--free-accent,#10b981);border-color:var(--free-accent,#10b981);color:#fff;
+}
+.wish-content{
+  flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;
+}
+.wish-title-row{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}
+.wish-title{
+  font-size:14.5px;font-weight:800;color:var(--ink-primary);line-height:1.4;
+}
+.wish-cat-tag{
+  font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:8px;
+  background:var(--bg-card-subtle);color:var(--ink-secondary);border:1px solid var(--line-subtle);
+}
+.wish-fire-tag{
+  font-size:10px;font-weight:800;padding:1px 6px;border-radius:6px;
+  background:#fee2e2;color:#ef4444;border:1px solid #fca5a5;
+}
+.wish-note{
+  font-size:12px;color:var(--ink-muted);line-height:1.45;word-break:break-word;
+}
+.wish-meta-row{
+  display:flex;align-items:center;justify-content:space-between;margin-top:4px;
+  font-size:11px;color:var(--ink-muted);flex-wrap:wrap;gap:6px;
+}
+.wish-progress-box{
+  background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:18px;
+  padding:14px 18px;margin-bottom:14px;box-shadow:var(--shadow-sm);
+}
+.wish-progress-bar{
+  height:10px;border-radius:6px;background:var(--line-subtle);overflow:hidden;margin-top:8px;
+}
+.wish-progress-fill{
+  height:100%;border-radius:6px;background:linear-gradient(90deg, var(--dog-a), var(--free-accent,#10b981));
+  transition:width .4s ease;
 }
 
 /* 顶部导航 */
@@ -1690,12 +1781,17 @@ var ME = null, DATA = null, ANCHOR = null, META = null;
   } catch(e){}
 })();
 
-var CURRENT_VIEW = "week"; // "week" | "month" | "summary" | "messages" | "anniv" | "settings"
+var CURRENT_VIEW = "week"; // "week" | "month" | "summary" | "messages" | "wishes" | "anniv" | "settings"
 var MONTH_ANCHOR = todayISO().slice(0, 7); // YYYY-MM
 var MONTH_DATA = null;
 var UNREAD_COUNT = 0;
 var MESSAGES_DATA = [];
 var curMsgFilter = "all";
+var WISHES_DATA = null;
+var curWishFilter = "all";
+var addWishUid = "a";
+var addWishCat = "travel";
+var addWishPrio = 0;
 var diaryPhotosToUpload = []; // base64 list
 var curEditingDiary = null;
 var activeDiaryDate = "";
@@ -1793,7 +1889,7 @@ function load(opts){
       if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
       render();
     }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
-  } else if (CURRENT_VIEW === "messages"){
+  } else if (CURRENT_VIEW === "messages" || CURRENT_VIEW === "wishes"){
     render();
     if (silent) return Promise.resolve();
     return Promise.resolve();
@@ -1874,6 +1970,7 @@ function render(){
     if (CURRENT_VIEW === "month") renderMonthApp();
     else if (CURRENT_VIEW === "summary") renderSummaryPage();
     else if (CURRENT_VIEW === "messages") renderMessagesPage();
+    else if (CURRENT_VIEW === "wishes") renderWishesPage();
     else if (CURRENT_VIEW === "anniv") renderAnnivPage();
     else if (CURRENT_VIEW === "settings") renderSettingsPage();
     else renderApp();
@@ -2074,6 +2171,149 @@ function renderMessagesList(){
   }).join("");
 }
 
+function renderWishesPage(){
+  var html = renderTopBar() +
+    '<div class="page-container">' +
+      '<div class="page-header-card">' +
+        '<div>' +
+          '<div class="page-header-title">✨ 俩汪心愿备忘录</div>' +
+          '<div class="page-header-desc">🐾 一起想去的地方、想吃的美食与心愿清单</div>' +
+        '</div>' +
+        '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-couple.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+      '</div>' +
+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">' +
+        '<div class="seg" style="margin-bottom:0;max-width:240px">' +
+          '<div class="opt" data-act="switch-view" data-v="month">📔 足迹手账</div>' +
+          '<div class="opt on" data-act="switch-view" data-v="wishes">✨ 心愿备忘</div>' +
+        '</div>' +
+        '<button class="p-btn pri" data-act="open-add-wish" style="font-size:12px;padding:6px 14px">✨ 许新心愿 ＋</button>' +
+      '</div>' +
+
+      '<div class="wish-progress-box" id="wishProgressBox">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:800;color:var(--ink-primary)">' +
+          '<span id="wishProgressText">🐶 正在统计俩汪心愿进度...</span>' +
+          '<span id="wishProgressPct" style="color:var(--dog-a-text)">0%</span>' +
+        '</div>' +
+        '<div class="wish-progress-bar"><div class="wish-progress-fill" id="wishProgressFill" style="width:0%"></div></div>' +
+      '</div>' +
+
+      '<div class="page-main-card">' +
+        '<div class="seg" id="wishCatSeg" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px">' +
+          '<div class="opt' + (curWishFilter==="all"?" on":"") + '" data-act="wish-filter" data-v="all">全部</div>' +
+          '<div class="opt' + (curWishFilter==="travel"?" on":"") + '" data-act="wish-filter" data-v="travel">✈️ 旅行</div>' +
+          '<div class="opt' + (curWishFilter==="food"?" on":"") + '" data-act="wish-filter" data-v="food">🍜 美食</div>' +
+          '<div class="opt' + (curWishFilter==="movie"?" on":"") + '" data-act="wish-filter" data-v="movie">🎬 影音</div>' +
+          '<div class="opt' + (curWishFilter==="life"?" on":"") + '" data-act="wish-filter" data-v="life">🏡 生活</div>' +
+          '<div class="opt' + (curWishFilter==="other"?" on":"") + '" data-act="wish-filter" data-v="other">💡 其他</div>' +
+          '<div class="opt' + (curWishFilter==="done"?" on":"") + '" data-act="wish-filter" data-v="done">🎉 已实现</div>' +
+        '</div>' +
+        '<div id="wishesListContainer"></div>' +
+      '</div>' +
+    '</div>';
+
+  html += bottomNavHTML();
+  html += modalsHTML();
+  $("#app").innerHTML = html;
+  loadWishes();
+}
+
+function loadWishes(){
+  var box = $("#wishesListContainer");
+  if (box && (!WISHES_DATA || WISHES_DATA.length === 0)){
+    box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted);font-weight:700">🐶 正在翻开俩汪心愿清单...</div>';
+  }
+  api("/api/wishes").then(function(res){
+    if (res && res.ok){
+      WISHES_DATA = res.wishes || [];
+      updateWishStats(res.stats);
+      renderWishesList();
+    }
+  }).catch(function(err){
+    if (box) box.innerHTML = '<div style="color:red;padding:20px 0;text-align:center">加载失败：' + esc(err.message) + '</div>';
+  });
+}
+
+function updateWishStats(stats){
+  if (!stats) return;
+  var total = stats.total || 0;
+  var done = stats.done || 0;
+  var pending = stats.pending || 0;
+  var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  var pText = $("#wishProgressText");
+  var pPct = $("#wishProgressPct");
+  var pFill = $("#wishProgressFill");
+  if (pText){
+    pText.textContent = total > 0 
+      ? ("✨ 俩汪已携手完成 " + done + " 个心愿，还有 " + pending + " 个美好正在奔赴中~ 💕")
+      : "还没有添加心愿哦，在下方许下你们的第一个心愿吧 🐾";
+  }
+  if (pPct) pPct.textContent = pct + "%";
+  if (pFill) pFill.style.width = pct + "%";
+}
+
+function renderWishesList(){
+  var box = $("#wishesListContainer");
+  if (!box) return;
+  var list = WISHES_DATA || [];
+  if (curWishFilter === "done"){
+    list = list.filter(function(w){ return w.is_done; });
+  } else if (curWishFilter !== "all"){
+    list = list.filter(function(w){ return !w.is_done && w.category === curWishFilter; });
+  }
+
+  if (list.length === 0){
+    box.innerHTML = '<div style="text-align:center;padding:40px 10px;color:var(--ink-muted)">' +
+      '<div style="width:72px;height:72px;margin:0 auto 10px;opacity:0.85"><img src="/img/dogrest.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+      '<div style="font-size:14px;font-weight:800;color:var(--ink-primary);margin-bottom:4px">' +
+        (curWishFilter === "done" ? "还没有标记实现的心愿汪~ 继续加油！" : "此分类下暂无心愿便签汪~ 🐾") +
+      '</div>' +
+      '<div style="font-size:12px;opacity:0.8">点击右上角「许新心愿」记录下你们将来想一起做的事吧 ✨</div>' +
+    '</div>';
+    return;
+  }
+
+  var catMap = {
+    travel: "✈️ 旅行",
+    food: "🍜 美食",
+    movie: "🎬 影音",
+    life: "🏡 生活",
+    other: "💡 其他"
+  };
+
+  box.innerHTML = list.map(function(w){
+    var isDone = !!w.is_done;
+    var catLabel = catMap[w.category] || "✨ 心愿";
+    var isA = w.creator_uid === "a";
+    var creatorPill = '<span class="school-badge ' + (isA ? "a" : "b") + '" style="font-size:10px;padding:1px 6px">' + (isA ? "🐶 " : "🐾 ") + esc(w.creator_name || (isA ? "小金毛" : "小白狗")) + '</span>';
+
+    return '<div class="wish-card' + (w.priority ? ' priority' : '') + (isDone ? ' done' : '') + '">' +
+      '<button type="button" class="wish-check-btn" data-act="toggle-wish" data-wid="' + w.id + '" title="' + (isDone ? "重新标记为待完成" : "打勾！实现这个心愿") + '">' +
+        (isDone ? '✓' : '🐾') +
+      '</button>' +
+      '<div class="wish-content">' +
+        '<div class="wish-title-row">' +
+          '<span class="wish-cat-tag">' + catLabel + '</span>' +
+          (w.priority ? '<span class="wish-fire-tag">🔥 超级想去</span>' : '') +
+          '<span class="wish-title">' + esc(w.title) + '</span>' +
+        '</div>' +
+        (w.note ? ('<div class="wish-note">📝 ' + esc(w.note) + '</div>') : '') +
+        '<div class="wish-meta-row">' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            creatorPill +
+            '<span>' + esc(w.created_at || "") + '</span>' +
+            (isDone && w.done_at ? ('<span style="color:var(--free-text);font-weight:700"> · 🎉 ' + esc(w.done_at) + ' 达成</span>') : '') +
+          '</div>' +
+          '<div style="display:flex;gap:6px">' +
+            (isDone ? ('<button type="button" class="msg-btn-sm" data-act="wish-to-diary" data-title="' + esc(w.title) + '" title="顺手记一篇手账纪念">📸 记手账</button>') : '') +
+            '<button type="button" class="msg-btn-sm del" data-act="del-wish" data-wid="' + w.id + '" title="删除此心愿">🗑️</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join("");
+}
+
 function renderAnnivPage(){
   var html = renderTopBar() +
     '<div class="page-container">' +
@@ -2206,6 +2446,15 @@ function renderSettingsPage(){
             '<span style="font-size:12px;color:var(--dog-a-text);font-weight:800">前往 ➜</span>' +
           '</div>' +
 
+          '<div class="field" style="margin-top:16px"><label>✨ 俩汪心愿备忘录</label></div>' +
+          '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:14px" data-act="switch-view" data-v="wishes">' +
+            '<div>' +
+              '<div style="font-size:13.5px;font-weight:800;color:var(--ink-primary)">✨ 管理俩汪心愿备忘清单 (Bucket List)</div>' +
+              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">将来想一起做的事、想去的地方与想吃的美食</div>' +
+            '</div>' +
+            '<span style="font-size:12px;color:var(--dog-a-text);font-weight:800">前往 ➜</span>' +
+          '</div>' +
+
           '<div class="field" style="margin-top:16px"><label>修改当前身份（' + esc(ME.name) + '）密码</label></div>' +
           '<div class="row2">' +
             '<div class="field"><input type="password" id="s_old" placeholder="旧密码（不改留空）" autocomplete="current-password"></div>' +
@@ -2331,6 +2580,13 @@ function renderMonthApp(){
   '</div>' +
 
   '<div class="month-cal-wrap">' +
+    '<div style="max-width:800px;margin:4px auto 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 2px">' +
+      '<div class="seg" style="margin-bottom:0;flex:1;max-width:240px">' +
+        '<div class="opt on" data-act="switch-view" data-v="month">📔 足迹手账</div>' +
+        '<div class="opt" data-act="switch-view" data-v="wishes">✨ 心愿备忘</div>' +
+      '</div>' +
+      '<button class="p-btn pri" data-act="switch-view" data-v="wishes" style="font-size:11.5px;padding:5px 12px">✨ 俩汪心愿清单 ➜</button>' +
+    '</div>' +
     '<div class="month-topcard">' +
       '<div class="week-nav">' +
         '<button class="p-btn" data-act="month-prev">‹ 上月</button>' +
@@ -2555,6 +2811,46 @@ function modalsHTML(){
     '<div class="overlay" id="ovDetail"><div class="modal" id="ovDetailBox"></div></div>' +
 
     '<div class="overlay" id="ovDiaryDay"><div class="modal" id="ovDiaryDayBox"></div></div>' +
+
+    '<div class="overlay" id="ovAddWish"><div class="modal">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>许下一个新心愿 ✨</h3></div>' +
+        '<img src="/img/dog-add.png" alt="" class="mhead-img">' +
+      '</div>' +
+      '<form id="addWishForm">' +
+        '<div class="field"><label>谁的心愿？</label>' +
+          '<div class="seg" id="wishUidSeg">' +
+            '<div class="opt' + (addWishUid==="a"?" on":"") + '" data-act="pick-wish-uid" data-uid="a">🐶 ' + esc(u.a.name) + '</div>' +
+            '<div class="opt' + (addWishUid==="b"?" on b-side":"") + '" data-act="pick-wish-uid" data-uid="b">🐾 ' + esc(u.b.name) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="field"><label>心愿分类</label>' +
+          '<div class="seg" id="wishAddCatSeg" style="flex-wrap:wrap">' +
+            '<div class="opt on" data-act="pick-wish-cat" data-v="travel">✈️ 旅行打卡</div>' +
+            '<div class="opt" data-act="pick-wish-cat" data-v="food">🍜 美食探索</div>' +
+            '<div class="opt" data-act="pick-wish-cat" data-v="movie">🎬 影音娱乐</div>' +
+            '<div class="opt" data-act="pick-wish-cat" data-v="life">🏡 日常浪漫</div>' +
+            '<div class="opt" data-act="pick-wish-cat" data-v="other">💡 奇思妙想</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="field"><label>心愿内容 💖</label>' +
+          '<input id="wf_title" required maxlength="80" placeholder="如: 一起去海边看日出 / 去吃那家火锅">' +
+        '</div>' +
+        '<div class="field"><label>期盼程度</label>' +
+          '<div class="seg" id="wishPrioSeg">' +
+            '<div class="opt on" data-act="pick-wish-prio" data-v="0">✨ 普通心愿</div>' +
+            '<div class="opt" data-act="pick-wish-prio" data-v="1">🔥 超级想做 (置顶标红)</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="field"><label>详细备注 / 攻略地点 (选填)</label>' +
+          '<textarea id="wf_note" rows="2" maxlength="300" placeholder="如: 计划在初夏去、大众点评店铺名、注意事项等"></textarea>' +
+        '</div>' +
+        '<div class="mfoot" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">' +
+          '<button type="button" class="p-btn" data-act="close">取消</button>' +
+          '<button class="p-btn pri">💖 贴进心愿本 🐾</button>' +
+        '</div>' +
+      '</form>' +
+    '</div></div>' +
 
     '<div class="overlay" id="ovPhotoViewer" style="background:rgba(0,0,0,0.92);z-index:9999;display:none;align-items:center;justify-content:center;touch-action:none">' +
       '<div style="position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden" id="pvContainer">' +
@@ -3206,6 +3502,63 @@ document.addEventListener("click", function(e){
       pollMessages();
     }).catch(function(err){ toast(err.message || "请求失败"); });
   }
+  else if (act === "open-add-wish"){
+    openModal("#ovAddWish");
+  }
+  else if (act === "pick-wish-uid"){
+    addWishUid = el.getAttribute("data-uid") || "a";
+    document.querySelectorAll("#wishUidSeg .opt").forEach(function(o){
+      var isTarget = o.getAttribute("data-uid") === addWishUid;
+      o.classList.toggle("on", isTarget);
+      if (o.getAttribute("data-uid") === "b") o.classList.toggle("b-side", isTarget);
+    });
+  }
+  else if (act === "pick-wish-cat"){
+    addWishCat = el.getAttribute("data-v") || "travel";
+    document.querySelectorAll("#wishAddCatSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-v") === addWishCat);
+    });
+  }
+  else if (act === "pick-wish-prio"){
+    addWishPrio = +el.getAttribute("data-v") || 0;
+    document.querySelectorAll("#wishPrioSeg .opt").forEach(function(o){
+      o.classList.toggle("on", +o.getAttribute("data-v") === addWishPrio);
+    });
+  }
+  else if (act === "toggle-wish"){
+    var wid = +el.getAttribute("data-wid");
+    api("/api/wishes/toggle", {method:"POST", body:{id:wid}}).then(function(res){
+      toast(res.is_done ? "🎉 恭喜！共同实现了一个心愿！" : "已重新标记为待完成 🐾");
+      loadWishes();
+    }).catch(function(err){ toast(err.message || "操作失败"); });
+  }
+  else if (act === "del-wish"){
+    if (!confirm("确定删除这个心愿便签？")) return;
+    var wid = +el.getAttribute("data-wid");
+    api("/api/wishes/delete", {method:"POST", body:{id:wid}}).then(function(){
+      toast("已删除心愿 🐾");
+      loadWishes();
+    }).catch(function(err){ toast(err.message || "删除失败"); });
+  }
+  else if (act === "wish-filter"){
+    curWishFilter = el.getAttribute("data-v") || "all";
+    document.querySelectorAll("#wishCatSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-v") === curWishFilter);
+    });
+    renderWishesList();
+  }
+  else if (act === "wish-to-diary"){
+    var wishTitle = el.getAttribute("data-title") || "";
+    CURRENT_VIEW = "month";
+    load().then(function(){
+      setTimeout(function(){
+        curEditingDiary = null;
+        if ($("#df_title")) $("#df_title").value = "实现了心愿: " + wishTitle;
+        if ($("#df_content")) $("#df_content").value = "今天和 TA 一起打卡了心愿清单【" + wishTitle + "】！超级开心与满足~ 🥰";
+        openModal("#ovAddDiary");
+      }, 150);
+    });
+  }
   else if (act === "battery-protect"){
     if (window.AndroidApp && window.AndroidApp.requestBatteryOptimization) {
       window.AndroidApp.requestBatteryOptimization();
@@ -3290,6 +3643,27 @@ document.addEventListener("submit", function(e){
       })
       .then(function(){ renderAnnivList(); })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  } else if (f.id === "addWishForm"){
+    e.preventDefault();
+    var title = ($("#wf_title") ? $("#wf_title").value : "").trim();
+    if (!title){ toast("请输入心愿内容 🐾"); return; }
+    var note = ($("#wf_note") ? $("#wf_note").value : "").trim();
+    api("/api/wishes", {
+      method: "POST",
+      body: {
+        creator_uid: addWishUid,
+        title: title,
+        category: addWishCat,
+        priority: addWishPrio,
+        note: note
+      }
+    }).then(function(){
+      closeAllModals();
+      if ($("#wf_title")) $("#wf_title").value = "";
+      if ($("#wf_note")) $("#wf_note").value = "";
+      toast("心愿已贴进清单啦 ✨");
+      loadWishes();
+    }).catch(function(err){ toast(err.message || "添加失败"); });
   } else if (f.id === "addDiaryForm"){
     e.preventDefault();
     var editId = $("#df_edit_id") ? $("#df_edit_id").value : "";
@@ -3519,6 +3893,11 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
         CURRENT_VIEW = val;
         load();
       }
+    } else if (type === "wish") {
+      if (CURRENT_VIEW !== "wishes") {
+        CURRENT_VIEW = "wishes";
+        load();
+      }
     }
   };
 
@@ -3715,6 +4094,27 @@ class Handler(BaseHTTPRequestHandler):
                     "unread_count": cnt,
                     "messages": [dict(r) for r in rows]
                 })
+            if path == "/api/wishes":
+                uid = self.authed()
+                if uid is None:
+                    return
+                users = get_users()
+                with LOCK:
+                    rows = CONN.execute("SELECT * FROM wishes ORDER BY is_done ASC, priority DESC, id DESC").fetchall()
+                    wishes = []
+                    for r in rows:
+                        item = dict(r)
+                        c_uid = item.get("creator_uid")
+                        item["creator_name"] = users.get(c_uid, {}).get("name", "小狗")
+                        wishes.append(item)
+                    total = len(wishes)
+                    done = sum(1 for w in wishes if w.get("is_done") == 1)
+                    pending = total - done
+                return self.send_json({
+                    "ok": True,
+                    "wishes": wishes,
+                    "stats": {"total": total, "done": done, "pending": pending}
+                })
             if path == "/api/notifications/poll":
                 uid = self.current_uid()
                 if not uid:
@@ -3804,6 +4204,97 @@ class Handler(BaseHTTPRequestHandler):
                         (uid,)
                     ).fetchone()["c"]
                 return self.send_json({"ok": True, "unread_count": cnt})
+
+            if path == "/api/wishes":
+                uid = self.authed()
+                if uid is None:
+                    return
+                title = str(d.get("title") or "").strip()[:100]
+                if not title:
+                    return self.send_json({"error": "心愿内容不能为空"}, 400)
+                category = str(d.get("category") or "life").strip()
+                if category not in ("travel", "food", "movie", "life", "other"):
+                    category = "life"
+                priority = 1 if d.get("priority") in (1, "1", True) else 0
+                note = str(d.get("note") or "").strip()[:500]
+                creator = d.get("creator_uid")
+                if creator not in ("a", "b"):
+                    creator = uid
+                created = time.strftime("%Y-%m-%d %H:%M")
+                with LOCK:
+                    cur = CONN.execute(
+                        "INSERT INTO wishes(creator_uid, title, category, priority, note, is_done, done_at, created_at) "
+                        "VALUES(?,?,?,?,?,0,'',?)",
+                        (creator, title, category, priority, note, created)
+                    )
+                    wid = cur.lastrowid
+                users = get_users()
+                sender_name = users.get(uid, {}).get("name", "小狗")
+                other_uid = "b" if uid == "a" else "a"
+                notice_content = f"【{title}】" + (f" · {note[:40]}" if note else "")
+                push_system_notice(other_uid, f"✨ {sender_name} 许下了一个新心愿！", notice_content, "view:wishes")
+                target_token = users.get(other_uid, {}).get("wx_uid")
+                if target_token:
+                    send_wechat_notice(target_token, f"✨ {sender_name} 许下了一个新心愿！", notice_content)
+                return self.send_json({"ok": True, "id": wid})
+
+            if path == "/api/wishes/toggle":
+                uid = self.authed()
+                if uid is None:
+                    return
+                try:
+                    wid = int(d.get("id"))
+                except (TypeError, ValueError):
+                    return self.send_json({"error": "参数错误"}, 400)
+                with LOCK:
+                    w = CONN.execute("SELECT * FROM wishes WHERE id=?", (wid,)).fetchone()
+                    if not w:
+                        return self.send_json({"error": "心愿不存在"}, 404)
+                    new_status = 0 if w["is_done"] else 1
+                    done_at = time.strftime("%Y-%m-%d %H:%M") if new_status else ""
+                    CONN.execute("UPDATE wishes SET is_done=?, done_at=? WHERE id=?", (new_status, done_at, wid))
+                if new_status:
+                    users = get_users()
+                    sender_name = users.get(uid, {}).get("name", "小狗")
+                    other_uid = "b" if uid == "a" else "a"
+                    push_system_notice(other_uid, "🎉 俩汪共同实现了心愿！", f"【{w['title']}】已打勾完成！快去手账本记录一下吧~ 🐾", "view:wishes")
+                    target_token = users.get(other_uid, {}).get("wx_uid")
+                    if target_token:
+                        send_wechat_notice(target_token, "🎉 俩汪共同实现了心愿！", f"【{w['title']}】已打勾完成！🐾")
+                return self.send_json({"ok": True, "is_done": new_status, "done_at": done_at})
+
+            if path == "/api/wishes/delete":
+                uid = self.authed()
+                if uid is None:
+                    return
+                try:
+                    wid = int(d.get("id"))
+                except (TypeError, ValueError):
+                    return self.send_json({"error": "参数错误"}, 400)
+                with LOCK:
+                    CONN.execute("DELETE FROM wishes WHERE id=?", (wid,))
+                return self.send_json({"ok": True})
+
+            if path == "/api/wishes/update":
+                uid = self.authed()
+                if uid is None:
+                    return
+                try:
+                    wid = int(d.get("id"))
+                except (TypeError, ValueError):
+                    return self.send_json({"error": "参数错误"}, 400)
+                title = str(d.get("title") or "").strip()[:100]
+                if not title:
+                    return self.send_json({"error": "心愿内容不能为空"}, 400)
+                category = str(d.get("category") or "life").strip()
+                if category not in ("travel", "food", "movie", "life", "other"):
+                    category = "life"
+                priority = 1 if d.get("priority") in (1, "1", True) else 0
+                note = str(d.get("note") or "").strip()[:500]
+                with LOCK:
+                    CONN.execute("UPDATE wishes SET title=?, category=?, priority=?, note=? WHERE id=?",
+                                 (title, category, priority, note, wid))
+                return self.send_json({"ok": True})
 
             if path == "/api/notifications/test":
                 uid = self.current_uid()
