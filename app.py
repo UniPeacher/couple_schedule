@@ -653,7 +653,7 @@ def week_payload(anchor_iso):
     return {
         "week_start": days[0].isoformat(),
         "week_end": days[-1].isoformat(),
-        "users": {uid: {"name": u["name"], "week1": u["week1"]} for uid, u in users.items()},
+        "users": {uid: {"name": u["name"], "week1": u["week1"], "wx_uid": u.get("wx_uid", "")} for uid, u in users.items()},
         "weeknums": {uid: week_num(u["week1"], mon) for uid, u in users.items()},
         "settings": {
             "window_start": m2t(ws), "window_end": m2t(we), "min_gap": min_gap,
@@ -3449,7 +3449,7 @@ class Handler(BaseHTTPRequestHandler):
             "diaries_by_date": by_date,
             "total_count": len(diaries),
             "anniversaries": annivs,
-            "users": {u: {"name": users[u]["name"]} for u in ("a", "b")}
+            "users": {u: {"name": users[u]["name"], "wx_uid": users[u].get("wx_uid", "")} for u in ("a", "b")}
         }
 
     def get_diaries_by_date(self, dt):
