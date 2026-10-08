@@ -64,7 +64,7 @@ public class MainActivity extends AppCompatActivity {
         swipeRefresh = findViewById(R.id.swipeRefresh);
         webView = findViewById(R.id.webView);
 
-        swipeRefresh.setColorSchemeResources(R.color.primary, R.color.accent);
+        swipeRefresh.setColorSchemeResources(R.color.accent);
         swipeRefresh.setOnRefreshListener(() -> webView.reload());
 
         initWebView();
@@ -168,6 +168,10 @@ public class MainActivity extends AppCompatActivity {
 
         // 注入 AndroidApp 桥接接口供网页 JS 交互
         webView.addJavascriptInterface(new WebAppInterface(this), "AndroidApp");
+
+        // 禁止过度滚动的系统紫色波纹边缘扩散效果
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        swipeRefresh.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
