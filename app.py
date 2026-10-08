@@ -148,6 +148,152 @@ def get_users():
         return {r["uid"]: dict(name=r["name"], week1=r["week1"], pw_hash=r["pw_hash"], wx_uid=r["wx_uid"] or "") for r in rows}
 
 
+def generate_period_summary(summary_type="day"):
+    today = date.today()
+    users = get_users()
+    name_a = users["a"]["name"]
+    name_b = users["b"]["name"]
+
+    if summary_type == "day":
+        # 当日统计
+        target_date = today
+        dt_str = target_date.isoformat()
+        w_payload = week_payload(dt_str)
+        day_info = None
+        for d in w_payload["days"]:
+            if d["date"] == dt_str:
+                day_info = d
+                break
+        
+        free_minutes = sum((e - s) for s, e in (day_info["free"] if day_info else []))
+        free_hours = round(free_minutes / 60, 1)
+        evs_a = day_info["users"]["a"]["events"] if day_info else []
+        evs_b = day_info["users"]["b"]["events"] if day_info else []
+
+        with LOCK:
+            diaries = CONN.execute("SELECT * FROM diaries WHERE date=?", (dt_str,)).fetchall()
+            comments = CONN.execute(
+                "SELECT c.*, u.name FROM comments c LEFT JOIN users u ON u.uid=c.uid "
+                "WHERE c.created LIKE ? ORDER BY c.id", (f"{dt_str}%",)
+            ).fetchall()
+
+        title = f"🌅 俩汪今日晚安总结 · {dt_str}"
+        lines = [f"亲爱的小窝主人，今天也辛苦啦！🐾"]
+        if free_hours > 0:
+            lines.append(f"💕 今日默契贴贴时长：{free_hours} 小时（共同空闲）！")
+        else:
+            lines.append("💤 今天各自都有在认真奔波，晚上记得早点贴贴休息哦！")
+
+        if evs_a or evs_b:
+            lines.append(f"📋 今日足迹：{name_a} 完成了 {len(evs_a)} 项日程，{name_b} 完成了 {len(evs_b)} 项日程。")
+        if diaries:
+            d_titles = "、".join([d["title"] for d in diaries])
+            lines.append(f"📔 今日手账更新了：《{d_titles}》，留下了美好的瞬间！✨")
+        if comments:
+            lines.append(f"💬 今天小纸条留言互动了 {len(comments)} 次，心里都在挂念着对方呢～")
+        
+        lines.append("🌙 无论今天遇到什么，小狗都最喜欢你啦。晚安，明天继续加油！🦴")
+
+        return {
+            "title": title,
+            "content": "\n\n".join(lines),
+            "stats": [
+                {"k": "共同空闲时长", "v": f"{free_hours}h"},
+                {"k": "今日日程总数", "v": f"{len(evs_a) + len(evs_b)}项"},
+                {"k": "手账足迹", "v": f"{len(diaries)}篇"},
+                {"k": "贴心留言", "v": f"{len(comments)}条"},
+            ]
+        }
+
+    elif summary_type == "week":
+        # 本周统计
+        w_payload = week_payload(today.isoformat())
+        total_free_mins = 0
+        total_evs = 0
+        mon_str = w_payload["days"][0]["date"]
+        sun_str = w_payload["days"][-1]["date"]
+        for d in w_payload["days"]:
+            total_free_mins += sum((e - s) for s, e in d["free"])
+            total_evs += len(d["users"]["a"]["events"]) + len(d["users"]["b"]["events"])
+        total_free_hours = round(total_free_mins / 60, 1)
+
+        with LOCK:
+            diaries = CONN.execute("SELECT * FROM diaries WHERE date >= ? AND date <= ?", (mon_str, sun_str)).fetchall()
+            comments = CONN.execute(
+                "SELECT count(*) as cnt FROM comments WHERE created >= ? AND created <= ?",
+                (f"{mon_str} 00:00", f"{sun_str} 23:59")
+            ).fetchone()
+            n_cmts = comments["cnt"] if comments else 0
+
+        title = f"💌 俩汪本周心动周报 · ({mon_str} ~ {sun_str})"
+        lines = [
+            f"叮咚！这一周俩汪的默契生活报告出炉啦~ 🐾",
+            f"💖 本周俩人共同重叠贴贴空闲时间高达 {total_free_hours} 小时！陪伴是最长情的告白。",
+            f"🎒 这一周两人一共并肩完成了 {total_evs} 项课业与日程，每一个努力的瞬间都闪闪发光。",
+            f"📷 手账本里新增了 {len(diaries)} 篇游玩回忆，互动留言小纸条 {n_cmts} 条。",
+            "✨ 下周又是全新的七天，俩汪继续认真生活，努力奔向彼此吧！💕"
+        ]
+
+        return {
+            "title": title,
+            "content": "\n\n".join(lines),
+            "stats": [
+                {"k": "本周贴贴总长", "v": f"{total_free_hours}h"},
+                {"k": "共同日程打卡", "v": f"{total_evs}项"},
+                {"k": "新增游玩手账", "v": f"{len(diaries)}篇"},
+                {"k": "互动留言小纸条", "v": f"{n_cmts}条"},
+            ]
+        }
+
+    elif summary_type == "month":
+        # 本月胶囊
+        ym = today.strftime("%Y-%m")
+        with LOCK:
+            diaries = CONN.execute("SELECT * FROM diaries WHERE date LIKE ? ORDER BY date", (f"{ym}%",)).fetchall()
+            photos = CONN.execute(
+                "SELECT count(*) as cnt FROM diary_photos dp JOIN diaries d ON d.id=dp.diary_id WHERE d.date LIKE ?",
+                (f"{ym}%",)
+            ).fetchone()
+            n_photos = photos["cnt"] if photos else 0
+
+            # 统计心情
+            moods = {}
+            for d in diaries:
+                m = d["mood"] or "💖 幸福贴贴"
+                moods[m] = moods.get(m, 0) + 1
+            top_mood = sorted(moods.items(), key=lambda x: x[1], reverse=True)[0][0] if moods else "🥰 幸福贴贴"
+
+        title = f"📔 俩汪月度时光胶囊 · {today.year}年{today.month}月"
+        lines = [
+            f"岁月漫漫，有你常在。这里是属于你们的 {today.month} 月时光胶囊！🐾",
+            f"✨ 这个月你们一共踏出了足迹，写下了 {len(diaries)} 篇手账日记，定格了 {n_photos} 张拍立得拍立得照片！",
+            f"🌤️ 本月最高频心动贴纸是【{top_mood}】，充满着甜蜜与治愈。",
+            "🐾 时光会走远，但爱与照片永远留在小窝里。下个月也要创造更多回忆呀！💖"
+        ]
+
+        return {
+            "title": title,
+            "content": "\n\n".join(lines),
+            "stats": [
+                {"k": "本月手账日记", "v": f"{len(diaries)}篇"},
+                {"k": "拍立得照片", "v": f"{n_photos}张"},
+                {"k": "本月代表心情", "v": top_mood.split(" ")[0]},
+                {"k": "相伴日子", "v": "30天+"},
+            ]
+        }
+
+def push_summary_to_both(summary_type="day"):
+    summary = generate_period_summary(summary_type)
+    title = summary["title"]
+    content = summary["content"] + "\n\n【数据概览】\n" + "\n".join([f"· {s['k']}: {s['v']}" for s in summary["stats"]])
+    users = get_users()
+    for uid in ("a", "b"):
+        token = users[uid]["wx_uid"]
+        if token:
+            send_wechat_notice(token, title, content)
+    return summary
+
+
 def send_wechat_notice(token, title, content):
     if not token or not token.strip():
         return
@@ -1519,6 +1665,7 @@ function renderMonthApp(){
         '</div>' +
       '</div>' +
       '<span class="spacer"></span>' +
+      '<button class="p-btn icon-btn" data-act="open-summary" title="时光总结与周报/月报">💌<span class="btn-txt"> 简报</span></button>' +
       '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
         (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
       '</button>' +
@@ -1645,6 +1792,7 @@ function renderApp(){
         '</div>' +
       '</div>' +
       '<span class="spacer"></span>' +
+      '<button class="p-btn icon-btn" data-act="open-summary" title="时光总结与周报/月报">💌<span class="btn-txt"> 简报</span></button>' +
       '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
         (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
       '</button>' +
@@ -1776,6 +1924,23 @@ function modalsHTML(){
         '</div>' +
       '</form></div></div>' +
 
+    '<div class="overlay" id="ovSummary"><div class="modal" style="max-width:520px">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>俩汪时光简报与胶囊 💌</h3></div>' +
+        '<img src="/img/dogheads.png" alt="" class="mhead-img">' +
+      '</div>' +
+      '<div class="seg" id="summaryTabSeg" style="margin-bottom:14px">' +
+        '<div class="opt on" data-act="summary-tab" data-tab="day">🌅 今日晚安</div>' +
+        '<div class="opt" data-act="summary-tab" data-tab="week">💌 心动周报</div>' +
+        '<div class="opt" data-act="summary-tab" data-tab="month">📔 月度胶囊</div>' +
+      '</div>' +
+      '<div id="summaryContentBox" style="min-height:160px;font-size:13.5px;line-height:1.6"></div>' +
+      '<div class="foot" style="justify-content:space-between;align-items:center;margin-top:14px">' +
+        '<button type="button" class="p-btn pri" data-act="send-summary-wx" style="font-size:12px">📲 推送到俩人微信</button>' +
+        '<button type="button" class="p-btn" data-act="close">关闭</button>' +
+      '</div>' +
+    '</div></div>' +
+
     '<div class="overlay" id="ovAnniv"><div class="modal">' +
       '<div class="mhead">' +
         '<div class="mhead-left"><h3>情侣纪念日与倒计时 💖</h3></div>' +
@@ -1891,6 +2056,45 @@ function updatePhotoViewer(){
   if (ind) ind.textContent = (pvCurrentIndex + 1) + " / " + total;
   if (bPrev) bPrev.style.display = total > 1 ? "flex" : "none";
   if (bNext) bNext.style.display = total > 1 ? "flex" : "none";
+}
+
+var curSummaryTab = "day";
+var curSummaryData = null;
+
+function loadSummary(tab){
+  curSummaryTab = tab || "day";
+  var box = $("#summaryContentBox");
+  if (box) box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted)">🐾 正在生成浪漫时光总结...</div>';
+  api("/api/summary?type=" + curSummaryTab).then(function(res){
+    curSummaryData = res;
+    renderSummaryBox();
+  }).catch(function(e){
+    if (box) box.innerHTML = '<div style="color:red;padding:20px 0">加载失败：' + esc(e.message) + '</div>';
+  });
+}
+
+function renderSummaryBox(){
+  var box = $("#summaryContentBox");
+  if (!box || !curSummaryData) return;
+  var d = curSummaryData;
+  var html = '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:16px;padding:14px;box-shadow:var(--shadow-sm)">' +
+    '<div style="font-size:15px;font-weight:800;color:var(--ink-primary);margin-bottom:8px;display:flex;align-items:center;gap:6px">' +
+      '<span>' + esc(d.title) + '</span>' +
+    '</div>' +
+    '<div style="color:var(--ink-secondary);font-size:13px;line-height:1.65;white-space:pre-wrap;margin-bottom:10px">' + esc(d.content) + '</div>';
+
+  if (d.stats && d.stats.length > 0){
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line-strong)">' +
+      d.stats.map(function(s){
+        return '<div style="background:var(--bg-card);border:1px solid var(--line-strong);border-radius:10px;padding:8px;text-align:center">' +
+          '<div style="font-size:11px;color:var(--ink-muted)">' + esc(s.k) + '</div>' +
+          '<div style="font-size:14px;font-weight:800;color:var(--dog-a);margin-top:2px">' + esc(s.v) + '</div>' +
+        '</div>';
+      }).join("") +
+    '</div>';
+  }
+  html += '</div>';
+  box.innerHTML = html;
 }
 
 function renderAnnivList(){
@@ -2250,6 +2454,24 @@ document.addEventListener("click", function(e){
         if (activeDiaryDate) openDayDiaries(activeDiaryDate);
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  }
+  else if (act === "open-summary"){
+    $("#ovSummary").classList.add("show");
+    loadSummary("day");
+  }
+  else if (act === "summary-tab"){
+    var tab = el.getAttribute("data-tab");
+    document.querySelectorAll("#summaryTabSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-tab") === tab);
+    });
+    loadSummary(tab);
+  }
+  else if (act === "send-summary-wx"){
+    api("/api/summary/push", {method:"POST", body:{type: curSummaryTab}}).then(function(res){
+      toast("💌 时光简报已推送至双方微信！");
+    }).catch(function(err){
+      toast("推送失败: " + err.message);
+    });
   }
   else if (act === "open-anniv" || act === "open-anniv-list"){
     renderAnnivList();
@@ -2685,6 +2907,12 @@ class Handler(BaseHTTPRequestHandler):
                 qs = parse_qs(urlparse(self.path).query)
                 dt = (qs.get("date") or [""])[0]
                 return self.send_json(self.get_diaries_by_date(dt))
+            if path == "/api/summary":
+                if self.authed() is None:
+                    return
+                qs = parse_qs(urlparse(self.path).query)
+                stype = (qs.get("type") or ["day"])[0]
+                return self.send_json(generate_period_summary(stype))
             return self.send_json({"error": "not found"}, 404)
         except Exception:
             self.log_error("GET %s failed: %s", path, sys.exc_info()[1])
@@ -2796,6 +3024,12 @@ class Handler(BaseHTTPRequestHandler):
                 if self.authed() is None:
                     return
                 return self.delete_anniversary(d)
+            if path == "/api/summary/push":
+                if self.authed() is None:
+                    return
+                stype = d.get("type") or "day"
+                summary = push_summary_to_both(stype)
+                return self.send_json({"ok": True, "summary": summary})
             if path == "/api/diaries":
                 if self.authed() is None:
                     return
@@ -3143,10 +3377,43 @@ class Handler(BaseHTTPRequestHandler):
         sys.stdout.write("%s %s %s\n" % (time.strftime("%F %T"), self.client_address[0], fmt % args))
 
 
+def cron_summary_worker():
+    last_day_pushed = ""
+    last_week_pushed = ""
+    last_month_pushed = ""
+    while True:
+        try:
+            now = datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+            # 1. 每日 22:30 晚安总结
+            if now.hour == 22 and now.minute >= 30 and last_day_pushed != today_str:
+                push_summary_to_both("day")
+                last_day_pushed = today_str
+                print(f"[Cron] 每日晚安总结推送完成: {today_str}", flush=True)
+
+            # 2. 每周日 21:00 心动周报 (weekday 6 为周日)
+            if now.weekday() == 6 and now.hour == 21 and now.minute >= 0 and last_week_pushed != today_str:
+                push_summary_to_both("week")
+                last_week_pushed = today_str
+                print(f"[Cron] 周度心动周报推送完成: {today_str}", flush=True)
+
+            # 3. 每月 1 号 09:00 月度时光胶囊
+            ym_str = now.strftime("%Y-%m")
+            if now.day == 1 and now.hour == 9 and now.minute >= 0 and last_month_pushed != ym_str:
+                push_summary_to_both("month")
+                last_month_pushed = ym_str
+                print(f"[Cron] 月度时光胶囊推送完成: {ym_str}", flush=True)
+
+        except Exception as e:
+            sys.stderr.write(f"[Cron Worker Error]: {e}\n")
+        time.sleep(30)
+
+
 def main():
     global SECRET
     SECRET = load_secret()
     init_db()
+    threading.Thread(target=cron_summary_worker, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print("sched-share listening on 0.0.0.0:%d, data dir %s" % (PORT, DATA_DIR), flush=True)
     srv.serve_forever()
