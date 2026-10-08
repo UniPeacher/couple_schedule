@@ -1224,6 +1224,14 @@ function modalsHTML(){
         '<p style="font-size:11.5px;color:var(--ink-muted);line-height:1.45;margin-top:4px">' +
           '💡 周次与单双周换算基于各自「第1周周一」。两校可分别设定校历起始日期。' +
         '</p>' +
+        '<div class="field" style="margin-top:14px"><label>📲 微信消息提醒（免费免认证·息知/Server酱）</label></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>🐶 a 微信 Key</label><input id="s_wxa" placeholder="贴入 a 的微信推送Key" value="' + esc((u.a.wx_uid)||"") + '"></div>' +
+          '<div class="field"><label>🐾 b 微信 Key</label><input id="s_wxb" placeholder="贴入 b 的微信推送Key" value="' + esc((u.b.wx_uid)||"") + '"></div>' +
+        '</div>' +
+        '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
+          '💡 微信打开 <strong>xz.qqoq.net</strong> 扫码关注即得专属免费 Key，对方留言时你的微信会秒收卡片提醒。' +
+        '</p>' +
         '<div class="field" style="margin-top:14px"><label>修改当前身份（' + esc(ME.name) + '）密码</label></div>' +
         '<div class="row2">' +
           '<div class="field"><input type="password" id="s_old" placeholder="旧密码（不改留空）" autocomplete="current-password"></div>' +
@@ -1613,7 +1621,9 @@ document.addEventListener("submit", function(e){
       name_a: $("#s_na").value.trim(), name_b: $("#s_nb").value.trim(),
       week1_a: $("#s_w1a").value, week1_b: $("#s_w1b").value,
       window_start: $("#s_ws").value, window_end: $("#s_we").value,
-      min_gap: +$("#s_mg").value
+      min_gap: +$("#s_mg").value,
+      wx_a: $("#s_wxa") ? $("#s_wxa").value.trim() : "",
+      wx_b: $("#s_wxb") ? $("#s_wxb").value.trim() : ""
     };
     var pwOld = $("#s_old").value, pwNew = $("#s_new").value;
     api("/api/settings", {method:"POST", body:body}).then(function(){

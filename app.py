@@ -20,6 +20,7 @@ import time
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+import urllib.request
 
 PORT = int(os.environ.get("PORT", "8795"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -49,7 +50,8 @@ CREATE TABLE IF NOT EXISTS users(
   uid       TEXT PRIMARY KEY,
   name      TEXT NOT NULL,
   pw_hash   TEXT NOT NULL,
-  week1     TEXT DEFAULT '');
+  week1     TEXT DEFAULT '',
+  wx_uid    TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS events(
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   uid       TEXT NOT NULL,
@@ -142,8 +144,47 @@ def get_setting(key, default=""):
 
 def get_users():
     with LOCK:
-        rows = CONN.execute("SELECT uid,name,week1,pw_hash FROM users ORDER BY uid").fetchall()
-        return {r["uid"]: dict(name=r["name"], week1=r["week1"], pw_hash=r["pw_hash"]) for r in rows}
+        rows = CONN.execute("SELECT uid,name,week1,pw_hash,wx_uid FROM users ORDER BY uid").fetchall()
+        return {r["uid"]: dict(name=r["name"], week1=r["week1"], pw_hash=r["pw_hash"], wx_uid=r["wx_uid"] or "") for r in rows}
+
+
+def send_wechat_notice(token, title, content):
+    if not token or not token.strip():
+        return
+    token = token.strip()
+    def _do_send():
+        try:
+            # 1. 息知 (xizhi, 纯免费微信推送，以 xz 开头或常规字符串)
+            if token.lower().startswith("xz") or len(token) > 20:
+                # 息知接口：https://xz.qqoq.net/[KEY].send?title=xx&content=xx
+                url = f"https://xz.qqoq.net/{token}.send"
+                payload = json.dumps({"title": title, "content": content}).encode("utf-8")
+                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
+                urllib.request.urlopen(req, timeout=8)
+                return
+
+            # 2. Server酱 (以 sct 开头)
+            if token.lower().startswith("sct"):
+                url = f"https://sctapi.ftqq.com/{token}.send"
+                payload = json.dumps({"title": title, "desp": content}).encode("utf-8")
+                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=8)
+                return
+
+            # 3. PushPlus 备用
+            url = "http://www.pushplus.plus/send"
+            payload = json.dumps({
+                "token": token,
+                "title": title,
+                "content": content,
+                "template": "html"
+            }).encode("utf-8")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=8)
+        except Exception as e:
+            sys.stderr.write(f"WeChat push error: {e}\n")
+
+    threading.Thread(target=_do_send, daemon=True).start()
 
 
 def get_all_events():
@@ -1617,6 +1658,14 @@ function modalsHTML(){
         '<p style="font-size:11.5px;color:var(--ink-muted);line-height:1.45;margin-top:4px">' +
           '💡 周次与单双周换算基于各自「第1周周一」。两校可分别设定校历起始日期。' +
         '</p>' +
+        '<div class="field" style="margin-top:14px"><label>📲 微信消息提醒（免费免认证·息知/Server酱）</label></div>' +
+        '<div class="row2">' +
+          '<div class="field"><label>🐶 a 微信 Key</label><input id="s_wxa" placeholder="贴入 a 的微信推送Key" value="' + esc((u.a.wx_uid)||"") + '"></div>' +
+          '<div class="field"><label>🐾 b 微信 Key</label><input id="s_wxb" placeholder="贴入 b 的微信推送Key" value="' + esc((u.b.wx_uid)||"") + '"></div>' +
+        '</div>' +
+        '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
+          '💡 微信打开 <strong>xz.qqoq.net</strong> 扫码关注即得专属免费 Key，对方留言时你的微信会秒收卡片提醒。' +
+        '</p>' +
         '<div class="field" style="margin-top:14px"><label>修改当前身份（' + esc(ME.name) + '）密码</label></div>' +
         '<div class="row2">' +
           '<div class="field"><input type="password" id="s_old" placeholder="旧密码（不改留空）" autocomplete="current-password"></div>' +
@@ -2006,7 +2055,9 @@ document.addEventListener("submit", function(e){
       name_a: $("#s_na").value.trim(), name_b: $("#s_nb").value.trim(),
       week1_a: $("#s_w1a").value, week1_b: $("#s_w1b").value,
       window_start: $("#s_ws").value, window_end: $("#s_we").value,
-      min_gap: +$("#s_mg").value
+      min_gap: +$("#s_mg").value,
+      wx_a: $("#s_wxa") ? $("#s_wxa").value.trim() : "",
+      wx_b: $("#s_wxb") ? $("#s_wxb").value.trim() : ""
     };
     var pwOld = $("#s_old").value, pwNew = $("#s_new").value;
     api("/api/settings", {method:"POST", body:body}).then(function(){
@@ -2302,13 +2353,31 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "参数错误"}, 400)
                 created = time.strftime("%Y-%m-%d %H:%M")
                 with LOCK:
-                    if CONN.execute("SELECT 1 FROM events WHERE id=?", (eid,)).fetchone() is None:
+                    ev_row = CONN.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
+                    if ev_row is None:
                         return self.send_json({"error": "日程不存在"}, 404)
                     cur = CONN.execute("INSERT INTO comments(event_id,uid,text,created) VALUES(?,?,?,?)",
                                        (eid, uid, text, created))
                     cid = cur.lastrowid
+
+                # 微信推送给对方狗狗
+                users = get_users()
+                other_uid = "b" if uid == "a" else "a"
+                target_token = users[other_uid]["wx_uid"]
+                if target_token:
+                    sender_name = users[uid]["name"]
+                    ev_title = ev_row["title"]
+                    title = f"🐾 {sender_name} 给你的日程留了言！"
+                    html_content = (
+                        f"<p>🐶 <strong>{sender_name}</strong> 在日程 <strong>【{ev_title}】</strong> 下留言：</p>"
+                        f"<blockquote style='background:#f7f7f7;padding:10px;border-left:4px solid #f6ad55;border-radius:4px;margin:10px 0;'>"
+                        f"{text}</blockquote>"
+                        f"<p style='color:#888;font-size:12px;'>时间：{created} · 来自线条小狗日程小窝 🐾</p>"
+                    )
+                    send_wechat_notice(target_token, title, html_content)
+
                 return self.send_json({"ok": True, "comment": {
-                    "id": cid, "uid": uid, "name": get_users()[uid]["name"], "text": text, "created": created}})
+                    "id": cid, "uid": uid, "name": users[uid]["name"], "text": text, "created": created}})
 
             if path == "/api/comment/delete":
                 uid = self.authed()
@@ -2421,9 +2490,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "最短空闲分钟数无效"}, 400)
         na = str(d.get("name_a") or "").strip()[:30] or users["a"]["name"]
         nb = str(d.get("name_b") or "").strip()[:30] or users["b"]["name"]
+        wx_a = str(d.get("wx_a") or "").strip()[:100]
+        wx_b = str(d.get("wx_b") or "").strip()[:100]
         with LOCK:
-            CONN.execute("UPDATE users SET name=?, week1=? WHERE uid='a'", (na, w1(d.get("week1_a"))))
-            CONN.execute("UPDATE users SET name=?, week1=? WHERE uid='b'", (nb, w1(d.get("week1_b"))))
+            CONN.execute("UPDATE users SET name=?, week1=?, wx_uid=? WHERE uid='a'", (na, w1(d.get("week1_a")), wx_a))
+            CONN.execute("UPDATE users SET name=?, week1=?, wx_uid=? WHERE uid='b'", (nb, w1(d.get("week1_b")), wx_b))
             for k, v in (("window_start", ws), ("window_end", we), ("min_gap", str(mg))):
                 CONN.execute("INSERT INTO meta(key,value) VALUES(?,?) "
                              "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, v))
@@ -2557,6 +2628,23 @@ class Handler(BaseHTTPRequestHandler):
                     "INSERT INTO diary_photos(diary_id, file_name, sort_order) VALUES(?,?,?)",
                     (diary_id, fname, s_idx)
                 )
+
+        # 微信推送新手账通知给对方狗狗
+        users = get_users()
+        other_uid = "b" if uid == "a" else "a"
+        target_token = users[other_uid]["wx_uid"]
+        if target_token:
+            sender_name = users[uid]["name"]
+            title = f"📔 {sender_name} 更新了一篇足迹手账！"
+            loc_str = f" · 📍 {location}" if location else ""
+            mood_str = f" [{mood}]" if mood else ""
+            html_content = (
+                f"<p>🐶 <strong>{sender_name}</strong> 记下了 <strong>【{title}{mood_str}】</strong>{loc_str}：</p>"
+                f"<blockquote style='background:#f7f7f7;padding:10px;border-left:4px solid #38bdf8;border-radius:4px;margin:10px 0;'>"
+                f"{content or '拍下了美好瞬间~ 📷'}</blockquote>"
+                f"<p style='color:#888;font-size:12px;'>游玩日期：{dt} · 来自线条小狗日程小窝 🐾</p>"
+            )
+            send_wechat_notice(target_token, title, html_content)
 
         return self.send_json({"ok": True, "id": diary_id})
 
