@@ -408,11 +408,13 @@ def push_summary_to_both(summary_type="day"):
     title = summary["title"]
     content = summary["content"] + "\n\n【数据概览】\n" + "\n".join([f"· {s['k']}: {s['v']}" for s in summary["stats"]])
     users = get_users()
+    sent_count = 0
     for uid in ("a", "b"):
         token = users[uid]["wx_uid"]
         if token:
             send_wechat_notice(token, title, content)
-    return summary
+            sent_count += 1
+    return summary, sent_count
 
 
 def send_wechat_notice(token, title, content):
@@ -2680,9 +2682,9 @@ document.addEventListener("click", function(e){
   }
   else if (act === "send-summary-wx"){
     api("/api/summary/push", {method:"POST", body:{type: curSummaryTab}}).then(function(res){
-      toast("💌 时光简报已推送至双方微信！");
+      toast("💌 时光简报已成功推送至微信！(已发送至 " + res.sent_count + " 人的微信)");
     }).catch(function(err){
-      toast("推送失败: " + err.message);
+      toast("❌ " + err.message);
     });
   }
   else if (act === "open-anniv" || act === "open-anniv-list"){
@@ -3244,8 +3246,13 @@ class Handler(BaseHTTPRequestHandler):
                 if self.authed() is None:
                     return
                 stype = d.get("type") or "day"
-                summary = push_summary_to_both(stype)
-                return self.send_json({"ok": True, "summary": summary})
+                summary, sent_count = push_summary_to_both(stype)
+                if sent_count == 0:
+                    return self.send_json({
+                        "ok": False,
+                        "error": "双方均未在【设置】中配置微信推送 Token（如虾推啥/息知），请先前往设置填写！"
+                    }, 400)
+                return self.send_json({"ok": True, "summary": summary, "sent_count": sent_count})
             if path == "/api/diaries":
                 if self.authed() is None:
                     return

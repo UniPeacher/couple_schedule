@@ -1971,9 +1971,9 @@ document.addEventListener("click", function(e){
   }
   else if (act === "send-summary-wx"){
     api("/api/summary/push", {method:"POST", body:{type: curSummaryTab}}).then(function(res){
-      toast("💌 时光简报已推送至双方微信！");
+      toast("💌 时光简报已成功推送至微信！(已发送至 " + res.sent_count + " 人的微信)");
     }).catch(function(err){
-      toast("推送失败: " + err.message);
+      toast("❌ " + err.message);
     });
   }
   else if (act === "open-anniv" || act === "open-anniv-list"){
