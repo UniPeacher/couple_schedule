@@ -96,6 +96,13 @@ CREATE TABLE IF NOT EXISTS summary_cache(
   cache_key   TEXT PRIMARY KEY,
   summary_json TEXT NOT NULL,
   updated_at  TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS notifications(
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_uid  TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  is_read     INTEGER DEFAULT 0,
+  created_at  TEXT NOT NULL);
 """
 
 # 首次初始化时预置的两人示例日程（uid, 标题, 地点, 备注, repeat, 星期0-6, 单次日期, 开始, 结束, 周次）
@@ -410,11 +417,28 @@ def push_summary_to_both(summary_type="day"):
     users = get_users()
     sent_count = 0
     for uid in ("a", "b"):
+        push_system_notice(uid, title, content)
         token = users[uid]["wx_uid"]
         if token:
             send_wechat_notice(token, title, content)
             sent_count += 1
     return summary, sent_count
+
+
+def push_system_notice(target_uid, title, content):
+    if not target_uid:
+        return
+    try:
+        clean_content = re.sub(r'<[^>]+>', ' ', content).strip()
+        clean_content = re.sub(r'\s+', ' ', clean_content)
+        created = time.strftime("%Y-%m-%d %H:%M:%S")
+        with LOCK:
+            CONN.execute(
+                "INSERT INTO notifications(target_uid, title, content, is_read, created_at) VALUES(?,?,?,0,?)",
+                (target_uid, title, clean_content, created)
+            )
+    except Exception as e:
+        print("[push_system_notice] error:", e)
 
 
 def send_wechat_notice(token, title, content):
@@ -1928,6 +1952,15 @@ function renderSettingsPage(){
             '💡 支持 <strong>虾推啥 (wx.xtuis.cn)</strong>，对方留言或新手账时，微信卡片秒弹并直接显示对方说的话。' +
           '</p>' +
 
+          '<div class="field" style="margin-top:16px"><label>🔔 手机原生通知（Android App）</label></div>' +
+          '<div style="background:var(--bg-chip,#fff5ea);padding:10px 14px;border-radius:12px;font-size:12px;color:var(--ink-secondary);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+            '<div>' +
+              '<span>客户端状态：<strong>' + (window.AndroidApp ? '🟢 原生通知已接入' : '⚪ 网页浏览器环境') + '</strong></span>' +
+              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">' + (window.AndroidApp ? '新日程、留言将通过手机顶部横幅实时提醒' : '使用 Android 客户端登录即可自动开启系统通知') + '</div>' +
+            '</div>' +
+            '<button type="button" class="p-btn" data-act="test-app-notice" style="padding:5px 12px;font-size:11px">🔔 测试手机通知</button>' +
+          '</div>' +
+
           llmConfigHtml +
 
           '<div class="field" style="margin-top:16px"><label>🌓 外观主题模式</label></div>' +
@@ -2867,6 +2900,15 @@ document.addEventListener("click", function(e){
       document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
       ME = null; render();
     });
+  } else if (act === "test-app-notice"){
+    if (window.AndroidApp && window.AndroidApp.postNotification) {
+      window.AndroidApp.postNotification("🐾 线条小狗通知测试", "手机原生通知权限已正常开启！后续对方日程与留言都将直接推送给你 🐾");
+      toast("已触发手机通知 🐾");
+    } else {
+      api("/api/notifications/test", {method:"POST"}).then(function(){
+        toast("已向后端写入测试通知 🐾");
+      }).catch(function(err){ toast(err.message || "请求失败"); });
+    }
   } else if (act === "del"){
     if (!confirm("确定删除这条日程？")) return;
     api("/api/events/delete", {method:"POST", body:{id:+el.getAttribute("data-id")}})
@@ -3128,6 +3170,22 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
       render();
     }
   });
+
+  function pollNotifications() {
+    if (!ME) return;
+    api("/api/notifications/poll").then(function(res){
+      if (res && res.ok && res.notifications && res.notifications.length > 0) {
+        res.notifications.forEach(function(item){
+          if (window.AndroidApp && window.AndroidApp.postNotification) {
+            window.AndroidApp.postNotification(item.title, item.content);
+          } else {
+            toast(item.title + ": " + item.content);
+          }
+        });
+      }
+    }).catch(function(){});
+  }
+  setInterval(pollNotifications, 25000);
 </script>
 </body>
 </html>
@@ -3275,6 +3333,23 @@ class Handler(BaseHTTPRequestHandler):
                 stype = (qs.get("type") or ["day"])[0]
                 force = (qs.get("refresh") or ["0"])[0] == "1"
                 return self.send_json(generate_period_summary(stype, force_refresh=force))
+            if path == "/api/notifications/poll":
+                uid = self.current_uid()
+                if not uid:
+                    qs = parse_qs(urlparse(self.path).query)
+                    uid = (qs.get("uid") or [""])[0]
+                if not uid or uid not in ("a", "b"):
+                    return self.send_json({"ok": True, "notifications": []})
+                with LOCK:
+                    rows = CONN.execute(
+                        "SELECT id, title, content, created_at FROM notifications WHERE target_uid=? AND is_read=0 ORDER BY id ASC",
+                        (uid,)
+                    ).fetchall()
+                    if rows:
+                        ids = [r["id"] for r in rows]
+                        q_marks = ",".join("?" * len(ids))
+                        CONN.execute(f"UPDATE notifications SET is_read=1 WHERE id IN ({q_marks})", ids)
+                return self.send_json({"ok": True, "notifications": [dict(r) for r in rows]})
             return self.send_json({"error": "not found"}, 404)
         except Exception:
             self.log_error("GET %s failed: %s", path, sys.exc_info()[1])
@@ -3307,6 +3382,15 @@ class Handler(BaseHTTPRequestHandler):
                 cookie = "%s=deleted; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" % COOKIE
                 return self.send_json({"ok": True}, extra=[("Set-Cookie", cookie)])
 
+            if path == "/api/notifications/test":
+                uid = self.current_uid()
+                if not uid:
+                    uid = d.get("uid") or "a"
+                users = get_users()
+                u_name = users.get(uid, {}).get("name", "小狗")
+                push_system_notice(uid, "🐾 线条小狗原生通知测试", f"汪！{u_name}，你的手机通知权限已成功打通！后续日程与留言有新动态将实时提醒你！")
+                return self.send_json({"ok": True})
+
             if path == "/api/events":
                 if self.authed() is None:
                     return
@@ -3338,14 +3422,18 @@ class Handler(BaseHTTPRequestHandler):
                                        (eid, uid, text, created))
                     cid = cur.lastrowid
 
-                # 微信推送给对方狗狗
+                # 微信与系统原生推送给对方狗狗
                 users = get_users()
                 other_uid = "b" if uid == "a" else "a"
+                sender_name = users[uid]["name"]
+                ev_title = ev_row["title"]
+                notice_title = f"🐾 {sender_name} 给你的日程留了言！"
+                notice_content = f"{sender_name} 在【{ev_title}】留言：{text}"
+                push_system_notice(other_uid, notice_title, notice_content)
+
                 target_token = users[other_uid]["wx_uid"]
                 if target_token:
-                    sender_name = users[uid]["name"]
-                    ev_title = ev_row["title"]
-                    title = f"🐾 {sender_name} 给你的日程留了言！"
+                    title = notice_title
                     html_content = (
                         f"<p>🐶 <strong>{sender_name}</strong> 在日程 <strong>【{ev_title}】</strong> 下留言：</p>"
                         f"<blockquote style='background:#f7f7f7;padding:10px;border-left:4px solid #f6ad55;border-radius:4px;margin:10px 0;'>"
@@ -3459,15 +3547,19 @@ class Handler(BaseHTTPRequestHandler):
                 (uid, title, location, note, repeat, weekday, ev_date, tstart, tend, week_spec))
             eid = cur.lastrowid
 
-        # 微信推送新日程提醒给对方狗狗
+        # 微信与系统原生推送新日程提醒给对方狗狗
         users = get_users()
         other_uid = "b" if uid == "a" else "a"
+        author_name = users[uid]["name"]
+        wd_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+        when_str = f"每周{wd_names[weekday]} {tstart}~{tend}" if repeat == "weekly" else f"{ev_date} {tstart}~{tend}"
+        loc_str = f" · 📍 {location}" if location else ""
+        notice_title = f"🐾 {author_name} 添加了新日程"
+        notice_content = f"【{title}】{loc_str}，时间：{when_str}"
+        push_system_notice(other_uid, notice_title, notice_content)
+
         target_token = users[other_uid]["wx_uid"]
         if target_token:
-            author_name = users[uid]["name"]
-            wd_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-            when_str = f"每周{wd_names[weekday]} {tstart}~{tend}" if repeat == "weekly" else f"{ev_date} {tstart}~{tend}"
-            loc_str = f" · 📍 {location}" if location else ""
             note_str = f"<br>📝 备注：{note}" if note else ""
             msg_title = f"🐾 {author_name} 添加了新日程"
             html_content = (
@@ -3657,15 +3749,19 @@ class Handler(BaseHTTPRequestHandler):
                     (diary_id, fname, s_idx)
                 )
 
-        # 微信推送新手账通知给对方狗狗
+        # 微信与系统原生推送新手账通知给对方狗狗
         users = get_users()
         other_uid = "b" if uid == "a" else "a"
+        sender_name = users[uid]["name"]
+        diary_title = f"📔 {sender_name} 更新了一篇足迹手账！"
+        loc_str = f" · 📍 {location}" if location else ""
+        mood_str = f" [{mood}]" if mood else ""
+        content_snippet = content[:80] if content else "拍下了美好瞬间~ 📷"
+        push_system_notice(other_uid, diary_title, f"【{title}{mood_str}】{loc_str}: {content_snippet}")
+
         target_token = users[other_uid]["wx_uid"]
         if target_token:
-            sender_name = users[uid]["name"]
-            title = f"📔 {sender_name} 更新了一篇足迹手账！"
-            loc_str = f" · 📍 {location}" if location else ""
-            mood_str = f" [{mood}]" if mood else ""
+            title = diary_title
             html_content = (
                 f"<p>🐶 <strong>{sender_name}</strong> 记下了 <strong>【{title}{mood_str}】</strong>{loc_str}：</p>"
                 f"<blockquote style='background:#f7f7f7;padding:10px;border-left:4px solid #38bdf8;border-radius:4px;margin:10px 0;'>"

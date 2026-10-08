@@ -1217,6 +1217,15 @@ function renderSettingsPage(){
             '💡 支持 <strong>虾推啥 (wx.xtuis.cn)</strong>，对方留言或新手账时，微信卡片秒弹并直接显示对方说的话。' +
           '</p>' +
 
+          '<div class="field" style="margin-top:16px"><label>🔔 手机原生通知（Android App）</label></div>' +
+          '<div style="background:var(--bg-chip,#fff5ea);padding:10px 14px;border-radius:12px;font-size:12px;color:var(--ink-secondary);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+            '<div>' +
+              '<span>客户端状态：<strong>' + (window.AndroidApp ? '🟢 原生通知已接入' : '⚪ 网页浏览器环境') + '</strong></span>' +
+              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">' + (window.AndroidApp ? '新日程、留言将通过手机顶部横幅实时提醒' : '使用 Android 客户端登录即可自动开启系统通知') + '</div>' +
+            '</div>' +
+            '<button type="button" class="p-btn" data-act="test-app-notice" style="padding:5px 12px;font-size:11px">🔔 测试手机通知</button>' +
+          '</div>' +
+
           llmConfigHtml +
 
           '<div class="field" style="margin-top:16px"><label>🌓 外观主题模式</label></div>' +
@@ -2156,6 +2165,15 @@ document.addEventListener("click", function(e){
       document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
       ME = null; render();
     });
+  } else if (act === "test-app-notice"){
+    if (window.AndroidApp && window.AndroidApp.postNotification) {
+      window.AndroidApp.postNotification("🐾 线条小狗通知测试", "手机原生通知权限已正常开启！后续对方日程与留言都将直接推送给你 🐾");
+      toast("已触发手机通知 🐾");
+    } else {
+      api("/api/notifications/test", {method:"POST"}).then(function(){
+        toast("已向后端写入测试通知 🐾");
+      }).catch(function(err){ toast(err.message || "请求失败"); });
+    }
   } else if (act === "del"){
     if (!confirm("确定删除这条日程？")) return;
     api("/api/events/delete", {method:"POST", body:{id:+el.getAttribute("data-id")}})
@@ -2417,6 +2435,22 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
       render();
     }
   });
+
+  function pollNotifications() {
+    if (!ME) return;
+    api("/api/notifications/poll").then(function(res){
+      if (res && res.ok && res.notifications && res.notifications.length > 0) {
+        res.notifications.forEach(function(item){
+          if (window.AndroidApp && window.AndroidApp.postNotification) {
+            window.AndroidApp.postNotification(item.title, item.content);
+          } else {
+            toast(item.title + ": " + item.content);
+          }
+        });
+      }
+    }).catch(function(){});
+  }
+  setInterval(pollNotifications, 25000);
 </script>
 </body>
 </html>
