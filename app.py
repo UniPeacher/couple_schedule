@@ -1207,6 +1207,7 @@ var CURRENT_VIEW = "week"; // "week" | "month"
 var MONTH_ANCHOR = todayISO().slice(0, 7); // YYYY-MM
 var MONTH_DATA = null;
 var diaryPhotosToUpload = []; // base64 list
+var curEditingDiary = null;
 var activeDiaryDate = "";
 var addUid = "a", addRep = "weekly", loginUid = "a", annivType = "love";
 
@@ -1714,10 +1715,11 @@ function modalsHTML(){
 
     '<div class="overlay" id="ovAddDiary"><div class="modal">' +
       '<div class="mhead">' +
-        '<div class="mhead-left"><h3>记下今天去哪玩啦 🐾</h3></div>' +
+        '<div class="mhead-left"><h3 id="df_modal_title">记下今天去哪玩啦 🐾</h3></div>' +
         '<img src="/img/dog-add.png" alt="" class="mhead-img">' +
       '</div>' +
       '<form id="addDiaryForm">' +
+        '<input type="hidden" id="df_edit_id" value="">' +
         '<div class="field"><label>游玩日期</label><input type="date" id="df_date" required></div>' +
         '<div class="field"><label>游玩主题 / 事项</label><input id="df_title" required maxlength="80" placeholder="如：迪士尼一日游 🎡 / 武康路散步吃冰淇淋 🍦"></div>' +
         '<div class="row2">' +
@@ -1732,12 +1734,12 @@ function modalsHTML(){
         '</div>' +
         '<div class="field"><label>手账碎碎念 / 美好回忆</label><textarea id="df_content" rows="3" placeholder="今天遇到了什么好玩的事，拍了什么照片..." style="width:100%;border:1.5px solid var(--line-strong);border-radius:12px;padding:8px;font-family:inherit;font-size:13px"></textarea></div>' +
         '<div class="field"><label>拍立得照片（支持多张，自动压缩秒传 📷）</label>' +
-          '<input type="file" id="df_files" accept="image/*" multiple style="font-size:12px">' +
+          '<input type="file" id="df_files" accept="image/*" multiple style="font-size:12px;display:block;width:100%">' +
           '<div id="df_preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>' +
         '</div>' +
         '<div class="foot">' +
           '<button type="button" class="p-btn" data-act="close">取消</button>' +
-          '<button class="p-btn pri">✨ 贴在手账本上！</button>' +
+          '<button class="p-btn pri" id="df_submit_btn">✨ 贴在手账本上！</button>' +
         '</div>' +
       '</form>' +
     '</div></div>';
@@ -1795,13 +1797,17 @@ function openDayDiaries(dtStr){
           '</div>';
         }
 
+        var dJson = encodeURIComponent(JSON.stringify(d));
         html += '<div class="diary-item-card">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
             '<div>' +
               '<span style="font-size:15px;font-weight:800;color:var(--ink-primary)">' + esc(d.title) + '</span>' +
               (d.mood ? (' <span style="font-size:12px;background:#fff8eb;border-radius:10px;padding:2px 6px;margin-left:4px">' + esc(d.mood) + '</span>') : '') +
             '</div>' +
-            '<button class="p-btn danger" style="padding:2px 8px;font-size:11px" data-act="del-diary" data-id="' + d.id + '">删除</button>' +
+            '<div style="display:flex;gap:4px">' +
+              '<button class="p-btn" style="padding:2px 8px;font-size:11px" data-act="edit-diary" data-diary="' + dJson + '">编辑</button>' +
+              '<button class="p-btn danger" style="padding:2px 8px;font-size:11px" data-act="del-diary" data-id="' + d.id + '">删除</button>' +
+            '</div>' +
           '</div>' +
           (d.location ? ('<div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:6px">📍 ' + esc(d.location) + '</div>') : '') +
           (d.content ? ('<div style="font-size:13px;line-height:1.5;color:var(--ink-secondary);white-space:pre-wrap;margin-bottom:8px">' + esc(d.content) + '</div>') : '') +
@@ -1956,13 +1962,51 @@ document.addEventListener("click", function(e){
     openDayDiaries(el.getAttribute("data-date"));
   }
   else if (act === "open-add-diary"){
+    curEditingDiary = null;
     var dt = el.getAttribute("data-date") || activeDiaryDate || todayISO();
-    var fDate = $("#df_date");
-    if (fDate) fDate.value = dt;
+    if ($("#df_edit_id")) $("#df_edit_id").value = "";
+    if ($("#df_modal_title")) $("#df_modal_title").textContent = "记下今天去哪玩啦 🐾";
+    if ($("#df_submit_btn")) $("#df_submit_btn").textContent = "✨ 贴在手账本上！";
+    if ($("#df_date")) $("#df_date").value = dt;
+    if ($("#df_title")) $("#df_title").value = "";
+    if ($("#df_loc")) $("#df_loc").value = "";
+    if ($("#df_mood")) $("#df_mood").value = "🥰 幸福贴贴";
+    if ($("#df_content")) $("#df_content").value = "";
+    if ($("#df_files")) $("#df_files").value = "";
     diaryPhotosToUpload = [];
     var prev = $("#df_preview");
     if (prev) prev.innerHTML = "";
     $("#ovAddDiary").classList.add("show");
+  }
+  else if (act === "edit-diary"){
+    try {
+      var d = JSON.parse(decodeURIComponent(el.getAttribute("data-diary")));
+      curEditingDiary = d;
+      if ($("#df_edit_id")) $("#df_edit_id").value = d.id;
+      if ($("#df_modal_title")) $("#df_modal_title").textContent = "修改手账记录 ✏️";
+      if ($("#df_submit_btn")) $("#df_submit_btn").textContent = "💾 保存手账修改";
+      if ($("#df_date")) $("#df_date").value = d.date;
+      if ($("#df_title")) $("#df_title").value = d.title;
+      if ($("#df_loc")) $("#df_loc").value = d.location || "";
+      if ($("#df_mood")) $("#df_mood").value = d.mood || "🥰 幸福贴贴";
+      if ($("#df_content")) $("#df_content").value = d.content || "";
+      if ($("#df_files")) $("#df_files").value = "";
+      diaryPhotosToUpload = [];
+      var prev = $("#df_preview");
+      if (prev){
+        prev.innerHTML = (d.photos || []).map(function(p){
+          return '<div class="edit-photo-thumb" data-file="' + p.file_name + '" style="position:relative;display:inline-block">' +
+            '<img src="/photos/' + p.file_name + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ddd">' +
+            '<span class="del-photo-btn" data-act="remove-edit-photo" data-file="' + p.file_name + '" style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold">×</span>' +
+          '</div>';
+        }).join("");
+      }
+      $("#ovAddDiary").classList.add("show");
+    } catch(e){}
+  }
+  else if (act === "remove-edit-photo"){
+    var pwrap = el.closest(".edit-photo-thumb");
+    if (pwrap) pwrap.remove();
   }
   else if (act === "del-diary"){
     if (!confirm("确定删除这篇手账与照片？")) return;
@@ -2088,6 +2132,12 @@ document.addEventListener("submit", function(e){
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   } else if (f.id === "addDiaryForm"){
     e.preventDefault();
+    var editId = $("#df_edit_id") ? $("#df_edit_id").value : "";
+    var keepPhotos = [];
+    document.querySelectorAll(".edit-photo-thumb").forEach(function(el){
+      var fn = el.getAttribute("data-file");
+      if (fn) keepPhotos.push(fn);
+    });
     var body = {
       date: $("#df_date").value,
       title: $("#df_title").value.trim(),
@@ -2096,12 +2146,19 @@ document.addEventListener("submit", function(e){
       content: $("#df_content").value.trim(),
       photos: diaryPhotosToUpload
     };
-    api("/api/diaries", {method:"POST", body:body})
+    var url = "/api/diaries";
+    if (editId){
+      body.id = +editId;
+      body.keep_photos = keepPhotos;
+      url = "/api/diaries/update";
+    }
+    api(url, {method:"POST", body:body})
       .then(function(){
         document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
-        toast("手账已贴在小窝啦 🐾");
+        toast(editId ? "手账修改已保存 🐾" : "手账已贴在小窝啦 🐾");
         diaryPhotosToUpload = [];
         load();
+        if (activeDiaryDate) openDayDiaries(activeDiaryDate);
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   }
@@ -2132,6 +2189,10 @@ document.addEventListener("change", function(e){
           var compB64 = canvas.toDataURL("image/jpeg", 0.82);
           diaryPhotosToUpload.push(compB64);
 
+          var pWrap = document.createElement("div");
+          pWrap.style.position = "relative";
+          pWrap.style.display = "inline-block";
+
           var thumbEl = document.createElement("img");
           thumbEl.src = compB64;
           thumbEl.style.width = "48px";
@@ -2139,7 +2200,19 @@ document.addEventListener("change", function(e){
           thumbEl.style.objectFit = "cover";
           thumbEl.style.borderRadius = "6px";
           thumbEl.style.border = "1px solid #ddd";
-          if (prev) prev.appendChild(thumbEl);
+
+          var delX = document.createElement("span");
+          delX.textContent = "×";
+          delX.style.cssText = "position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold";
+          delX.onclick = function(){
+            var idx = diaryPhotosToUpload.indexOf(compB64);
+            if (idx !== -1) diaryPhotosToUpload.splice(idx, 1);
+            pWrap.remove();
+          };
+
+          pWrap.appendChild(thumbEl);
+          pWrap.appendChild(delX);
+          if (prev) prev.appendChild(pWrap);
         };
         img.src = evt.target.result;
       };
@@ -2190,7 +2263,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def body_json(self):
         n = int(self.headers.get("Content-Length") or 0)
-        if n <= 0 or n > 65536:
+        # 上传手账多张拍立得图片时请求体积会达到几 MB，放宽限制到 30MB
+        if n <= 0 or n > 31457280:
             return {}
         raw = self.rfile.read(n)
         try:
@@ -2419,6 +2493,10 @@ class Handler(BaseHTTPRequestHandler):
                 if self.authed() is None:
                     return
                 return self.delete_diary(d)
+            if path == "/api/diaries/update":
+                if self.authed() is None:
+                    return
+                return self.update_diary(d)
             return self.send_json({"error": "not found"}, 404)
         except Exception:
             self.log_error("POST %s failed: %s", path, sys.exc_info()[1])
@@ -2669,6 +2747,67 @@ class Handler(BaseHTTPRequestHandler):
             send_wechat_notice(target_token, title, html_content)
 
         return self.send_json({"ok": True, "id": diary_id})
+
+    def update_diary(self, d):
+        try:
+            did = int(d.get("id"))
+        except (TypeError, ValueError):
+            return self.send_json({"error": "参数错误"}, 400)
+        title = str(d.get("title") or "").strip()[:80]
+        dt = str(d.get("date") or "").strip()
+        location = str(d.get("location") or "").strip()[:100]
+        mood = str(d.get("mood") or "").strip()[:30]
+        content = str(d.get("content") or "").strip()[:4000]
+        photos_base64 = d.get("photos") or []  # 新增的照片
+        keep_photos = d.get("keep_photos") or []  # 保留的原有照片文件名
+
+        if not title:
+            return self.send_json({"error": "主题不能为空"}, 400)
+        if not dt or not DATE_RE.match(dt):
+            return self.send_json({"error": "日期无效"}, 400)
+
+        os.makedirs(PHOTOS_DIR, exist_ok=True)
+        import base64
+        new_saved_photos = []
+        for idx, p_b64 in enumerate(photos_base64[:9]):
+            try:
+                if "," in p_b64:
+                    p_b64 = p_b64.split(",", 1)[1]
+                data = base64.b64decode(p_b64)
+                fname = f"pic_{dt}_{int(time.time())}_{secrets.token_hex(4)}.jpg"
+                fpath = os.path.join(PHOTOS_DIR, fname)
+                with open(fpath, "wb") as pf:
+                    pf.write(data)
+                new_saved_photos.append(fname)
+            except Exception as e:
+                self.log_error("保存图片失败: %s", e)
+
+        with LOCK:
+            CONN.execute(
+                "UPDATE diaries SET date=?, title=?, location=?, mood=?, content=? WHERE id=?",
+                (dt, title, location, mood, content, did)
+            )
+            # 处理删除旧照片
+            old_photos = CONN.execute("SELECT file_name FROM diary_photos WHERE diary_id=?", (did,)).fetchall()
+            for op in old_photos:
+                fn = op["file_name"]
+                if fn not in keep_photos:
+                    try:
+                        fp = os.path.join(PHOTOS_DIR, fn)
+                        if os.path.exists(fp):
+                            os.remove(fp)
+                    except Exception:
+                        pass
+            CONN.execute("DELETE FROM diary_photos WHERE diary_id=?", (did,))
+            # 重新插入保留的旧照片和新增的照片
+            all_current = [p for p in keep_photos if any(op["file_name"] == p for op in old_photos)] + new_saved_photos
+            for s_idx, fname in enumerate(all_current):
+                CONN.execute(
+                    "INSERT INTO diary_photos(diary_id, file_name, sort_order) VALUES(?,?,?)",
+                    (did, fname, s_idx)
+                )
+
+        return self.send_json({"ok": True, "id": did})
 
     def delete_diary(self, d):
         try:
