@@ -40,6 +40,8 @@ public class MainActivity extends AppCompatActivity {
     private SwipeRefreshLayout swipeRefresh;
     private ValueCallback<Uri[]> filePathCallback;
     private long lastBackPressTime = 0;
+    private String pendingTargetAction = null;
+    private boolean isPageLoaded = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -62,6 +64,35 @@ public class MainActivity extends AppCompatActivity {
 
         initWebView();
         loadServerUrl();
+        handleIntentAction(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntentAction(intent);
+    }
+
+    private void handleIntentAction(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getStringExtra("target_action");
+        if (action != null && !action.trim().isEmpty()) {
+            dispatchTargetAction(action.trim());
+        }
+    }
+
+    private void dispatchTargetAction(String action) {
+        if (!isPageLoaded) {
+            pendingTargetAction = action;
+            return;
+        }
+        if (webView != null) {
+            webView.post(() -> {
+                String script = "if(window.handleTargetAction){window.handleTargetAction('" + action + "');}";
+                webView.evaluateJavascript(script, null);
+            });
+        }
     }
 
     private void checkNotificationPermission() {
@@ -100,6 +131,11 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 swipeRefresh.setRefreshing(false);
+                isPageLoaded = true;
+                if (pendingTargetAction != null) {
+                    dispatchTargetAction(pendingTargetAction);
+                    pendingTargetAction = null;
+                }
             }
 
             @Override

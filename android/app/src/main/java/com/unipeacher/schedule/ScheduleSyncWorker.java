@@ -101,7 +101,8 @@ public class ScheduleSyncWorker extends Worker {
                             int nid = item.optInt("id", (int) (System.currentTimeMillis() % 100000000));
                             String title = item.optString("title", "🐾 线条小狗日程提醒");
                             String content = item.optString("content", "");
-                            NotificationHelper.showNotification(context, nid, title, content);
+                            String targetAction = item.optString("target_action", "");
+                            NotificationHelper.showNotification(context, nid, title, content, targetAction);
                         }
                     }
                 }
