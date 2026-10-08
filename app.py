@@ -3469,6 +3469,7 @@ document.addEventListener("click", function(e){
     }).catch(function(err){ toast(err.message || "操作失败"); });
   }
   else if (act === "del-one-msg"){
+    if (!confirm("确定删除这条消息？")) return;
     var mid = +el.getAttribute("data-mid");
     api("/api/messages/delete", {method:"POST", body:{id:mid}}).then(function(res){
       toast("已删除消息 🐾");
@@ -3478,6 +3479,9 @@ document.addEventListener("click", function(e){
     }).catch(function(err){ toast(err.message || "删除失败"); });
   }
   else if (act === "open-msg"){
+    if (e.target.closest("[data-act='read-one-msg']") || e.target.closest("[data-act='del-one-msg']")){
+      return;
+    }
     var mid = +el.getAttribute("data-mid");
     var targetAction = el.getAttribute("data-target-action");
     var m = (MESSAGES_DATA || []).find(function(x){ return x.id === mid; });
