@@ -3135,6 +3135,7 @@ document.addEventListener("click", function(e){
       document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
       ME = null; render();
     });
+  }
   else if (act === "msg-filter"){
     curMsgFilter = el.getAttribute("data-v") || "all";
     document.querySelectorAll("#msgFilterSeg .opt").forEach(function(o){
@@ -3205,7 +3206,7 @@ document.addEventListener("click", function(e){
       pollMessages();
     }).catch(function(err){ toast(err.message || "请求失败"); });
   }
-  } else if (act === "battery-protect"){
+  else if (act === "battery-protect"){
     if (window.AndroidApp && window.AndroidApp.requestBatteryOptimization) {
       window.AndroidApp.requestBatteryOptimization();
     } else {
