@@ -2953,6 +2953,19 @@ function modalsHTML(){
 var curDetail = null;
 var pvPhotosList = [];
 var pvCurrentIndex = 0;
+var pvScale = 1, pvTx = 0, pvTy = 0;
+
+function resetPvTransform(smooth){
+  pvScale = 1; pvTx = 0; pvTy = 0;
+  applyPvTransform(smooth);
+}
+
+function applyPvTransform(smooth){
+  var img = $("#pvImage");
+  if (!img) return;
+  img.style.transition = smooth ? "transform .2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity .2s ease" : "none";
+  img.style.transform = "translate3d(" + pvTx + "px," + pvTy + "px,0) scale(" + pvScale + ")";
+}
 
 function scrollToToday(){
   var wrap = document.querySelector(".calwrap");
@@ -2976,6 +2989,7 @@ function updatePhotoViewer(){
   var total = pvPhotosList.length;
   if (total === 0) return;
   img.src = pvPhotosList[pvCurrentIndex];
+  resetPvTransform(false);
   if (ind) ind.textContent = (pvCurrentIndex + 1) + " / " + total;
   if (bPrev) bPrev.style.display = total > 1 ? "flex" : "none";
   if (bNext) bNext.style.display = total > 1 ? "flex" : "none";
@@ -3917,32 +3931,113 @@ document.addEventListener("keydown", function(e){
   }
 });
 
-/* 手势左右滑动切图支持 */
+/* 拍立得大图交互：双指捏合缩放、双击缩放、放大后自由平移拖拽、单指边缘滑动切图 */
 (function(){
   var startX = 0, startY = 0;
+  var initDist = 0, initScale = 1;
+  var isPanning = false, panStartX = 0, panStartY = 0, initialTx = 0, initialTy = 0;
+  var lastTapTime = 0;
+
+  function getDistance(t1, t2){
+    var dx = t1.clientX - t2.clientX;
+    var dy = t1.clientY - t2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
   document.addEventListener("touchstart", function(e){
     var pv = $("#ovPhotoViewer");
     if (!pv || pv.style.display === "none") return;
-    if (e.touches && e.touches.length === 1){
+
+    if (e.touches.length === 2){
+      // 双指捏合缩放开始
+      initDist = getDistance(e.touches[0], e.touches[1]);
+      initScale = pvScale;
+      isPanning = false;
+    } else if (e.touches.length === 1){
+      var now = Date.now();
+      if (now - lastTapTime < 280){
+        // 双击快速缩放 (1x <-> 2.5x)
+        if (pvScale > 1.05){
+          resetPvTransform(true);
+        } else {
+          pvScale = 2.5;
+          pvTx = 0;
+          pvTy = 0;
+          applyPvTransform(true);
+        }
+        lastTapTime = 0;
+        return;
+      }
+      lastTapTime = now;
+
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
+
+      if (pvScale > 1.05){
+        isPanning = true;
+        panStartX = e.touches[0].clientX;
+        panStartY = e.touches[0].clientY;
+        initialTx = pvTx;
+        initialTy = pvTy;
+      }
     }
-  }, {passive:true});
+  }, {passive:false});
+
+  document.addEventListener("touchmove", function(e){
+    var pv = $("#ovPhotoViewer");
+    if (!pv || pv.style.display === "none") return;
+
+    if (e.touches.length === 2){
+      // 捏合缩放中
+      if (e.cancelable) e.preventDefault();
+      var currentDist = getDistance(e.touches[0], e.touches[1]);
+      if (initDist > 0){
+        var newScale = initScale * (currentDist / initDist);
+        pvScale = Math.min(Math.max(newScale, 0.8), 5.0);
+        applyPvTransform(false);
+      }
+    } else if (e.touches.length === 1 && isPanning && pvScale > 1.05){
+      // 放大状态下的拖拽移动
+      if (e.cancelable) e.preventDefault();
+      var dx = e.touches[0].clientX - panStartX;
+      var dy = e.touches[0].clientY - panStartY;
+      pvTx = initialTx + dx;
+      pvTy = initialTy + dy;
+      applyPvTransform(false);
+    }
+  }, {passive:false});
 
   document.addEventListener("touchend", function(e){
     var pv = $("#ovPhotoViewer");
     if (!pv || pv.style.display === "none") return;
-    if (e.changedTouches && e.changedTouches.length === 1){
-      var diffX = e.changedTouches[0].clientX - startX;
-      var diffY = e.changedTouches[0].clientY - startY;
-      // 水平滑动距离大于 45px 且大于垂直滑动距离，触发左右切图
-      if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY)){
-        if (diffX > 0){
-          var bP = $("#pvBtnPrev"); if (bP) bP.click();
-        } else {
-          var bN = $("#pvBtnNext"); if (bN) bN.click();
+
+    if (e.touches.length === 0){
+      if (pvScale < 1.0){
+        // 缩小于 1 倍时自动回弹到 1 倍
+        resetPvTransform(true);
+      } else if (pvScale > 1.05){
+        // 放大状态下限制移动边界，防止移出视口
+        var maxTx = (window.innerWidth * (pvScale - 1)) / 2 + 60;
+        var maxTy = (window.innerHeight * (pvScale - 1)) / 2 + 60;
+        pvTx = Math.max(-maxTx, Math.min(maxTx, pvTx));
+        pvTy = Math.max(-maxTy, Math.min(maxTy, pvTy));
+        applyPvTransform(true);
+      }
+
+      // 未放大状态下（pvScale <= 1.05），支持单指左右滑动手势切图
+      if (pvScale <= 1.05 && e.changedTouches && e.changedTouches.length === 1 && !isPanning){
+        var diffX = e.changedTouches[0].clientX - startX;
+        var diffY = e.changedTouches[0].clientY - startY;
+        if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY)){
+          if (diffX > 0){
+            var bP = $("#pvBtnPrev"); if (bP) bP.click();
+          } else {
+            var bN = $("#pvBtnNext"); if (bN) bN.click();
+          }
         }
       }
+      isPanning = false;
+      initDist = 0;
     }
   }, {passive:true});
 })();
