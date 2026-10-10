@@ -1278,17 +1278,17 @@ button,input,select,textarea{font-family:inherit}
   display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;
 }
 .month-grid{
-  display:grid;grid-template-columns:repeat(7, 1fr);gap:8px;
+  display:grid;grid-template-columns:repeat(7, minmax(0, 1fr));gap:7px;
 }
 .month-head-cell{
   text-align:center;font-size:12px;font-weight:800;color:var(--ink-muted);
   padding:6px 0;letter-spacing:.5px;
 }
 .month-cell{
-  background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:16px;
-  min-height:92px;padding:6px 8px;display:flex;flex-direction:column;
+  background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:14px;
+  min-height:76px;padding:5px 6px;display:flex;flex-direction:column;
   box-shadow:var(--shadow-sm);cursor:pointer;transition:all .18s ease;
-  position:relative;overflow:hidden;
+  position:relative;overflow:hidden;min-width:0;
 }
 .month-cell:hover{
   border-color:var(--dog-a);transform:translateY(-2px);box-shadow:var(--shadow-md);
@@ -1305,27 +1305,26 @@ button,input,select,textarea{font-family:inherit}
 }
 .mday-head{
   display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;
+  min-width:0;gap:2px;
 }
 .mday-num{
-  font-size:12.5px;font-weight:800;color:var(--ink-primary);
+  font-size:12.5px;font-weight:800;color:var(--ink-primary);flex-shrink:0;
 }
 .mday-badges{
-  display:flex;align-items:center;gap:3px;
+  display:flex;align-items:center;gap:2px;flex-shrink:0;
 }
 .mday-badge{
   font-size:11px;line-height:1;
 }
+/* 有手账的日期：底部铺一张封面缩略图，绝不溢出单元格 */
 .mday-polaroid{
-  margin-top:auto;display:flex;align-items:center;gap:6px;
-  background:#fffef9;border:1px solid #ebd8c8;border-radius:10px;padding:3px;
-  box-shadow:0 1px 3px rgba(0,0,0,0.06);
+  margin-top:auto;width:100%;min-width:0;
 }
 .mday-thumb{
-  width:32px;height:32px;border-radius:6px;object-fit:cover;flex-shrink:0;
+  width:100%;height:26px;border-radius:6px;object-fit:cover;display:block;
 }
 .mday-info{
-  overflow:hidden;font-size:10.5px;line-height:1.2;font-weight:700;
-  color:var(--ink-primary);text-overflow:ellipsis;white-space:nowrap;
+  display:none;
 }
 
 /* 拍立得照片墙与日记弹窗 */
