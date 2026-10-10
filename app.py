@@ -1574,7 +1574,6 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 .overlay{
   position:fixed;inset:0;
   background:rgba(61, 47, 37, 0.45);
-  backdrop-filter:blur(5px);
   display:none;align-items:flex-start;justify-content:center;
   z-index:50;padding:26px 12px;overflow-y:auto;
 }
@@ -1583,10 +1582,11 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
   background:var(--bg-modal);border:2px solid var(--line-strong);
   border-radius:24px;max-width:460px;width:100%;
   padding:22px 24px;box-shadow:var(--shadow-lg);
-  position:relative;animation:modalPop .22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position:relative;animation:modalPop .16s ease-out;
+  transform:translateZ(0);backface-visibility:hidden;
   color:var(--ink-primary);
 }
-@keyframes modalPop{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}
+@keyframes modalPop{from{opacity:0;transform:scale(0.97) translateZ(0)}to{opacity:1;transform:scale(1) translateZ(0)}}
 
 .mhead{
   display:flex;align-items:center;justify-content:space-between;
