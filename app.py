@@ -71,7 +71,8 @@ CREATE TABLE IF NOT EXISTS comments(
   event_id INTEGER NOT NULL,
   uid      TEXT NOT NULL,
   text     TEXT NOT NULL,
-  created  TEXT NOT NULL);
+  created  TEXT NOT NULL,
+  date     TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS anniversaries(
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
   title    TEXT NOT NULL,
@@ -548,6 +549,10 @@ def init_db():
     CONN.execute("PRAGMA busy_timeout=15000")
     with LOCK:
         CONN.executescript(SCHEMA)
+        try:
+            CONN.execute("ALTER TABLE comments ADD COLUMN date TEXT DEFAULT ''")
+        except Exception:
+            pass
         try:
             CONN.execute("ALTER TABLE notifications ADD COLUMN target_action TEXT DEFAULT ''")
         except Exception:
@@ -3088,8 +3093,9 @@ function openDayDiaries(dtStr){
 }
 
 function openDetail(id, date){
-  curDetail = {id: +id, date: date};
-  api("/api/event/" + id).then(function(j){
+  curDetail = {id: +id, date: date || todayISO()};
+  var q = curDetail.date ? ("?date=" + curDetail.date) : "";
+  api("/api/event/" + id + q).then(function(j){
     $("#ovDetailBox").innerHTML = detailHTML(j);
     openModal("#ovDetail");
   }).catch(function(err){ if (err.message !== "unauth") toast(err.message); });
@@ -3442,7 +3448,8 @@ document.addEventListener("click", function(e){
     var inp = $("#cmtText");
     var text = inp ? inp.value.trim() : "";
     if (!text || !curDetail) return;
-    api("/api/comment", {method:"POST", body:{event_id:curDetail.id, text:text}})
+    var cmtDate = curDetail.date || todayISO();
+    api("/api/comment", {method:"POST", body:{event_id:curDetail.id, text:text, date:cmtDate}})
       .then(function(){ return load(); })
       .then(function(){ refreshDetail(); })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
@@ -3911,18 +3918,19 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
     if (!action || typeof action !== "string") return;
     var parts = action.split(":");
     var type = parts[0];
-    var val = parts.slice(1).join(":");
+    var val = parts[1] || "";
 
     if (type === "event") {
       var eid = parseInt(val);
+      var eDate = parts[2] || "";
       if (!isNaN(eid)) {
         if (CURRENT_VIEW !== "week") {
           CURRENT_VIEW = "week";
           load().then(function(){
-            setTimeout(function(){ openDetail(eid); }, 150);
+            setTimeout(function(){ openDetail(eid, eDate); }, 150);
           });
         } else {
-          openDetail(eid);
+          openDetail(eid, eDate);
         }
       }
     } else if (type === "diary") {
@@ -4047,12 +4055,20 @@ class Handler(BaseHTTPRequestHandler):
                     eid = int(path.rsplit("/", 1)[-1])
                 except ValueError:
                     return self.send_json({"error": "参数错误"}, 400)
+                req_date = self.query.get("date", [""])[0].strip()
                 with LOCK:
                     ev = CONN.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
-                    cmts = CONN.execute(
-                        "SELECT c.id, c.uid, c.text, c.created, u.name FROM comments c "
-                        "LEFT JOIN users u ON u.uid=c.uid WHERE c.event_id=? ORDER BY c.id",
-                        (eid,)).fetchall()
+                    if req_date:
+                        cmts = CONN.execute(
+                            "SELECT c.id, c.uid, c.text, c.created, c.date, u.name FROM comments c "
+                            "LEFT JOIN users u ON u.uid=c.uid WHERE c.event_id=? AND (c.date=? OR c.date='') "
+                            "ORDER BY c.id",
+                            (eid, req_date)).fetchall()
+                    else:
+                        cmts = CONN.execute(
+                            "SELECT c.id, c.uid, c.text, c.created, c.date, u.name FROM comments c "
+                            "LEFT JOIN users u ON u.uid=c.uid WHERE c.event_id=? ORDER BY c.id",
+                            (eid,)).fetchall()
                 if ev is None:
                     return self.send_json({"error": "日程不存在"}, 404)
                 users = get_users()
@@ -4060,6 +4076,7 @@ class Handler(BaseHTTPRequestHandler):
                     "event": dict(ev),
                     "owner": {"uid": ev["uid"], "name": users[ev["uid"]]["name"]},
                     "comments": [dict(c) for c in cmts],
+                    "filter_date": req_date
                 })
             if path == "/api/health":
                 return self.send_json({"ok": True, "time": time.strftime("%F %T")})
@@ -4371,15 +4388,18 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 eid = d.get("event_id")
                 text = str(d.get("text") or "").strip()[:500]
+                cmt_date = str(d.get("date") or "").strip()
                 if not isinstance(eid, int) or not text:
                     return self.send_json({"error": "参数错误"}, 400)
                 created = time.strftime("%Y-%m-%d %H:%M")
+                if not cmt_date and DATE_RE.match(created[:10]):
+                    cmt_date = created[:10]
                 with LOCK:
                     ev_row = CONN.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
                     if ev_row is None:
                         return self.send_json({"error": "日程不存在"}, 404)
-                    cur = CONN.execute("INSERT INTO comments(event_id,uid,text,created) VALUES(?,?,?,?)",
-                                       (eid, uid, text, created))
+                    cur = CONN.execute("INSERT INTO comments(event_id,uid,text,created,date) VALUES(?,?,?,?,?)",
+                                       (eid, uid, text, created, cmt_date))
                     cid = cur.lastrowid
 
                 # 微信与系统原生推送给对方狗狗
@@ -4389,7 +4409,7 @@ class Handler(BaseHTTPRequestHandler):
                 ev_title = ev_row["title"]
                 notice_title = f"🐾 {sender_name} 给你的日程留了言！"
                 notice_content = f"{sender_name} 在【{ev_title}】留言：{text}"
-                push_system_notice(other_uid, notice_title, notice_content, f"event:{eid}")
+                push_system_notice(other_uid, notice_title, notice_content, f"event:{eid}:{cmt_date}")
 
                 target_token = users[other_uid]["wx_uid"]
                 if target_token:

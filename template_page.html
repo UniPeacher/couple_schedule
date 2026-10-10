@@ -2276,8 +2276,9 @@ function openDayDiaries(dtStr){
 }
 
 function openDetail(id, date){
-  curDetail = {id: +id, date: date};
-  api("/api/event/" + id).then(function(j){
+  curDetail = {id: +id, date: date || todayISO()};
+  var q = curDetail.date ? ("?date=" + curDetail.date) : "";
+  api("/api/event/" + id + q).then(function(j){
     $("#ovDetailBox").innerHTML = detailHTML(j);
     openModal("#ovDetail");
   }).catch(function(err){ if (err.message !== "unauth") toast(err.message); });
@@ -2630,7 +2631,8 @@ document.addEventListener("click", function(e){
     var inp = $("#cmtText");
     var text = inp ? inp.value.trim() : "";
     if (!text || !curDetail) return;
-    api("/api/comment", {method:"POST", body:{event_id:curDetail.id, text:text}})
+    var cmtDate = curDetail.date || todayISO();
+    api("/api/comment", {method:"POST", body:{event_id:curDetail.id, text:text, date:cmtDate}})
       .then(function(){ return load(); })
       .then(function(){ refreshDetail(); })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
@@ -3099,18 +3101,19 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
     if (!action || typeof action !== "string") return;
     var parts = action.split(":");
     var type = parts[0];
-    var val = parts.slice(1).join(":");
+    var val = parts[1] || "";
 
     if (type === "event") {
       var eid = parseInt(val);
+      var eDate = parts[2] || "";
       if (!isNaN(eid)) {
         if (CURRENT_VIEW !== "week") {
           CURRENT_VIEW = "week";
           load().then(function(){
-            setTimeout(function(){ openDetail(eid); }, 150);
+            setTimeout(function(){ openDetail(eid, eDate); }, 150);
           });
         } else {
-          openDetail(eid);
+          openDetail(eid, eDate);
         }
       }
     } else if (type === "diary") {
