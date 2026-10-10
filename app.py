@@ -4055,7 +4055,8 @@ class Handler(BaseHTTPRequestHandler):
                     eid = int(path.rsplit("/", 1)[-1])
                 except ValueError:
                     return self.send_json({"error": "参数错误"}, 400)
-                req_date = self.query.get("date", [""])[0].strip()
+                qs = parse_qs(urlparse(self.path).query)
+                req_date = (qs.get("date", [""])[0] or "").strip()
                 with LOCK:
                     ev = CONN.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
                     if req_date:
