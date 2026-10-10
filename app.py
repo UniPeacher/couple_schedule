@@ -1838,6 +1838,7 @@ var addWishCat = "travel";
 var addWishPrio = 0;
 var diaryPhotosToUpload = []; // base64 list
 var curEditingDiary = null;
+var curEditingEventId = null;
 var activeDiaryDate = "";
 var addUid = "a", addRep = "weekly", loginUid = "a", annivType = "love";
 
@@ -2824,7 +2825,7 @@ function modalsHTML(){
 
   return '<div class="overlay" id="ovAdd"><div class="modal">' +
     '<div class="mhead">' +
-      '<div class="mhead-left"><h3>添加日程 🐾</h3></div>' +
+      '<div class="mhead-left"><h3 id="addModalTitle">添加日程 🐾</h3></div>' +
       '<img src="/img/dog-add.png" alt="" class="mhead-img">' +
     '</div>' +
     '<form id="addForm">' +
@@ -2843,7 +2844,7 @@ function modalsHTML(){
       '<div class="field"><label>周次范围（可选：2-17 / 2-16双 / 1-4,9-12；留空=每周）</label><input id="f_ws" maxlength="60" placeholder="留空代表全学期每周"></div>' +
       '<div class="foot">' +
         '<button type="button" class="p-btn" data-act="close">取消</button>' +
-        '<button class="p-btn pri">🐾 记在小本本上！</button>' +
+        '<button class="p-btn pri" id="addModalSubmitBtn">🐾 记在小本本上！</button>' +
       '</div>' +
     '</form></div></div>' +
 
@@ -3163,8 +3164,11 @@ function detailHTML(j){
       '<input id="cmtText" maxlength="500" placeholder="和 TA 说点什么…（回车发送）">' +
       '<button class="p-btn pri" data-act="send-cmt" style="padding:8px 16px">🐾 发送</button>' +
     '</div>' +
-    '<div class="foot" style="justify-content:space-between;margin-top:14px">' +
-      '<button class="p-btn danger" data-act="del-event" data-id="' + ev.id + '">删除此日程</button>' +
+    '<div class="foot" style="justify-content:space-between;margin-top:14px;flex-wrap:wrap;gap:8px">' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="p-btn pri" data-act="edit-event" data-id="' + ev.id + '">✏️ 编辑日程</button>' +
+        '<button class="p-btn danger" data-act="del-event" data-id="' + ev.id + '">删除此日程</button>' +
+      '</div>' +
       '<button class="p-btn" data-act="close">关闭</button>' +
     '</div>';
 }
@@ -3222,6 +3226,11 @@ document.addEventListener("click", function(e){
     }
   }
   else if (act === "open-add"){
+    curEditingEventId = null;
+    var addTitleEl = $("#addModalTitle");
+    if (addTitleEl) addTitleEl.textContent = "添加日程 🐾";
+    var addBtnEl = $("#addModalSubmitBtn");
+    if (addBtnEl) addBtnEl.textContent = "🐾 记在小本本上！";
     addRep = "weekly";
     document.querySelectorAll("#repSeg .opt").forEach(function(o){
       o.classList.toggle("on", o.getAttribute("data-v") === "weekly");
@@ -3229,6 +3238,12 @@ document.addEventListener("click", function(e){
     var fWd = $("#fldWd"), fDt = $("#fldDt");
     if (fWd) fWd.style.display = "";
     if (fDt) fDt.style.display = "none";
+    if ($("#f_title")) $("#f_title").value = "";
+    if ($("#f_loc")) $("#f_loc").value = "";
+    if ($("#f_note")) $("#f_note").value = "";
+    if ($("#f_ws")) $("#f_ws").value = "";
+    if ($("#f_ts")) $("#f_ts").value = "19:00";
+    if ($("#f_te")) $("#f_te").value = "21:00";
     if ($("#f_date")) $("#f_date").value = (DATA && DATA.week_start) || todayISO();
     openModal("#ovAdd");
   }
@@ -3468,6 +3483,48 @@ document.addEventListener("click", function(e){
       .then(function(){ refreshDetail(); })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   }
+  else if (act === "edit-event"){
+    var eid = +el.getAttribute("data-id");
+    api("/api/event/" + eid).then(function(j){
+      var ev = j.event;
+      if (!ev) return;
+      curEditingEventId = ev.id;
+      var addTitleEl = $("#addModalTitle");
+      if (addTitleEl) addTitleEl.textContent = "修改日程 🐾";
+      var addBtnEl = $("#addModalSubmitBtn");
+      if (addBtnEl) addBtnEl.textContent = "🐾 保存修改！";
+
+      addUid = ev.uid;
+      document.querySelectorAll("#addSeg .opt").forEach(function(o){
+        var uid = o.getAttribute("data-uid");
+        var isA = uid === "a";
+        o.className = "opt" + (uid === addUid ? (" on " + (isA ? "" : "b-side")) : "");
+      });
+
+      addRep = ev.repeat || "weekly";
+      document.querySelectorAll("#repSeg .opt").forEach(function(o){
+        o.classList.toggle("on", o.getAttribute("data-v") === addRep);
+      });
+
+      var fWd = $("#fldWd"), fDt = $("#fldDt");
+      if (fWd) fWd.style.display = addRep === "weekly" ? "" : "none";
+      if (fDt) fDt.style.display = addRep === "once" ? "" : "none";
+
+      if ($("#f_wd")) $("#f_wd").value = ev.weekday != null ? ev.weekday : 0;
+      if ($("#f_date")) $("#f_date").value = ev.date || todayISO();
+      if ($("#f_ts")) $("#f_ts").value = ev.tstart || "19:00";
+      if ($("#f_te")) $("#f_te").value = ev.tend || "21:00";
+      if ($("#f_title")) $("#f_title").value = ev.title || "";
+      if ($("#f_loc")) $("#f_loc").value = ev.location || "";
+      if ($("#f_note")) $("#f_note").value = ev.note || "";
+      if ($("#f_ws")) $("#f_ws").value = ev.week_spec || "";
+
+      // 关闭详情弹窗，打开编辑弹窗
+      var ovDetail = $("#ovDetail");
+      if (ovDetail) ovDetail.classList.remove("show");
+      openModal("#ovAdd");
+    }).catch(function(err){ toast(err.message || "加载失败"); });
+  }
   else if (act === "del-event"){
     if (!confirm("确定删除这条日程（连同留言）？")) return;
     api("/api/events/delete", {method:"POST", body:{id:+el.getAttribute("data-id")}})
@@ -3659,10 +3716,15 @@ document.addEventListener("submit", function(e){
       weekday: addRep === "weekly" ? +$("#f_wd").value : null,
       date: addRep === "once" ? $("#f_date").value : ""
     };
-    api("/api/events", {method:"POST", body:body})
+    if (curEditingEventId) {
+      body.id = curEditingEventId;
+    }
+    api(curEditingEventId ? "/api/events/update" : "/api/events", {method:"POST", body:body})
       .then(function(){
         document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
-        toast("已记下啦 🐾"); load();
+        toast(curEditingEventId ? "已修改日程 🐾" : "已记下啦 🐾");
+        curEditingEventId = null;
+        load();
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   } else if (f.id === "setForm"){
@@ -4380,6 +4442,10 @@ class Handler(BaseHTTPRequestHandler):
                 if self.authed() is None:
                     return
                 return self.create_event(d)
+            if path == "/api/events/update":
+                if self.authed() is None:
+                    return
+                return self.update_event(d)
             if path == "/api/events/delete":
                 if self.authed() is None:
                     return
@@ -4556,6 +4622,57 @@ class Handler(BaseHTTPRequestHandler):
                 f"⏰ 时间：{when_str}{note_str}"
             )
             send_wechat_notice(target_token, msg_title, html_content)
+
+        return self.send_json({"ok": True, "id": eid})
+
+    def update_event(self, d):
+        eid = d.get("id")
+        if not isinstance(eid, int):
+            return self.send_json({"error": "缺少日程ID"}, 400)
+        uid = d.get("uid")
+        title = str(d.get("title") or "").strip()
+        location = str(d.get("location") or "").strip()[:200]
+        note = str(d.get("note") or "").strip()[:200]
+        repeat = d.get("repeat")
+        week_spec = str(d.get("week_spec") or "").strip()[:60]
+        tstart, tend = str(d.get("tstart") or ""), str(d.get("tend") or "")
+
+        if uid not in ("a", "b"):
+            return self.send_json({"error": "归属用户无效"}, 400)
+        if not title:
+            return self.send_json({"error": "标题不能为空"}, 400)
+        if not TIME_RE.match(tstart) or not TIME_RE.match(tend) or t2m(tstart) >= t2m(tend):
+            return self.send_json({"error": "时间无效（需 开始 < 结束）"}, 400)
+        if repeat == "weekly":
+            try:
+                weekday = int(d.get("weekday"))
+            except (TypeError, ValueError):
+                return self.send_json({"error": "缺少星期"}, 400)
+            if not 0 <= weekday <= 6:
+                return self.send_json({"error": "星期无效"}, 400)
+            ev_date = ""
+        elif repeat == "once":
+            weekday = None
+            ev_date = str(d.get("date") or "")
+            if not DATE_RE.match(ev_date):
+                return self.send_json({"error": "日期无效"}, 400)
+            try:
+                date.fromisoformat(ev_date)
+            except ValueError:
+                return self.send_json({"error": "日期无效"}, 400)
+        else:
+            return self.send_json({"error": "类型无效"}, 400)
+        if week_spec and parse_week_spec(week_spec) is None:
+            return self.send_json({"error": "周次格式无法识别（示例：2-17、2-16双、1-4,9-12）"}, 400)
+
+        with LOCK:
+            ev_exists = CONN.execute("SELECT id FROM events WHERE id=?", (eid,)).fetchone()
+            if not ev_exists:
+                return self.send_json({"error": "日程不存在"}, 404)
+            CONN.execute(
+                "UPDATE events SET uid=?, title=?, location=?, note=?, repeat=?, weekday=?, date=?, tstart=?, tend=?, week_spec=? WHERE id=?",
+                (uid, title, location, note, repeat, weekday, ev_date, tstart, tend, week_spec, eid)
+            )
 
         return self.send_json({"ok": True, "id": eid})
 
