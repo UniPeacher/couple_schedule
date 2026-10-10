@@ -707,6 +707,51 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 .ev:hover .del{display:block}
 @media (hover:none){.ev .del{display:block}}
 
+/* 同一时间段多个日程的堆叠切换卡片 */
+.ev-stack{
+  position:absolute;z-index:3;display:flex;flex-direction:column;
+  border-radius:10px;overflow:hidden;box-sizing:border-box;
+  transition:transform .18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow .18s ease;
+}
+.ev-stack:hover{transform:translateY(-1px) scale(1.02);z-index:6;box-shadow:var(--shadow-md)}
+.ev-stack.a{
+  left:3px;width:calc(50% - 5px);
+  background:var(--dog-a-bg);border:1.5px solid var(--dog-a-bd);
+  border-left:4px solid var(--dog-a);
+}
+.ev-stack.b{
+  left:calc(50% + 2px);width:calc(50% - 5px);
+  background:var(--dog-b-bg);border:1.5px solid var(--dog-b-bd);
+  border-left:4px solid var(--dog-b);
+}
+.ev-tabs{display:flex;gap:2px;padding:2px 3px 1px;flex-wrap:nowrap;overflow:hidden;flex-shrink:0}
+.ev-tab{
+  font-size:9px;font-weight:800;line-height:1.2;padding:1px 5px;border-radius:8px;
+  border:1px solid var(--line-strong);background:var(--bg-card);color:var(--ink-muted);
+  cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:56px;flex:0 1 auto;font-family:inherit;
+}
+.ev-stack.a .ev-tab.on{background:var(--dog-a);border-color:var(--dog-a);color:#fff}
+.ev-stack.b .ev-tab.on{background:var(--dog-b);border-color:var(--dog-b);color:#fff}
+.ev-stack-body{position:relative;padding:1px 5px 2px;overflow:hidden;flex:1;min-height:0}
+.ev-stack-body .et-pill{display:inline-block;font-size:9.5px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}
+.ev-stack.a .et-pill{color:var(--dog-a)}
+.ev-stack.b .et-pill{color:var(--dog-b)}
+.ev-stack-body .etitle{display:block;font-size:11px;font-weight:700;color:var(--ink-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-stack-body .em{display:block;font-size:9.5px;color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev-stack-body .cbadge{
+  position:absolute;bottom:1px;right:3px;font-size:9px;font-weight:800;
+  background:var(--bg-card);border:1px solid var(--line-strong);border-radius:var(--radius-pill);
+  padding:0 4px;color:var(--ink-muted);line-height:1.3;
+}
+.ev-stack-body .del{
+  position:absolute;top:-4px;right:-3px;width:16px;height:16px;border-radius:50%;
+  border:1px solid #fecaca;background:var(--bg-card);color:#ef4444;font-size:11px;font-weight:bold;
+  line-height:14px;cursor:pointer;display:none;padding:0;z-index:2;
+}
+.ev-stack:hover .del{display:block}
+@media (hover:none){.ev-stack .del{display:block}}
+
 /* 底部线条小狗散步小分队 */
 .dogwalk-section{
   max-width:1120px;margin:24px auto 10px;padding:0 12px;
@@ -1246,6 +1291,60 @@ function eventBlock(ev, uid, date){
     (bits.length ? '<span class="em">' + bits.join(' · ') + '</span>' : '') +
     (ev.n_comments ? '<span class="cbadge" title="' + ev.n_comments + ' 条评论">💬 ' + ev.n_comments + '</span>' : '') +
     '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button></div>';
+}
+
+/* 将同一用户、时间相互重叠的日程归为一组（同一时段可切换显示） */
+function groupOverlapping(list){
+  var sorted = list.slice().sort(function(a, b){
+    var d = t2m(a.tstart) - t2m(b.tstart);
+    return d !== 0 ? d : t2m(a.tend) - t2m(b.tend);
+  });
+  var groups = [];
+  sorted.forEach(function(ev){
+    var s = t2m(ev.tstart), e = t2m(ev.tend);
+    var last = groups[groups.length - 1];
+    var joined = false;
+    if (last){
+      joined = last.some(function(o){
+        return Math.max(t2m(o.tstart), s) < Math.min(t2m(o.tend), e);
+      });
+    }
+    if (joined){ last.push(ev); }
+    else { groups.push([ev]); }
+  });
+  return groups;
+}
+
+/* 同一时间段多个日程：渲染为可点击切换的堆叠卡片 */
+function eventStackHTML(group, uid, date){
+  var first = group[0];
+  var tEnd = 0;
+  group.forEach(function(ev){ tEnd = Math.max(tEnd, t2m(ev.tend)); });
+  var top = gpx(t2m(first.tstart)), h = Math.max(gpx(tEnd) - top, 26);
+  var gid = "stk_" + uid + "_" + date.replace(/-/g, "") + "_" + first.id;
+
+  var tabs = group.map(function(ev, i){
+    return '<button type="button" class="ev-tab' + (i === 0 ? ' on' : '') +
+      '" data-act="ev-tab" data-g="' + gid + '" data-i="' + i + '" title="' + esc(ev.title) + '">' +
+      (group.length > 1 ? (i + 1) + '· ' : '') + esc(ev.title) + '</button>';
+  }).join("");
+
+  var bodies = group.map(function(ev, i){
+    var bits = [];
+    if (ev.location) bits.push('📍 ' + esc(ev.location));
+    if (ev.week_spec) bits.push('🗓️ ' + esc(ev.week_spec) + '周');
+    return '<div class="ev-stack-body" data-b="' + gid + '" data-i="' + i + '" style="display:' + (i === 0 ? 'block' : 'none') + '">' +
+      '<span class="et-pill">' + ev.tstart + '–' + ev.tend + '</span>' +
+      '<span class="etitle">' + esc(ev.title) + '</span>' +
+      (bits.length ? '<span class="em">' + bits.join(' · ') + '</span>' : '') +
+      (ev.n_comments ? '<span class="cbadge" title="' + ev.n_comments + ' 条评论">💬 ' + ev.n_comments + '</span>' : '') +
+      '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button>' +
+    '</div>';
+  }).join("");
+
+  return '<div class="ev-stack ' + uid + '" data-stack="' + gid + '" data-act="detail" data-id="' + first.id +
+    '" data-date="' + date + '" style="top:' + top + 'px;height:' + h + 'px">' +
+    '<div class="ev-tabs">' + tabs + '</div>' + bodies + '</div>';
 }
 
 /* ---------------- 月历手账视图渲染 ---------------- */
@@ -1877,7 +1976,9 @@ function renderApp(){
     });
 
     ['a','b'].forEach(function(uid){
-      d.users[uid].events.forEach(function(ev){ body += eventBlock(ev, uid, d.date); });
+      groupOverlapping(d.users[uid].events).forEach(function(group){
+        body += (group.length > 1) ? eventStackHTML(group, uid, d.date) : eventBlock(group[0], uid, d.date);
+      });
     });
     body += '</div>';
   });
@@ -2654,6 +2755,22 @@ document.addEventListener("click", function(e){
       .then(function(){ renderAnnivList(); })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   }
+  else if (act === "ev-tab"){
+    e.stopPropagation();
+    var g = el.getAttribute("data-g");
+    var idx = +el.getAttribute("data-i");
+    document.querySelectorAll('[data-b="' + g + '"]').forEach(function(b){
+      b.style.display = (+b.getAttribute("data-i") === idx) ? "block" : "none";
+    });
+    document.querySelectorAll('[data-g="' + g + '"].ev-tab').forEach(function(t){
+      t.classList.toggle("on", +t.getAttribute("data-i") === idx);
+    });
+    var stk = el.closest(".ev-stack");
+    if (stk){
+      var bodies = stk.querySelectorAll(".ev-stack-body");
+      if (bodies[idx]) stk.setAttribute("data-id", bodies[idx].querySelector(".del").getAttribute("data-id"));
+    }
+  }
   else if (act === "detail"){ openDetail(el.getAttribute("data-id"), el.getAttribute("data-date")); }
   else if (act === "send-cmt"){
     var inp = $("#cmtText");
@@ -2872,6 +2989,7 @@ document.addEventListener("click", function(e){
       toast("请在 Android 手机客户端中使用此功能 🐾");
     }
   } else if (act === "del"){
+    e.stopPropagation();
     if (!confirm("确定删除这条日程？")) return;
     api("/api/events/delete", {method:"POST", body:{id:+el.getAttribute("data-id")}})
       .then(function(){ toast("已删除日程 🐾"); load(); })
