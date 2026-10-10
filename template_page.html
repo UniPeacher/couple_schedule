@@ -1019,15 +1019,15 @@ var addUid = "a", addRep = "weekly", loginUid = "a", annivType = "love";
 
 function setUnreadCount(count){
   UNREAD_COUNT = Math.max(0, parseInt(count) || 0);
-  var badge = $("#bUnreadBadge");
-  if (badge){
+  document.querySelectorAll("#bUnreadBadge, .b-badge").forEach(function(badge){
     if (UNREAD_COUNT > 0){
       badge.textContent = UNREAD_COUNT > 99 ? "99+" : UNREAD_COUNT;
       badge.style.display = "inline-flex";
     } else {
       badge.style.display = "none";
+      badge.textContent = "";
     }
-  }
+  });
   var unreadTab = document.querySelector('#msgFilterSeg .opt[data-v="unread"]');
   if (unreadTab){
     unreadTab.textContent = '未读' + (UNREAD_COUNT > 0 ? ' (' + UNREAD_COUNT + ')' : '');
