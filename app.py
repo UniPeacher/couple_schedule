@@ -528,9 +528,15 @@ def get_all_events():
         return [dict(r) for r in rows]
 
 
-def get_comment_counts():
+def get_comment_counts(date_str=None):
     with LOCK:
-        rows = CONN.execute("SELECT event_id, COUNT(*) n FROM comments GROUP BY event_id").fetchall()
+        if date_str:
+            rows = CONN.execute(
+                "SELECT event_id, COUNT(*) n FROM comments WHERE date=? OR date='' GROUP BY event_id",
+                (date_str,)
+            ).fetchall()
+        else:
+            rows = CONN.execute("SELECT event_id, COUNT(*) n FROM comments GROUP BY event_id").fetchall()
         return {r["event_id"]: r["n"] for r in rows}
 
 
@@ -707,7 +713,6 @@ def week_payload(anchor_iso, uid=None):
     days = [mon + timedelta(days=i) for i in range(7)]
     users = get_users()
     events = get_all_events()
-    cmap = get_comment_counts()
     ws = t2m(get_setting("window_start", "08:00"))
     we = t2m(get_setting("window_end", "22:00"))
     if ws >= we:
@@ -716,6 +721,8 @@ def week_payload(anchor_iso, uid=None):
 
     out_days = []
     for d in days:
+        d_str = d.isoformat()
+        cmap = get_comment_counts(d_str)
         per = {}
         for u_id in ("a", "b"):
             u = users[u_id]
