@@ -3180,13 +3180,14 @@ document.addEventListener("click", function(e){
       o.className = "opt" + (uid === addUid ? (" on " + (isA ? "" : "b-side")) : "");
     });
   } else if (act === "rep"){
-    addRep = el.getAttribute("data-v");
-    document.querySelectorAll("#repSeg .opt").forEach(function(o){
-      o.classList.toggle("on", o.getAttribute("data-v") === addRep);
-    });
-    $("#fldWd").style.display = addRep === "weekly" ? "" : "none";
-    $("#fldDt").style.display = addRep === "once" ? "" : "none";
-  } else if (act === "quick-cmt"){
+   addRep = el.getAttribute("data-v");
+   document.querySelectorAll("#repSeg .opt").forEach(function(o){
+     o.classList.toggle("on", o.getAttribute("data-v") === addRep);
+   });
+   var fWd = $("#fldWd"), fDt = $("#fldDt");
+   if (fWd) fWd.style.display = addRep === "weekly" ? "" : "none";
+   if (fDt) fDt.style.display = addRep === "once" ? "" : "none";
+ } else if (act === "quick-cmt"){
     var phrase = el.getAttribute("data-text");
     var inp = $("#cmtText");
     if (inp){
@@ -3207,7 +3208,17 @@ document.addEventListener("click", function(e){
       });
     }
   }
-  else if (act === "open-add"){ openModal("#ovAdd"); }
+  else if (act === "open-add"){
+    addRep = "weekly";
+    document.querySelectorAll("#repSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-v") === "weekly");
+    });
+    var fWd = $("#fldWd"), fDt = $("#fldDt");
+    if (fWd) fWd.style.display = "";
+    if (fDt) fDt.style.display = "none";
+    if ($("#f_date")) $("#f_date").value = (DATA && DATA.week_start) || todayISO();
+    openModal("#ovAdd");
+  }
   else if (act === "set-theme"){
     var theme = el.getAttribute("data-theme");
     var isDark = theme === "dark";
