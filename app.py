@@ -728,10 +728,10 @@ def week_payload(anchor_iso, uid=None):
             u = users[u_id]
             evs, ivs = [], []
             for ev in events:
-                if ev["uid"] != u_id or not occurs_on(ev, d, u["week1"]):
+                if ev["uid"] not in (u_id, "both") or not occurs_on(ev, d, u["week1"]):
                     continue
                 evs.append({
-                    "id": ev["id"], "title": ev["title"], "location": ev["location"],
+                    "id": ev["id"], "uid": ev["uid"], "title": ev["title"], "location": ev["location"],
                     "note": ev["note"], "tstart": ev["tstart"], "tend": ev["tend"],
                     "week_spec": ev["week_spec"], "repeat": ev["repeat"],
                     "n_comments": cmap.get(ev["id"], 0),
@@ -752,6 +752,8 @@ def week_payload(anchor_iso, uid=None):
         conflicts = []
         for ea in per["a"]["events"]:
             for eb in per["b"]["events"]:
+                if ea["id"] == eb["id"]:
+                    continue
                 s = max(t2m(ea["tstart"]), t2m(eb["tstart"]))
                 e = min(t2m(ea["tend"]), t2m(eb["tend"]))
                 if s < e:
@@ -1194,6 +1196,10 @@ button,input,select,textarea{font-family:inherit}
 }
 .school-badge.a{background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)}
 .school-badge.b{background:var(--dog-b-bg);border-color:var(--dog-b-bd);color:var(--dog-b-text)}
+.school-badge.both{
+  background:linear-gradient(135deg, var(--dog-a-bg), var(--dog-b-bg));
+  border-color:var(--dog-b);color:var(--dog-b-text);
+}
 
 .legend-card{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;
@@ -1689,6 +1695,11 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
   border-color:var(--dog-b);background:var(--dog-b-bg);
   color:var(--dog-b-text);box-shadow:0 2px 8px rgba(255,96,136,0.15);
 }
+.seg .opt.on.both-side{
+  border-color:var(--dog-b);
+  background:linear-gradient(135deg, var(--dog-a-bg) 0%, var(--dog-b-bg) 100%);
+  color:var(--dog-b-text);box-shadow:0 2px 8px rgba(255,96,136,0.18);
+}
 
 .modal .foot{
   display:flex;gap:10px;justify-content:flex-end;margin-top:14px;
@@ -2107,11 +2118,12 @@ function eventBlock(ev, uid, date){
   if (ev.week_spec) bits.push('🗓️ ' + esc(ev.week_spec) + '周');
   var tip = ev.title + (ev.note ? '：' + ev.note : '');
   var top = gpx(t2m(ev.tstart)), h = Math.max(gpx(t2m(ev.tend)) - top, 18);
+  var jTag = ev.uid === "both" ? "💕 " : "";
   return '<div class="ev ' + uid + '" data-act="detail" data-id="' + ev.id + '" data-date="' + date +
     '" style="top:' + top +
     'px;height:' + h + 'px" title="' + esc(tip) + '">' +
     '<span class="et-pill">' + ev.tstart + '–' + ev.tend + '</span>' +
-    '<span class="etitle">' + esc(ev.title) + '</span>' +
+    '<span class="etitle">' + jTag + esc(ev.title) + '</span>' +
     (bits.length ? '<span class="em">' + bits.join(' · ') + '</span>' : '') +
     (ev.n_comments ? '<span class="cbadge" title="' + ev.n_comments + ' 条评论">💬 ' + ev.n_comments + '</span>' : '') +
     '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button></div>';
@@ -2148,18 +2160,20 @@ function eventStackHTML(group, uid, date){
   var gid = "stk_" + uid + "_" + date.replace(/-/g, "") + "_" + first.id;
 
   var tabs = group.map(function(ev, i){
+    var jTag = ev.uid === "both" ? "💕" : "";
     return '<button type="button" class="ev-tab' + (i === 0 ? ' on' : '') +
       '" data-act="ev-tab" data-g="' + gid + '" data-i="' + i + '" title="' + esc(ev.title) + '">' +
-      (group.length > 1 ? (i + 1) + '· ' : '') + esc(ev.title) + '</button>';
+      (group.length > 1 ? (i + 1) + '· ' : '') + jTag + esc(ev.title) + '</button>';
   }).join("");
 
   var bodies = group.map(function(ev, i){
     var bits = [];
     if (ev.location) bits.push('📍 ' + esc(ev.location));
     if (ev.week_spec) bits.push('🗓️ ' + esc(ev.week_spec) + '周');
+    var jTag = ev.uid === "both" ? "💕 " : "";
     return '<div class="ev-stack-body" data-b="' + gid + '" data-i="' + i + '" style="display:' + (i === 0 ? 'block' : 'none') + '">' +
       '<span class="et-pill">' + ev.tstart + '–' + ev.tend + '</span>' +
-      '<span class="etitle">' + esc(ev.title) + '</span>' +
+      '<span class="etitle">' + jTag + esc(ev.title) + '</span>' +
       (bits.length ? '<span class="em">' + bits.join(' · ') + '</span>' : '') +
       (ev.n_comments ? '<span class="cbadge" title="' + ev.n_comments + ' 条评论">💬 ' + ev.n_comments + '</span>' : '') +
       '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button>' +
@@ -2912,12 +2926,12 @@ function bottomNavHTML(){
 
 function modalsHTML(){
   var u = (DATA && DATA.users) || (MONTH_DATA && MONTH_DATA.users) || {a:{name:"小金毛"},b:{name:"小白狗"}};
-  var uidOpts = ["a","b"].map(function(uid){
-    var isA = uid === "a";
-    var sideCls = isA ? "" : " b-side";
-    var ico = isA ? "🐶 小金毛 · " : "🐾 小白狗 · ";
+  var uidOpts = ["a","b","both"].map(function(uid){
+    var sideCls = uid === "b" ? " b-side" : (uid === "both" ? " both-side" : "");
+    var label = uid === "a" ? ("🐶 小金毛 · " + esc(u.a ? u.a.name : "a")) :
+                (uid === "b" ? ("🐾 小白狗 · " + esc(u.b ? u.b.name : "b")) : "💕 两人共同");
     return '<div class="opt' + (uid===addUid?(" on" + sideCls):"") + '" data-act="pick-add" data-uid="' + uid + '">' +
-      ico + esc(u[uid] ? u[uid].name : uid) +
+      label +
     '</div>';
   }).join("");
   var wdOpts = WD.map(function(w,i){ return '<option value="' + i + '">' + w + '</option>'; }).join("");
@@ -3225,6 +3239,7 @@ function openDetail(id, date){
 
 function detailHTML(j){
   var ev = j.event, o = j.owner;
+  var isBoth = o.uid === "both";
   var isA = o.uid === "a";
   var dateLine = "";
   if (curDetail && curDetail.date){
@@ -3232,9 +3247,10 @@ function detailHTML(j){
     var dt = new Date(+p[0], +p[1]-1, +p[2]);
     dateLine = curDetail.date.slice(5) + " " + WD[(dt.getDay() + 6) % 7];
   }
+  var ownerPrefix = isBoth ? "💕 两人共同 · " : (isA ? "🐶 小金毛 · " : "🐾 小白狗 · ");
   var rows = '<div class="d-meta">' +
     '<div class="row"><span class="k">归属</span><span class="v">' +
-      '<span class="school-badge ' + o.uid + '">' + (isA ? "🐶 小金毛 · " : "🐾 小白狗 · ") + esc(o.name) + '</span>' +
+      '<span class="school-badge ' + o.uid + '">' + ownerPrefix + esc(o.name) + '</span>' +
     '</span></div>' +
     '<div class="row"><span class="k">时间</span><span class="v">' + ev.tstart + "–" + ev.tend +
       (ev.repeat === "weekly" ? "（每周" + WD[ev.weekday] + "）" : "（单次 " + esc(ev.date) + "）") + '</span></div>' +
@@ -3307,8 +3323,8 @@ document.addEventListener("click", function(e){
     addUid = el.getAttribute("data-uid");
     document.querySelectorAll("#addSeg .opt").forEach(function(o){
       var uid = o.getAttribute("data-uid");
-      var isA = uid === "a";
-      o.className = "opt" + (uid === addUid ? (" on " + (isA ? "" : "b-side")) : "");
+      var side = uid === "b" ? "b-side" : (uid === "both" ? "both-side" : "");
+      o.className = "opt" + (uid === addUid ? (" on" + (side ? " " + side : "")) : "");
     });
   } else if (act === "rep"){
    addRep = el.getAttribute("data-v");
@@ -3627,8 +3643,8 @@ document.addEventListener("click", function(e){
       addUid = ev.uid;
       document.querySelectorAll("#addSeg .opt").forEach(function(o){
         var uid = o.getAttribute("data-uid");
-        var isA = uid === "a";
-        o.className = "opt" + (uid === addUid ? (" on " + (isA ? "" : "b-side")) : "");
+        var side = uid === "b" ? "b-side" : (uid === "both" ? "both-side" : "");
+        o.className = "opt" + (uid === addUid ? (" on" + (side ? " " + side : "")) : "");
       });
 
       addRep = ev.repeat || "weekly";
@@ -4354,9 +4370,12 @@ class Handler(BaseHTTPRequestHandler):
                 if ev is None:
                     return self.send_json({"error": "日程不存在"}, 404)
                 users = get_users()
+                ev_uid = ev["uid"]
+                owner_name = (f"{users['a']['name']} & {users['b']['name']}" if ev_uid == "both"
+                              else users.get(ev_uid, {}).get("name", ev_uid))
                 return self.send_json({
                     "event": dict(ev),
-                    "owner": {"uid": ev["uid"], "name": users[ev["uid"]]["name"]},
+                    "owner": {"uid": ev_uid, "name": owner_name},
                     "comments": [dict(c) for c in cmts],
                     "filter_date": req_date
                 })
@@ -4778,7 +4797,7 @@ class Handler(BaseHTTPRequestHandler):
         week_spec = str(d.get("week_spec") or "").strip()[:60]
         tstart, tend = str(d.get("tstart") or ""), str(d.get("tend") or "")
 
-        if uid not in ("a", "b"):
+        if uid not in ("a", "b", "both"):
             return self.send_json({"error": "归属用户无效"}, 400)
         if not title:
             return self.send_json({"error": "标题不能为空"}, 400)
@@ -4815,21 +4834,23 @@ class Handler(BaseHTTPRequestHandler):
 
         # 微信与系统原生推送新日程提醒给对方狗狗
         users = get_users()
-        other_uid = "b" if uid == "a" else "a"
-        author_name = users[uid]["name"]
+        actor = self.current_uid() or ("a" if uid != "b" else "b")
+        other_uid = "b" if actor == "a" else "a"
+        author_name = users.get(actor, users["a"])["name"]
+        joint_tag = "（💕 两人共同日程）" if uid == "both" else ""
         wd_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
         when_str = f"每周{wd_names[weekday]} {tstart}~{tend}" if repeat == "weekly" else f"{ev_date} {tstart}~{tend}"
         loc_str = f" · 📍 {location}" if location else ""
-        notice_title = f"🐾 {author_name} 添加了新日程"
+        notice_title = f"🐾 {author_name} 添加了新日程{joint_tag}"
         notice_content = f"【{title}】{loc_str}，时间：{when_str}"
         push_system_notice(other_uid, notice_title, notice_content, f"event:{eid}")
 
         target_token = users[other_uid]["wx_uid"]
         if target_token:
             note_str = f"<br>📝 备注：{note}" if note else ""
-            msg_title = f"🐾 {author_name} 添加了新日程"
+            msg_title = f"🐾 {author_name} 添加了新日程{joint_tag}"
             html_content = (
-                f"🐶 <strong>{author_name}</strong> 记下了新日程：<br>"
+                f"🐶 <strong>{author_name}</strong> 记下了新日程{joint_tag}：<br>"
                 f"📌 <strong>【{title}】</strong>{loc_str}<br>"
                 f"⏰ 时间：{when_str}{note_str}"
             )
@@ -4849,7 +4870,7 @@ class Handler(BaseHTTPRequestHandler):
         week_spec = str(d.get("week_spec") or "").strip()[:60]
         tstart, tend = str(d.get("tstart") or ""), str(d.get("tend") or "")
 
-        if uid not in ("a", "b"):
+        if uid not in ("a", "b", "both"):
             return self.send_json({"error": "归属用户无效"}, 400)
         if not title:
             return self.send_json({"error": "标题不能为空"}, 400)
