@@ -677,12 +677,28 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
   box-shadow:0 2px 6px rgba(234,138,21,0.08);
 }
 .ev.both{
-  left:3px;width:calc(100% - 6px);z-index:4;
-  background:linear-gradient(135deg, var(--dog-a-bg) 0%, var(--dog-b-bg) 100%);
-  border:1.5px solid var(--dog-b-bd);
-  border-left:4px solid var(--dog-a);border-right:4px solid var(--dog-b);
-  color:var(--dog-b-text);
-  box-shadow:0 2px 8px rgba(255,96,136,0.12);
+  left:4px;width:calc(100% - 8px);z-index:4;
+  background:linear-gradient(135deg, #fff6f8 0%, #fff0f5 50%, #fff7ed 100%);
+  border:1.5px solid #f9a8d4;
+  border-top:3.5px solid #ff5c8a;
+  color:#9d174d;
+  box-shadow:0 4px 12px rgba(255, 92, 138, 0.14);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:5px 8px;
+}
+html.dark .ev.both{
+  background:linear-gradient(135deg, #2d1b28 0%, #2a1f2d 50%, #2d221b 100%);
+  border-color:#831843;border-top-color:#fb7185;color:#fbcfe8;
+}
+.ev.both .both-badge{
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:9.5px;font-weight:800;color:#fff;
+  background:linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%);
+  padding:1px 7px;border-radius:999px;margin-bottom:2px;
+  box-shadow:0 1px 4px rgba(255,96,136,0.25);line-height:1.3;
+}
+.ev.both .etitle{
+  font-size:12px;font-weight:800;color:var(--ink-primary);
 }
 .ev .et-pill{
   display:inline-block;font-size:10px;font-weight:800;
@@ -691,7 +707,8 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
 }
 .ev.a .et-pill{color:var(--dog-a)}
 .ev.b .et-pill{color:var(--dog-b)}
-.ev.both .et-pill{color:var(--dog-b)}
+.ev.both .et-pill{color:#e11d48}
+html.dark .ev.both .et-pill{color:#fda4af}
 .ev .etitle{
   display:block;font-size:11.5px;font-weight:700;
   color:var(--ink-primary);white-space:nowrap;
@@ -738,10 +755,15 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
   border-left:4px solid var(--dog-b);
 }
 .ev-stack.both{
-  left:3px;width:calc(100% - 6px);z-index:4;
-  background:linear-gradient(135deg, var(--dog-a-bg) 0%, var(--dog-b-bg) 100%);
-  border:1.5px solid var(--dog-b-bd);
-  border-left:4px solid var(--dog-a);border-right:4px solid var(--dog-b);
+  left:4px;width:calc(100% - 8px);z-index:4;
+  background:linear-gradient(135deg, #fff6f8 0%, #fff0f5 50%, #fff7ed 100%);
+  border:1.5px solid #f9a8d4;
+  border-top:3.5px solid #ff5c8a;
+  box-shadow:0 4px 12px rgba(255, 92, 138, 0.14);
+}
+html.dark .ev-stack.both{
+  background:linear-gradient(135deg, #2d1b28 0%, #2a1f2d 50%, #2d221b 100%);
+  border-color:#831843;border-top-color:#fb7185;
 }
 .ev-tabs{display:flex;gap:2px;padding:2px 3px 1px;flex-wrap:nowrap;overflow:hidden;flex-shrink:0}
 .ev-tab{
@@ -1309,12 +1331,15 @@ function eventBlock(ev, uid, date){
   if (ev.week_spec) bits.push('🗓️ ' + esc(ev.week_spec) + '周');
   var tip = ev.title + (ev.note ? '：' + ev.note : '');
   var top = gpx(t2m(ev.tstart)), h = Math.max(gpx(t2m(ev.tend)) - top, 18);
-  var jTag = ev.uid === "both" ? "💕 " : "";
+  var isBothCard = uid === "both";
+  var jTag = (!isBothCard && ev.uid === "both") ? "💕 " : "";
+  var bothBadge = (isBothCard && h >= 44) ? '<span class="both-badge">🐶 💕 🐾 两人共同</span>' : '';
   return '<div class="ev ' + uid + '" data-act="detail" data-id="' + ev.id + '" data-date="' + date +
     '" style="top:' + top +
     'px;height:' + h + 'px" title="' + esc(tip) + '">' +
+    bothBadge +
     '<span class="et-pill">' + ev.tstart + '–' + ev.tend + '</span>' +
-    '<span class="etitle">' + jTag + esc(ev.title) + '</span>' +
+    '<span class="etitle">' + (isBothCard && h < 44 ? '💕 ' : jTag) + esc(ev.title) + '</span>' +
     (bits.length ? '<span class="em">' + bits.join(' · ') + '</span>' : '') +
     (ev.n_comments ? '<span class="cbadge" title="' + ev.n_comments + ' 条评论">💬 ' + ev.n_comments + '</span>' : '') +
     '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button></div>';
