@@ -93,4 +93,12 @@ public class WebAppInterface {
             act.runOnUiThread(() -> act.saveImageFromUrl(url));
         }
     }
+
+    @JavascriptInterface
+    public void saveMediaToGallery(String url) {
+        if (mContext instanceof MainActivity) {
+            MainActivity act = (MainActivity) mContext;
+            act.runOnUiThread(() -> act.saveImageFromUrl(url));
+        }
+    }
 }
