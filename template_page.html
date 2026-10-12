@@ -529,6 +529,15 @@ button,input,select,textarea{font-family:inherit}
   width:6px;height:6px;border-radius:50%;background:#fbbf24;
   box-shadow:0 0 0 1.5px rgba(251,191,36,0.45);display:inline-block;
 }
+#pvVideo::-webkit-media-controls,
+#pvVideo::-webkit-media-controls-enclosure,
+#pvVideo::-webkit-media-controls-panel,
+#pvVideo::-webkit-media-controls-overlay-play-button,
+#pvVideo::-webkit-media-controls-start-playback-button{
+  display:none !important;
+  -webkit-appearance:none !important;
+  opacity:0 !important;
+}
 .polaroid-card:nth-child(even){transform:rotate(1.5deg)}
 .polaroid-card:hover{transform:rotate(0deg) scale(1.05);z-index:2}
 .polaroid-img{
@@ -2340,6 +2349,7 @@ function stopPvLiveVideo(){
   var img = $("#pvImage");
   if (vid){
     try { vid.pause(); } catch(e){}
+    vid.style.opacity = "0";
     vid.style.display = "none";
   }
   if (img) img.style.opacity = "1";
@@ -2353,23 +2363,40 @@ function playPvLiveVideo(){
   if (!vid) return;
   vid.muted = true; // 移动端 WebView 默认静音启动以确保 100% 自动播放不被拦截
   vid.playsInline = true;
+  vid.setAttribute("muted", "");
+  vid.setAttribute("playsinline", "");
+  vid.setAttribute("webkit-playsinline", "");
+  vid.style.opacity = "0";
+  vid.style.display = "block";
+  vid.style.zIndex = "3";
+  vid.style.pointerEvents = "none";
+
+  vid.onplaying = function(){
+    vid.style.opacity = "1";
+  };
+  vid.onended = function(){
+    vid.style.opacity = "0";
+    setTimeout(function(){ vid.style.display = "none"; }, 180);
+  };
+  vid.onerror = function(){
+    vid.style.opacity = "0";
+    vid.style.display = "none";
+  };
+
   if (vid.getAttribute("data-src") !== item.live){
     vid.src = item.live;
     vid.setAttribute("data-src", item.live);
     try { vid.load(); } catch(e){}
+  } else {
+    try { vid.currentTime = 0; } catch(e){}
   }
-  vid.style.display = "block";
-  vid.style.zIndex = "3";
-  try { vid.currentTime = 0; } catch(e){}
-  vid.onended = function(){
-    vid.style.display = "none";
-  };
+
   var p = vid.play();
   if (p && p.catch){
     p.catch(function(){
       setTimeout(function(){
         try { vid.muted = true; vid.play(); } catch(e){}
-      }, 120);
+      }, 150);
     });
   }
 }
