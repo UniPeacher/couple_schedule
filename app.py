@@ -4759,8 +4759,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def body_json(self):
         n = int(self.headers.get("Content-Length") or 0)
-        # 上传手账多张拍立得图片与实况视频时请求体积会达到几十 MB，放宽限制到 60MB
-        if n <= 0 or n > 62914560:
+        # 上传手账多张拍立得图片与实况视频时请求体积会达到几十 MB，放宽限制到 150MB
+        if n <= 0 or n > 157286400:
             return {}
         raw = self.rfile.read(n)
         try:
