@@ -3182,20 +3182,25 @@ function playPvLiveVideo(){
   var vid = $("#pvVideo");
   var img = $("#pvImage");
   if (!vid) return;
+  vid.muted = true; // 移动端 WebView 默认静音启动以确保 100% 自动播放不被拦截
+  vid.playsInline = true;
   if (vid.getAttribute("data-src") !== item.live){
     vid.src = item.live;
     vid.setAttribute("data-src", item.live);
+    try { vid.load(); } catch(e){}
   }
   vid.style.display = "block";
-  vid.currentTime = 0;
+  vid.style.zIndex = "3";
+  try { vid.currentTime = 0; } catch(e){}
   vid.onended = function(){
     vid.style.display = "none";
   };
   var p = vid.play();
   if (p && p.catch){
     p.catch(function(){
-      vid.muted = true;
-      try { vid.play(); } catch(e){}
+      setTimeout(function(){
+        try { vid.muted = true; vid.play(); } catch(e){}
+      }, 120);
     });
   }
 }
@@ -4244,6 +4249,43 @@ document.addEventListener("change", function(e){
       if (prev) prev.appendChild(pWrap);
     }
 
+    // 从安卓 Motion Photo (小米/华为/三星/OPPO/vivo/Pixel 实况照片单文件 JPG) 中无损提取内嵌 MP4 视频轨
+    function extractEmbeddedMotionVideoB64(file, cb){
+      try {
+        var reader = new FileReader();
+        reader.onload = function(e){
+          try {
+            var buf = e.target.result;
+            var u8 = new Uint8Array(buf);
+            var len = u8.length;
+            // 在文件后 95% 区域搜索 MP4 头标识 'ftyp' (0x66 0x74 0x79 0x70)，前面 4 字节为 box size (通常 0x00 0x00 0x00 0x18~0x28)
+            var startSearch = Math.max(1024, Math.floor(len * 0.05));
+            var mp4Start = -1;
+            for (var i = startSearch; i < len - 12; i++){
+              if (u8[i] === 0x66 && u8[i+1] === 0x74 && u8[i+2] === 0x79 && u8[i+3] === 0x70){
+                var boxLen = (u8[i-4] << 24) | (u8[i-3] << 16) | (u8[i-2] << 8) | u8[i-1];
+                if (boxLen >= 16 && boxLen <= 128){
+                  mp4Start = i - 4;
+                  break;
+                }
+              }
+            }
+            if (mp4Start > 0 && (len - mp4Start) > 4096 && (len - mp4Start) < 25 * 1024 * 1024){
+              var vBlob = new Blob([u8.subarray(mp4Start)], {type: "video/mp4"});
+              var vr = new FileReader();
+              vr.onload = function(ve){ cb(ve.target.result || ""); };
+              vr.onerror = function(){ cb(""); };
+              vr.readAsDataURL(vBlob);
+            } else {
+              cb("");
+            }
+          } catch(err){ cb(""); }
+        };
+        reader.onerror = function(){ cb(""); };
+        reader.readAsArrayBuffer(file);
+      } catch(err){ cb(""); }
+    }
+
     function compressImageFile(file, cb){
       var reader = new FileReader();
       reader.onload = function(evt){
@@ -4327,7 +4369,7 @@ document.addEventListener("change", function(e){
       else if (f.type.indexOf("video/") === 0) vidMap[k] = f;
     });
 
-    // 1. 处理所有图片（若存在同名视频，自动配对合成一张实况 Live Photo）
+    // 1. 处理所有图片（优先匹配同名视频；若无同名视频，则自动检测并提取安卓 Motion Photo 内嵌实况视频轨！）
     Object.keys(imgMap).forEach(function(k){
       var iFile = imgMap[k];
       var pairedVid = vidMap[k];
@@ -4338,7 +4380,9 @@ document.addEventListener("change", function(e){
             appendPreviewItem({ image: compB64, live_video: vB64 });
           });
         } else {
-          appendPreviewItem({ image: compB64, live_video: "" });
+          extractEmbeddedMotionVideoB64(iFile, function(embeddedVidB64){
+            appendPreviewItem({ image: compB64, live_video: embeddedVidB64 || "" });
+          });
         }
       });
     });
@@ -4817,6 +4861,29 @@ class Handler(BaseHTTPRequestHandler):
                     elif lfn.endswith(".mp4"): mime = "video/mp4"
                     elif lfn.endswith(".mov"): mime = "video/quicktime"
                     elif lfn.endswith(".webm"): mime = "video/webm"
+                    file_size = os.path.getsize(fp)
+                    range_hdr = self.headers.get("Range")
+                    if range_hdr and range_hdr.startswith("bytes="):
+                        try:
+                            rng = range_hdr[6:].split(",")[0].strip()
+                            s_str, e_str = rng.split("-", 1)
+                            start = int(s_str) if s_str else 0
+                            end = int(e_str) if e_str else (file_size - 1)
+                            end = min(end, file_size - 1)
+                            if 0 <= start <= end < file_size:
+                                with open(fp, "rb") as f:
+                                    f.seek(start)
+                                    chunk = f.read(end - start + 1)
+                                return self.send_bytes(
+                                    206, chunk, mime,
+                                    extra=[
+                                        ("Content-Range", f"bytes {start}-{end}/{file_size}"),
+                                        ("Accept-Ranges", "bytes"),
+                                        ("Cache-Control", "public, max-age=604800"),
+                                    ]
+                                )
+                        except Exception:
+                            pass
                     with open(fp, "rb") as f:
                         return self.send_bytes(200, f.read(), mime,
                                                extra=[("Cache-Control", "public, max-age=604800"),
