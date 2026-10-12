@@ -1800,8 +1800,9 @@ function renderSettingsPage(){
               '<span>客户端状态：<strong>' + (window.AndroidApp ? '🟢 前后台常驻守护已就绪' : '⚪ 网页浏览器环境') + '</strong></span>' +
               '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">' + (window.AndroidApp ? '新日程、留言将通过手机顶部横幅实时提醒，支持后台静默守护' : '使用 Android 客户端登录即可自动开启系统通知') + '</div>' +
             '</div>' +
-            '<div style="display:flex;gap:6px">' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
               (window.AndroidApp ? '<button type="button" class="p-btn" data-act="battery-protect" style="padding:5px 10px;font-size:11px">🔋 后台防杀</button>' : '') +
+              (window.AndroidApp && window.AndroidApp.openServerSettings ? '<button type="button" class="p-btn" data-act="open-server-url" style="padding:5px 10px;font-size:11px">🌐 服务地址</button>' : '') +
               '<button type="button" class="p-btn" data-act="test-app-notice" style="padding:5px 12px;font-size:11px">🔔 测试通知</button>' +
             '</div>' +
           '</div>' +
@@ -2260,6 +2261,7 @@ function modalsHTML(){
         '<video id="pvVideo" playsinline webkit-playsinline preload="metadata" style="position:absolute;max-width:94vw;max-height:86vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.6);object-fit:contain;display:none;user-select:none;-webkit-user-select:none"></video>' +
         '<div id="pvIndicator" style="position:absolute;top:20px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,0.5);padding:4px 12px;border-radius:20px;font-size:13px;font-weight:700">1 / 1</div>' +
         '<button type="button" data-act="pv-play-live" id="pvLiveBtn" style="position:absolute;top:20px;left:18px;display:none;align-items:center;gap:5px;background:rgba(255,255,255,0.22);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.35)"><span class="polaroid-live-dot"></span><span>LIVE 实况</span></button>' +
+        '<button type="button" data-act="pv-save-photo" id="pvSaveBtn" style="position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.22);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.38);color:#fff;padding:7px 16px;border-radius:999px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4)">💾 保存图片</button>' +
         '<button type="button" data-act="pv-prev" id="pvBtnPrev" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.25);border:none;border-radius:50%;width:42px;height:42px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">‹</button>' +
         '<button type="button" data-act="pv-next" id="pvBtnNext" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.25);border:none;border-radius:50%;width:42px;height:42px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">›</button>' +
         '<button type="button" data-act="close-photo" style="position:absolute;top:18px;right:18px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.5)">✕</button>' +
@@ -2365,6 +2367,67 @@ function playPvLiveVideo(){
       try { vid.play(); } catch(e){}
     });
   }
+}
+
+function savePhotoUrlToDevice(imgUrl){
+  if (!imgUrl) return;
+  if (window.AndroidApp && window.AndroidApp.saveImageToGallery){
+    window.AndroidApp.saveImageToGallery(imgUrl);
+    return;
+  }
+  toast("正在准备下载图片… 🐾");
+  fetch(imgUrl, {credentials:"same-origin"}).then(function(r){ return r.blob(); }).then(function(blob){
+    var bUrl = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = bUrl;
+    a.download = "DogSchedule_" + Date.now() + ".jpg";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(bUrl); }, 2000);
+    toast("✅ 已触发保存图片 🐾");
+  }).catch(function(){
+    var a = document.createElement("a");
+    a.href = imgUrl;
+    a.download = "DogSchedule_" + Date.now() + ".jpg";
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+}
+
+function showPhotoActionSheet(imgUrl, liveUrl){
+  var old = $("#ovPhotoSheet");
+  if (old) old.remove();
+  var sheet = document.createElement("div");
+  sheet.id = "ovPhotoSheet";
+  sheet.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10050;display:flex;align-items:flex-end;justify-content:center;padding:16px;animation:fadeIn .15s ease";
+  sheet.innerHTML =
+    '<div style="width:100%;max-width:400px;background:var(--bg-card);border-radius:20px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,0.35);display:flex;flex-direction:column;gap:8px">' +
+      '<div style="text-align:center;font-size:12.5px;font-weight:800;color:var(--ink-muted);padding:4px 0">🐾 手账照片操作</div>' +
+      '<button type="button" class="p-btn pri" id="actSaveImgBtn" style="width:100%;justify-content:center;padding:11px;font-size:14px">💾 保存图片到手机相册</button>' +
+      (liveUrl ? '<button type="button" class="p-btn" id="actSaveLiveBtn" style="width:100%;justify-content:center;padding:10px;font-size:13.5px">🎬 保存实况动态视频</button>' : '') +
+      '<button type="button" class="p-btn" id="actCancelSheetBtn" style="width:100%;justify-content:center;padding:10px;font-size:13.5px">取消</button>' +
+    '</div>';
+  document.body.appendChild(sheet);
+  sheet.onclick = function(ev){
+    if (ev.target === sheet) sheet.remove();
+  };
+  var bSave = sheet.querySelector("#actSaveImgBtn");
+  if (bSave) bSave.onclick = function(){
+    sheet.remove();
+    savePhotoUrlToDevice(imgUrl);
+  };
+  var bLive = sheet.querySelector("#actSaveLiveBtn");
+  if (bLive) bLive.onclick = function(){
+    sheet.remove();
+    savePhotoUrlToDevice(liveUrl);
+  };
+  var bCancel = sheet.querySelector("#actCancelSheetBtn");
+  if (bCancel) bCancel.onclick = function(){
+    sheet.remove();
+  };
 }
 
 function scrollToToday(){
@@ -2810,6 +2873,16 @@ document.addEventListener("click", function(e){
   else if (act === "pv-play-live"){
     playPvLiveVideo();
   }
+  else if (act === "pv-save-photo"){
+    var curItem = pvPhotosList[pvCurrentIndex];
+    var imgUrl = (typeof curItem === "object" && curItem !== null) ? curItem.src : curItem;
+    var liveUrl = (typeof curItem === "object" && curItem !== null) ? (curItem.live || "") : "";
+    if (liveUrl){
+      showPhotoActionSheet(imgUrl, liveUrl);
+    } else {
+      savePhotoUrlToDevice(imgUrl);
+    }
+  }
   else if (act === "close-photo"){
     var pv = $("#ovPhotoViewer");
     if (pv){
@@ -3141,6 +3214,10 @@ document.addEventListener("click", function(e){
       window.AndroidApp.requestBatteryOptimization();
     } else {
       toast("请在 Android 手机客户端中使用此功能 🐾");
+    }
+  } else if (act === "open-server-url"){
+    if (window.AndroidApp && window.AndroidApp.openServerSettings) {
+      window.AndroidApp.openServerSettings();
     }
   } else if (act === "del"){
     e.stopPropagation();
@@ -3519,8 +3596,12 @@ document.addEventListener("keydown", function(e){
       clearTimeout(liveHoldTimer);
       if (pvScale <= 1.05){
         liveHoldTimer = setTimeout(function(){
-          playPvLiveVideo();
-        }, 320);
+          var curItem = pvPhotosList[pvCurrentIndex];
+          var imgUrl = (typeof curItem === "object" && curItem !== null) ? curItem.src : curItem;
+          var liveUrl = (typeof curItem === "object" && curItem !== null) ? (curItem.live || "") : "";
+          if (liveUrl) playPvLiveVideo();
+          showPhotoActionSheet(imgUrl, liveUrl);
+        }, 420);
       }
 
       if (pvScale > 1.05){
@@ -3592,6 +3673,87 @@ document.addEventListener("keydown", function(e){
       initDist = 0;
     }
   }, {passive:true});
+
+  // 全局分类长按手势：
+  // 1) 手账拍立得图片 / 大图 -> 弹出「保存图片到相册」操作面板
+  // 2) 课表日程卡片 -> 直接打开该日程的修改窗口
+  // 3) 顶部「两人日程 🐾」Logo 标题 -> 弹出切换服务器地址（Android 客户端）
+  var globalHoldTimer = null;
+  var gStartX = 0, gStartY = 0;
+  document.addEventListener("touchstart", function(e){
+    if (!e.touches || e.touches.length !== 1) {
+      clearTimeout(globalHoldTimer);
+      return;
+    }
+    var pv = $("#ovPhotoViewer");
+    if (pv && pv.style.display !== "none") return; // 大图查看器已由上面专属处理
+    var t = e.target;
+    if (!t || !t.closest) return;
+
+    var polaroidImg = t.closest(".polaroid-img");
+    var evCard = t.closest(".ev, .ev-stack");
+    var brandLogo = t.closest(".brand");
+    if (!polaroidImg && !evCard && !brandLogo) return;
+
+    gStartX = e.touches[0].clientX;
+    gStartY = e.touches[0].clientY;
+    clearTimeout(globalHoldTimer);
+    globalHoldTimer = setTimeout(function(){
+      if (polaroidImg){
+        var src = polaroidImg.getAttribute("src") || "";
+        var liveUrl = "";
+        try {
+          var idx = +polaroidImg.getAttribute("data-idx") || 0;
+          var list = JSON.parse(decodeURIComponent(polaroidImg.getAttribute("data-list") || "[]"));
+          if (list[idx] && typeof list[idx] === "object") liveUrl = list[idx].live || "";
+        } catch(err){}
+        showPhotoActionSheet(src, liveUrl);
+      } else if (evCard){
+        var eid = evCard.getAttribute("data-id");
+        var edate = evCard.getAttribute("data-date");
+        if (eid) openDetail(eid, edate);
+      } else if (brandLogo){
+        if (window.AndroidApp && window.AndroidApp.openServerSettings){
+          window.AndroidApp.openServerSettings();
+        }
+      }
+    }, 480);
+  }, {passive:true});
+
+  document.addEventListener("touchmove", function(e){
+    if (!globalHoldTimer || !e.touches || !e.touches[0]) return;
+    if (Math.abs(e.touches[0].clientX - gStartX) > 12 || Math.abs(e.touches[0].clientY - gStartY) > 12){
+      clearTimeout(globalHoldTimer);
+    }
+  }, {passive:true});
+
+  document.addEventListener("touchend", function(){
+    clearTimeout(globalHoldTimer);
+  }, {passive:true});
+
+  document.addEventListener("contextmenu", function(e){
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var polaroidImg = t.closest(".polaroid-img");
+    var pvImg = t.closest("#pvImage, #pvVideo");
+    if (polaroidImg){
+      e.preventDefault();
+      var src = polaroidImg.getAttribute("src") || "";
+      var liveUrl = "";
+      try {
+        var idx = +polaroidImg.getAttribute("data-idx") || 0;
+        var list = JSON.parse(decodeURIComponent(polaroidImg.getAttribute("data-list") || "[]"));
+        if (list[idx] && typeof list[idx] === "object") liveUrl = list[idx].live || "";
+      } catch(err){}
+      showPhotoActionSheet(src, liveUrl);
+    } else if (pvImg){
+      e.preventDefault();
+      var curItem = pvPhotosList[pvCurrentIndex];
+      var imgUrl = (typeof curItem === "object" && curItem !== null) ? curItem.src : curItem;
+      var liveUrl = (typeof curItem === "object" && curItem !== null) ? (curItem.live || "") : "";
+      showPhotoActionSheet(imgUrl, liveUrl);
+    }
+  });
 })();
 
 window.addEventListener("popstate", function(e){
