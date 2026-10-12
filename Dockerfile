@@ -1,5 +1,6 @@
 FROM python:3.12-slim
 ENV TZ=Asia/Shanghai PYTHONUNBUFFERED=1
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY app.py backup.py /app/
 COPY *.png /app/

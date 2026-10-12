@@ -1360,6 +1360,15 @@ button,input,select,textarea{font-family:inherit}
   width:6px;height:6px;border-radius:50%;background:#fbbf24;
   box-shadow:0 0 0 1.5px rgba(251,191,36,0.45);display:inline-block;
 }
+#pvVideo::-webkit-media-controls,
+#pvVideo::-webkit-media-controls-enclosure,
+#pvVideo::-webkit-media-controls-panel,
+#pvVideo::-webkit-media-controls-overlay-play-button,
+#pvVideo::-webkit-media-controls-start-playback-button{
+  display:none !important;
+  -webkit-appearance:none !important;
+  opacity:0 !important;
+}
 .polaroid-card:nth-child(even){transform:rotate(1.5deg)}
 .polaroid-card:hover{transform:rotate(0deg) scale(1.05);z-index:2}
 .polaroid-img{
@@ -3171,6 +3180,7 @@ function stopPvLiveVideo(){
   var img = $("#pvImage");
   if (vid){
     try { vid.pause(); } catch(e){}
+    vid.style.opacity = "0";
     vid.style.display = "none";
   }
   if (img) img.style.opacity = "1";
@@ -3184,23 +3194,40 @@ function playPvLiveVideo(){
   if (!vid) return;
   vid.muted = true; // 移动端 WebView 默认静音启动以确保 100% 自动播放不被拦截
   vid.playsInline = true;
+  vid.setAttribute("muted", "");
+  vid.setAttribute("playsinline", "");
+  vid.setAttribute("webkit-playsinline", "");
+  vid.style.opacity = "0";
+  vid.style.display = "block";
+  vid.style.zIndex = "3";
+  vid.style.pointerEvents = "none";
+
+  vid.onplaying = function(){
+    vid.style.opacity = "1";
+  };
+  vid.onended = function(){
+    vid.style.opacity = "0";
+    setTimeout(function(){ vid.style.display = "none"; }, 180);
+  };
+  vid.onerror = function(){
+    vid.style.opacity = "0";
+    vid.style.display = "none";
+  };
+
   if (vid.getAttribute("data-src") !== item.live){
     vid.src = item.live;
     vid.setAttribute("data-src", item.live);
     try { vid.load(); } catch(e){}
+  } else {
+    try { vid.currentTime = 0; } catch(e){}
   }
-  vid.style.display = "block";
-  vid.style.zIndex = "3";
-  try { vid.currentTime = 0; } catch(e){}
-  vid.onended = function(){
-    vid.style.display = "none";
-  };
+
   var p = vid.play();
   if (p && p.catch){
     p.catch(function(){
       setTimeout(function(){
         try { vid.muted = true; vid.play(); } catch(e){}
-      }, 120);
+      }, 150);
     });
   }
 }
@@ -5551,20 +5578,33 @@ class Handler(BaseHTTPRequestHandler):
 
                 v_fname = ""
                 if v_b64:
-                    v_ext = ".mp4"
-                    if v_b64.startswith("data:"):
-                        head = v_b64.split(",", 1)[0].lower()
-                        if "quicktime" in head or "mov" in head:
-                            v_ext = ".mov"
-                        elif "webm" in head:
-                            v_ext = ".webm"
                     if "," in v_b64:
                         v_b64 = v_b64.split(",", 1)[1]
                     v_data = base64.b64decode(v_b64)
-                    v_fname = f"live_{dt}_{int(time.time())}_{token}{v_ext}"
+                    v_fname = f"live_{dt}_{int(time.time())}_{token}.mp4"
                     v_fpath = os.path.join(PHOTOS_DIR, v_fname)
-                    with open(v_fpath, "wb") as vf:
+                    raw_path = v_fpath + ".raw"
+                    with open(raw_path, "wb") as vf:
                         vf.write(v_data)
+                    try:
+                        import subprocess
+                        r = subprocess.run(
+                            [
+                                "ffmpeg", "-y", "-i", raw_path,
+                                "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+                                "-vf", "scale='min(1080,iw)':-2", "-pix_fmt", "yuv420p",
+                                "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
+                                v_fpath
+                            ],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30
+                        )
+                        if r.returncode == 0 and os.path.exists(v_fpath) and os.path.getsize(v_fpath) > 1000:
+                            os.remove(raw_path)
+                        else:
+                            os.replace(raw_path, v_fpath)
+                    except Exception:
+                        if os.path.exists(raw_path):
+                            os.replace(raw_path, v_fpath)
 
                 saved_items.append((fname, v_fname))
             except Exception as e:
