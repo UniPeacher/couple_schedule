@@ -77,4 +77,20 @@ public class WebAppInterface {
     public void showToast(String message) {
         Toast.makeText(mContext, message, Toast.LENGTH_SHORT).show();
     }
+
+    @JavascriptInterface
+    public void openServerSettings() {
+        if (mContext instanceof MainActivity) {
+            MainActivity act = (MainActivity) mContext;
+            act.runOnUiThread(act::showServerSettingsDialog);
+        }
+    }
+
+    @JavascriptInterface
+    public void saveImageToGallery(String url) {
+        if (mContext instanceof MainActivity) {
+            MainActivity act = (MainActivity) mContext;
+            act.runOnUiThread(() -> act.saveImageFromUrl(url));
+        }
+    }
 }

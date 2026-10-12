@@ -220,11 +220,12 @@ public class MainActivity extends AppCompatActivity {
 
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("image/*");
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
                 intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
 
                 try {
-                    startActivityForResult(Intent.createChooser(intent, "选择相册照片"), FILE_CHOOSER_REQUEST_CODE);
+                    startActivityForResult(Intent.createChooser(intent, "选择相册照片或实况"), FILE_CHOOSER_REQUEST_CODE);
                 } catch (Exception e) {
                     if (MainActivity.this.filePathCallback != null) {
                         MainActivity.this.filePathCallback.onReceiveValue(null);
@@ -236,11 +237,95 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // 长按可弹出切换服务器地址窗口
+        // 长按根据位置智能处理：在图片上弹出「保存图片到相册」，不再无脑弹服务器设置框
         webView.setOnLongClickListener(v -> {
-            showServerSettingsDialog();
-            return true;
+            WebView.HitTestResult result = webView.getHitTestResult();
+            if (result != null) {
+                int type = result.getType();
+                if (type == WebView.HitTestResult.IMAGE_TYPE
+                        || type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                    String imgUrl = result.getExtra();
+                    if (imgUrl != null && !imgUrl.isEmpty() && !imgUrl.contains("/img/dog")) {
+                        showImageLongPressDialog(imgUrl);
+                        return true;
+                    }
+                }
+            }
+            // 其他位置交由网页内自定义长按手势处理（如长按播放实况、长按操作菜单等）
+            return false;
         });
+    }
+
+    public void showImageLongPressDialog(String imgUrl) {
+        String[] items = new String[]{"💾 保存图片到手机相册", "取消"};
+        new AlertDialog.Builder(this)
+                .setTitle("🐾 手账照片操作")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        saveImageFromUrl(imgUrl);
+                    }
+                })
+                .show();
+    }
+
+    public void saveImageFromUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty()) return;
+        SharedPreferences pref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        String base = pref.getString(KEY_SERVER_URL, getString(R.string.default_server_url));
+        if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        final String fullUrl = rawUrl.startsWith("http") ? rawUrl
+                : (rawUrl.startsWith("/") ? base + rawUrl : base + "/" + rawUrl);
+        final String cookies = CookieManager.getInstance().getCookie(fullUrl);
+
+        Toast.makeText(this, "正在保存照片到相册… 🐾", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            try {
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(fullUrl).openConnection();
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(15000);
+                if (cookies != null && !cookies.isEmpty()) {
+                    conn.setRequestProperty("Cookie", cookies);
+                }
+                conn.connect();
+                if (conn.getResponseCode() != 200) {
+                    throw new Exception("HTTP " + conn.getResponseCode());
+                }
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                try (java.io.InputStream in = conn.getInputStream()) {
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        bos.write(buf, 0, n);
+                    }
+                }
+                byte[] bytes = bos.toByteArray();
+                String fileName = "DogSchedule_" + System.currentTimeMillis() + ".jpg";
+                android.content.ContentValues values = new android.content.ContentValues();
+                values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName);
+                values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,
+                            android.os.Environment.DIRECTORY_PICTURES + "/两人日程");
+                    values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 1);
+                }
+                android.content.ContentResolver resolver = getContentResolver();
+                Uri uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new Exception("无法创建相册文件");
+                try (java.io.OutputStream out = resolver.openOutputStream(uri)) {
+                    if (out != null) out.write(bytes);
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    values.clear();
+                    values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0);
+                    resolver.update(uri, values, null, null);
+                }
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        "✅ 已保存到相册「两人日程」文件夹 🐾", Toast.LENGTH_SHORT).show());
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        "保存失败：" + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        }).start();
     }
 
     private void loadServerUrl() {
@@ -249,7 +334,7 @@ public class MainActivity extends AppCompatActivity {
         webView.loadUrl(url);
     }
 
-    private void showServerSettingsDialog() {
+    public void showServerSettingsDialog() {
         SharedPreferences pref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         String currentUrl = pref.getString(KEY_SERVER_URL, getString(R.string.default_server_url));
 
