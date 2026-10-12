@@ -277,13 +277,15 @@ public class MainActivity extends AppCompatActivity {
         final String fullUrl = rawUrl.startsWith("http") ? rawUrl
                 : (rawUrl.startsWith("/") ? base + rawUrl : base + "/" + rawUrl);
         final String cookies = CookieManager.getInstance().getCookie(fullUrl);
+        String lower = fullUrl.toLowerCase();
+        final boolean isVideo = lower.contains(".mp4") || lower.contains(".mov") || lower.contains(".webm") || lower.contains("/live_");
 
-        Toast.makeText(this, "正在保存照片到相册… 🐾", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, isVideo ? "正在保存实况视频到相册… 🐾" : "正在保存照片到相册… 🐾", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             try {
                 java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(fullUrl).openConnection();
                 conn.setConnectTimeout(10000);
-                conn.setReadTimeout(15000);
+                conn.setReadTimeout(30000);
                 if (cookies != null && !cookies.isEmpty()) {
                     conn.setRequestProperty("Cookie", cookies);
                 }
@@ -300,28 +302,42 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 byte[] bytes = bos.toByteArray();
-                String fileName = "DogSchedule_" + System.currentTimeMillis() + ".jpg";
-                android.content.ContentValues values = new android.content.ContentValues();
-                values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName);
-                values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,
-                            android.os.Environment.DIRECTORY_PICTURES + "/两人日程");
-                    values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 1);
-                }
                 android.content.ContentResolver resolver = getContentResolver();
-                Uri uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                android.content.ContentValues values = new android.content.ContentValues();
+                Uri uri;
+                if (isVideo) {
+                    String fileName = "DogSchedule_Live_" + System.currentTimeMillis() + ".mp4";
+                    values.put(android.provider.MediaStore.Video.Media.DISPLAY_NAME, fileName);
+                    values.put(android.provider.MediaStore.Video.Media.MIME_TYPE, "video/mp4");
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        values.put(android.provider.MediaStore.Video.Media.RELATIVE_PATH,
+                                android.os.Environment.DIRECTORY_MOVIES + "/两人日程");
+                        values.put(android.provider.MediaStore.Video.Media.IS_PENDING, 1);
+                    }
+                    uri = resolver.insert(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values);
+                } else {
+                    String fileName = "DogSchedule_" + System.currentTimeMillis() + ".jpg";
+                    values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName);
+                    values.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,
+                                android.os.Environment.DIRECTORY_PICTURES + "/两人日程");
+                        values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 1);
+                    }
+                    uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                }
                 if (uri == null) throw new Exception("无法创建相册文件");
                 try (java.io.OutputStream out = resolver.openOutputStream(uri)) {
                     if (out != null) out.write(bytes);
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     values.clear();
-                    values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0);
+                    values.put("is_pending", 0);
                     resolver.update(uri, values, null, null);
                 }
                 runOnUiThread(() -> Toast.makeText(MainActivity.this,
-                        "✅ 已保存到相册「两人日程」文件夹 🐾", Toast.LENGTH_SHORT).show());
+                        isVideo ? "✅ 实况视频已保存到系统相册 🐾" : "✅ 已保存到相册「两人日程」文件夹 🐾",
+                        Toast.LENGTH_SHORT).show());
             } catch (Exception e) {
                 runOnUiThread(() -> Toast.makeText(MainActivity.this,
                         "保存失败：" + e.getMessage(), Toast.LENGTH_SHORT).show());

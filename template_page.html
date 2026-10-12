@@ -2403,25 +2403,36 @@ function playPvLiveVideo(){
 
 function savePhotoUrlToDevice(imgUrl){
   if (!imgUrl) return;
-  if (window.AndroidApp && window.AndroidApp.saveImageToGallery){
+  var lower = String(imgUrl).toLowerCase();
+  var isVideo = lower.indexOf(".mp4") !== -1 || lower.indexOf(".mov") !== -1 || lower.indexOf(".webm") !== -1 || lower.indexOf("/live_") !== -1;
+  var ext = isVideo ? ".mp4" : ".jpg";
+
+  // 如果是图片且在 Android 客户端内，且当前客户端支持或保存的是静态图：
+  if (!isVideo && window.AndroidApp && window.AndroidApp.saveImageToGallery){
     window.AndroidApp.saveImageToGallery(imgUrl);
     return;
   }
-  toast("正在准备下载图片… 🐾");
+  // 如果 Android 客户端已升级支持原图/视频双模式保存
+  if (isVideo && window.AndroidApp && window.AndroidApp.saveMediaToGallery){
+    window.AndroidApp.saveMediaToGallery(imgUrl);
+    return;
+  }
+
+  toast(isVideo ? "正在准备下载实况视频… 🐾" : "正在准备下载图片… 🐾");
   fetch(imgUrl, {credentials:"same-origin"}).then(function(r){ return r.blob(); }).then(function(blob){
     var bUrl = URL.createObjectURL(blob);
     var a = document.createElement("a");
     a.href = bUrl;
-    a.download = "DogSchedule_" + Date.now() + ".jpg";
+    a.download = "DogSchedule_" + Date.now() + ext;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(function(){ URL.revokeObjectURL(bUrl); }, 2000);
-    toast("✅ 已触发保存图片 🐾");
+    setTimeout(function(){ URL.revokeObjectURL(bUrl); }, 3000);
+    toast(isVideo ? "✅ 实况视频已开始下载 🐾" : "✅ 已触发保存图片 🐾");
   }).catch(function(){
     var a = document.createElement("a");
     a.href = imgUrl;
-    a.download = "DogSchedule_" + Date.now() + ".jpg";
+    a.download = "DogSchedule_" + Date.now() + ext;
     a.target = "_blank";
     document.body.appendChild(a);
     a.click();
@@ -3469,17 +3480,24 @@ document.addEventListener("change", function(e){
             if (mp4Start > 0 && (len - mp4Start) > 4096 && (len - mp4Start) < 25 * 1024 * 1024){
               var vBlob = new Blob([u8.subarray(mp4Start)], {type: "video/mp4"});
               var vr = new FileReader();
-              vr.onload = function(ve){ cb(ve.target.result || ""); };
-              vr.onerror = function(){ cb(""); };
+              vr.onload = function(ve){
+                var origReader = new FileReader();
+                origReader.onload = function(oe){
+                  cb(ve.target.result || "", oe.target.result || "");
+                };
+                origReader.onerror = function(){ cb(ve.target.result || "", ""); };
+                origReader.readAsDataURL(file);
+              };
+              vr.onerror = function(){ cb("", ""); };
               vr.readAsDataURL(vBlob);
             } else {
-              cb("");
+              cb("", "");
             }
-          } catch(err){ cb(""); }
+          } catch(err){ cb("", ""); }
         };
-        reader.onerror = function(){ cb(""); };
+        reader.onerror = function(){ cb("", ""); };
         reader.readAsArrayBuffer(file);
-      } catch(err){ cb(""); }
+      } catch(err){ cb("", ""); }
     }
 
     function compressImageFile(file, cb){
@@ -3565,7 +3583,7 @@ document.addEventListener("change", function(e){
       else if (f.type.indexOf("video/") === 0) vidMap[k] = f;
     });
 
-    // 1. 处理所有图片（优先匹配同名视频；若无同名视频，则自动检测并提取安卓 Motion Photo 内嵌实况视频轨！）
+    // 1. 处理所有图片（优先匹配同名视频；若无同名视频，则自动检测并提取安卓 Motion Photo 内嵌实况视频轨并保留原厂实况 JPG！）
     Object.keys(imgMap).forEach(function(k){
       var iFile = imgMap[k];
       var pairedVid = vidMap[k];
@@ -3576,8 +3594,11 @@ document.addEventListener("change", function(e){
             appendPreviewItem({ image: compB64, live_video: vB64 });
           });
         } else {
-          extractEmbeddedMotionVideoB64(iFile, function(embeddedVidB64){
-            appendPreviewItem({ image: compB64, live_video: embeddedVidB64 || "" });
+          extractEmbeddedMotionVideoB64(iFile, function(embeddedVidB64, origMotionJpgB64){
+            appendPreviewItem({
+              image: origMotionJpgB64 || compB64,
+              live_video: embeddedVidB64 || ""
+            });
           });
         }
       });
