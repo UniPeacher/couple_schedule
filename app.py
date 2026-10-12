@@ -623,6 +623,40 @@ def monday_of(d):
     return d - timedelta(days=d.weekday())
 
 
+def synthesize_motion_photo_bytes(jpg_bytes, mp4_bytes):
+    """将静态 JPEG 与 MP4 视频轨合成为全安卓通用（Google/小米/OPPO/vivo/华为/三星）单文件实况照片 (Motion Photo .jpg)"""
+    if not jpg_bytes or not mp4_bytes or not jpg_bytes.startswith(b"\xff\xd8"):
+        return jpg_bytes
+    # 如果原本就已经是内嵌了 MP4 视频轨与 XMP 头部的原厂实况照片，直接原样返回
+    if (b"MotionPhoto" in jpg_bytes[:65536] or b"MicroVideo" in jpg_bytes[:65536]) and b"ftyp" in jpg_bytes[len(jpg_bytes) // 3:]:
+        return jpg_bytes
+    import struct
+    vlen = len(mp4_bytes)
+    ts_us = 0
+    xmp_str = (
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">'
+        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+        '<rdf:Description rdf:about="" '
+        'xmlns:GCamera="http://ns.google.com/photos/1.0/camera/" '
+        'xmlns:OpCamera="http://ns.oplus.com/photos/1.0/camera/" '
+        'xmlns:MiCamera="http://ns.xiaomi.com/photos/1.0/camera/" '
+        'xmlns:Container="http://ns.google.com/photos/1.0/container/" '
+        'xmlns:Item="http://ns.google.com/photos/1.0/container/item/" '
+        f'GCamera:MotionPhoto="1" GCamera:MotionPhotoVersion="1" GCamera:MotionPhotoPresentationTimestampUs="{ts_us}" '
+        f'GCamera:MicroVideo="1" GCamera:MicroVideoVersion="1" GCamera:MicroVideoOffset="{vlen}" GCamera:MicroVideoPresentationTimestampUs="{ts_us}" '
+        f'OpCamera:MotionPhotoPrimaryPresentationTimestampUs="{ts_us}" OpCamera:MotionPhotoOwner="oplus" OpCamera:OLivePhotoVersion="2" OpCamera:VideoLength="{vlen}" '
+        f'MiCamera:MicroVideo="1" MiCamera:MicroVideoVersion="1" MiCamera:MicroVideoOffset="{vlen}" MiCamera:MicroVideoPresentationTimestampUs="{ts_us}">'
+        '<Container:Directory><rdf:Seq>'
+        '<rdf:li rdf:parseType="Resource"><Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0" Item:Padding="0"/></rdf:li>'
+        f'<rdf:li rdf:parseType="Resource"><Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="{vlen}" Item:Padding="0"/></rdf:li>'
+        '</rdf:Seq></Container:Directory>'
+        '</rdf:Description></rdf:RDF></x:xmpmeta>'
+    )
+    payload = b"http://ns.adobe.com/xap/1.0/\x00" + xmp_str.encode("utf-8")
+    app1 = b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload
+    return jpg_bytes[:2] + app1 + jpg_bytes[2:] + mp4_bytes
+
+
 def week_num(week1_str, d):
     """该日期处于第几教学周；week1 为空或早于第1周返回 None"""
     if not week1_str:
@@ -3277,11 +3311,12 @@ function showPhotoActionSheet(imgUrl, liveUrl){
   var sheet = document.createElement("div");
   sheet.id = "ovPhotoSheet";
   sheet.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10050;display:flex;align-items:flex-end;justify-content:center;padding:16px;animation:fadeIn .15s ease";
+  var saveBtnLabel = liveUrl ? "📸 保存实况照片到相册" : "💾 保存图片到手机相册";
   sheet.innerHTML =
     '<div style="width:100%;max-width:400px;background:var(--bg-card);border-radius:20px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,0.35);display:flex;flex-direction:column;gap:8px">' +
       '<div style="text-align:center;font-size:12.5px;font-weight:800;color:var(--ink-muted);padding:4px 0">🐾 手账照片操作</div>' +
-      '<button type="button" class="p-btn pri" id="actSaveImgBtn" style="width:100%;justify-content:center;padding:11px;font-size:14px">💾 保存图片到手机相册</button>' +
-      (liveUrl ? '<button type="button" class="p-btn" id="actSaveLiveBtn" style="width:100%;justify-content:center;padding:10px;font-size:13.5px">🎬 保存实况动态视频</button>' : '') +
+      '<button type="button" class="p-btn pri" id="actSaveImgBtn" style="width:100%;justify-content:center;padding:11px;font-size:14px">' + saveBtnLabel + '</button>' +
+      (liveUrl ? '<button type="button" class="p-btn" id="actSaveLiveBtn" style="width:100%;justify-content:center;padding:10px;font-size:13.5px">🎬 仅导出 MP4 视频</button>' : '') +
       '<button type="button" class="p-btn" id="actCancelSheetBtn" style="width:100%;justify-content:center;padding:10px;font-size:13.5px">取消</button>' +
     '</div>';
   document.body.appendChild(sheet);
@@ -3338,6 +3373,10 @@ function updatePhotoViewer(){
   }
   if (liveBtn){
     liveBtn.style.display = liveUrl ? "inline-flex" : "none";
+  }
+  var saveBtn = $("#pvSaveBtn");
+  if (saveBtn){
+    saveBtn.textContent = liveUrl ? "📸 保存实况照片" : "💾 保存图片";
   }
   resetPvTransform(false);
   if (ind) ind.textContent = (pvCurrentIndex + 1) + " / " + total;
@@ -3750,12 +3789,7 @@ document.addEventListener("click", function(e){
   else if (act === "pv-save-photo"){
     var curItem = pvPhotosList[pvCurrentIndex];
     var imgUrl = (typeof curItem === "object" && curItem !== null) ? curItem.src : curItem;
-    var liveUrl = (typeof curItem === "object" && curItem !== null) ? (curItem.live || "") : "";
-    if (liveUrl){
-      showPhotoActionSheet(imgUrl, liveUrl);
-    } else {
-      savePhotoUrlToDevice(imgUrl);
-    }
+    savePhotoUrlToDevice(imgUrl);
   }
   else if (act === "close-photo"){
     var pv = $("#ovPhotoViewer");
@@ -5631,6 +5665,17 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         if os.path.exists(raw_path):
                             os.replace(raw_path, v_fpath)
+
+                    # 将静态封面图与 MP4 实况轨合成为标准单文件实况照片 (Motion Photo .jpg)，使得直接下载 .jpg 也是真·实况照片！
+                    try:
+                        if os.path.exists(v_fpath):
+                            with open(v_fpath, "rb") as vf2:
+                                final_mp4 = vf2.read()
+                            motion_jpg = synthesize_motion_photo_bytes(data, final_mp4)
+                            with open(fpath, "wb") as pf2:
+                                pf2.write(motion_jpg)
+                    except Exception:
+                        pass
 
                 saved_items.append((fname, v_fname))
             except Exception as e:
