@@ -238,23 +238,8 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // 长按根据位置智能处理：在图片上弹出「保存图片到相册」，不再无脑弹服务器设置框
-        webView.setOnLongClickListener(v -> {
-            WebView.HitTestResult result = webView.getHitTestResult();
-            if (result != null) {
-                int type = result.getType();
-                if (type == WebView.HitTestResult.IMAGE_TYPE
-                        || type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
-                    String imgUrl = result.getExtra();
-                    if (imgUrl != null && !imgUrl.isEmpty() && !imgUrl.contains("/img/dog")) {
-                        showImageLongPressDialog(imgUrl);
-                        return true;
-                    }
-                }
-            }
-            // 其他位置交由网页内自定义长按手势处理（如长按播放实况、长按操作菜单等）
-            return false;
-        });
+        // 交由网页内自定义长按手势统一处理（如长按播放实况、长按保存照片/实况菜单等）
+        webView.setOnLongClickListener(v -> false);
     }
 
     public void showImageLongPressDialog(String imgUrl) {
