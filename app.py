@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS diary_photos(
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   diary_id    INTEGER NOT NULL,
   file_name   TEXT NOT NULL,
+  live_video  TEXT DEFAULT '',
   sort_order  INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS summary_cache(
   cache_key   TEXT PRIMARY KEY,
@@ -569,6 +570,10 @@ def init_db():
             pass
         try:
             CONN.execute("UPDATE notifications SET is_pushed=1 WHERE is_pushed=0 AND is_read=1")
+        except Exception:
+            pass
+        try:
+            CONN.execute("ALTER TABLE diary_photos ADD COLUMN live_video TEXT DEFAULT ''")
         except Exception:
             pass
         try:
@@ -1338,10 +1343,22 @@ button,input,select,textarea{font-family:inherit}
   display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;
 }
 .polaroid-card{
+  position:relative;
   background:var(--bg-card);padding:6px 6px 14px;border:1px solid var(--line-strong);
   border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.08);
   width:calc(33.333% - 8px);max-width:130px;transform:rotate(-1deg);
   transition:all .2s ease;
+}
+.polaroid-live-badge{
+  position:absolute;top:10px;left:10px;z-index:2;
+  background:rgba(0,0,0,0.58);backdrop-filter:blur(4px);
+  color:#fff;font-size:9px;font-weight:800;letter-spacing:.3px;
+  padding:2px 6px;border-radius:999px;display:inline-flex;align-items:center;gap:3px;
+  pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,0.25);
+}
+.polaroid-live-dot{
+  width:6px;height:6px;border-radius:50%;background:#fbbf24;
+  box-shadow:0 0 0 1.5px rgba(251,191,36,0.45);display:inline-block;
 }
 .polaroid-card:nth-child(even){transform:rotate(1.5deg)}
 .polaroid-card:hover{transform:rotate(0deg) scale(1.05);z-index:2}
@@ -2079,6 +2096,7 @@ function closeAllModals(fromPop){
   });
   var pv = $("#ovPhotoViewer");
   if (pv && pv.style.display !== "none"){
+    stopPvLiveVideo();
     pv.style.display = "none";
     pv.classList.remove("show");
     showed = true;
@@ -3070,7 +3088,9 @@ function modalsHTML(){
     '<div class="overlay" id="ovPhotoViewer" style="background:rgba(0,0,0,0.92);z-index:9999;display:none;align-items:center;justify-content:center;touch-action:none">' +
       '<div style="position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden" id="pvContainer">' +
         '<img id="pvImage" src="" style="max-width:94vw;max-height:86vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.6);object-fit:contain;transition:transform .2s ease, opacity .2s ease;user-select:none;-webkit-user-select:none">' +
+        '<video id="pvVideo" playsinline webkit-playsinline preload="metadata" style="position:absolute;max-width:94vw;max-height:86vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.6);object-fit:contain;display:none;user-select:none;-webkit-user-select:none"></video>' +
         '<div id="pvIndicator" style="position:absolute;top:20px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,0.5);padding:4px 12px;border-radius:20px;font-size:13px;font-weight:700">1 / 1</div>' +
+        '<button type="button" data-act="pv-play-live" id="pvLiveBtn" style="position:absolute;top:20px;left:18px;display:none;align-items:center;gap:5px;background:rgba(255,255,255,0.22);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.35)"><span class="polaroid-live-dot"></span><span>LIVE 实况</span></button>' +
         '<button type="button" data-act="pv-prev" id="pvBtnPrev" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.25);border:none;border-radius:50%;width:42px;height:42px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">‹</button>' +
         '<button type="button" data-act="pv-next" id="pvBtnNext" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.25);border:none;border-radius:50%;width:42px;height:42px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">›</button>' +
         '<button type="button" data-act="close-photo" style="position:absolute;top:18px;right:18px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.5)">✕</button>' +
@@ -3106,14 +3126,14 @@ function modalsHTML(){
           '</div>' +
         '</div>' +
         '<div class="field"><label>手账碎碎念 / 美好回忆</label><textarea id="df_content" rows="3" placeholder="今天遇到了什么好玩的事，拍了什么照片..." style="width:100%;border:1.5px solid var(--line-strong);border-radius:12px;padding:8px;font-family:inherit;font-size:13px"></textarea></div>' +
-        '<div class="field"><label>拍立得照片（单篇最多可传 18 张，自动压缩秒传 📷）</label>' +
-          '<div style="margin:4px 0 6px">' +
+        '<div class="field"><label>拍立得照片 & 实况 Live（最多 18 张，支持实况照片/短视频自动合成 📷）</label>' +
+          '<div style="margin:4px 0 6px;display:flex;align-items:center;flex-wrap:wrap;gap:6px">' +
             '<button type="button" class="p-btn" data-act="trigger-upload-photo" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;font-size:12px;background:#fef3c7;border-color:#f59e0b">' +
-              '📷 从手机相册选照片' +
+              '📷 选照片 / 实况动态' +
             '</button>' +
-            '<span id="df_photo_status" style="font-size:11px;color:var(--ink-muted);margin-left:8px"></span>' +
+            '<span id="df_photo_status" style="font-size:11px;color:var(--ink-muted)">支持直接选视频或同名照片+视频合成 LIVE</span>' +
           '</div>' +
-          '<input type="file" id="df_files" accept="image/*" multiple style="display:none">' +
+          '<input type="file" id="df_files" accept="image/*,video/*" multiple style="display:none">' +
           '<div id="df_preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>' +
         '</div>' +
         '<div class="foot">' +
@@ -3137,9 +3157,45 @@ function resetPvTransform(smooth){
 
 function applyPvTransform(smooth){
   var img = $("#pvImage");
-  if (!img) return;
-  img.style.transition = smooth ? "transform .2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity .2s ease" : "none";
-  img.style.transform = "translate3d(" + pvTx + "px," + pvTy + "px,0) scale(" + pvScale + ")";
+  var vid = $("#pvVideo");
+  var tr = smooth ? "transform .2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity .2s ease" : "none";
+  var tf = "translate3d(" + pvTx + "px," + pvTy + "px,0) scale(" + pvScale + ")";
+  if (img){ img.style.transition = tr; img.style.transform = tf; }
+  if (vid){ vid.style.transition = tr; vid.style.transform = tf; }
+}
+
+function stopPvLiveVideo(){
+  var vid = $("#pvVideo");
+  var img = $("#pvImage");
+  if (vid){
+    try { vid.pause(); } catch(e){}
+    vid.style.display = "none";
+  }
+  if (img) img.style.opacity = "1";
+}
+
+function playPvLiveVideo(){
+  var item = pvPhotosList[pvCurrentIndex];
+  if (!item || typeof item !== "object" || !item.live) return;
+  var vid = $("#pvVideo");
+  var img = $("#pvImage");
+  if (!vid) return;
+  if (vid.getAttribute("data-src") !== item.live){
+    vid.src = item.live;
+    vid.setAttribute("data-src", item.live);
+  }
+  vid.style.display = "block";
+  vid.currentTime = 0;
+  vid.onended = function(){
+    vid.style.display = "none";
+  };
+  var p = vid.play();
+  if (p && p.catch){
+    p.catch(function(){
+      vid.muted = true;
+      try { vid.play(); } catch(e){}
+    });
+  }
 }
 
 function scrollToToday(){
@@ -3157,17 +3213,35 @@ function scrollToToday(){
 
 function updatePhotoViewer(){
   var img = $("#pvImage");
+  var vid = $("#pvVideo");
+  var liveBtn = $("#pvLiveBtn");
   var ind = $("#pvIndicator");
   var bPrev = $("#pvBtnPrev");
   var bNext = $("#pvBtnNext");
   if (!img) return;
   var total = pvPhotosList.length;
   if (total === 0) return;
-  img.src = pvPhotosList[pvCurrentIndex];
+  stopPvLiveVideo();
+  var cur = pvPhotosList[pvCurrentIndex];
+  var imgUrl = (typeof cur === "object" && cur !== null) ? cur.src : cur;
+  var liveUrl = (typeof cur === "object" && cur !== null) ? (cur.live || "") : "";
+  img.src = imgUrl;
+  if (vid){
+    vid.removeAttribute("src");
+    vid.setAttribute("data-src", "");
+  }
+  if (liveBtn){
+    liveBtn.style.display = liveUrl ? "inline-flex" : "none";
+  }
   resetPvTransform(false);
   if (ind) ind.textContent = (pvCurrentIndex + 1) + " / " + total;
   if (bPrev) bPrev.style.display = total > 1 ? "flex" : "none";
   if (bNext) bNext.style.display = total > 1 ? "flex" : "none";
+  if (liveUrl){
+    setTimeout(function(){
+      if (pvPhotosList[pvCurrentIndex] === cur) playPvLiveVideo();
+    }, 180);
+  }
 }
 
 var curSummaryTab = "day";
@@ -3249,10 +3323,14 @@ function openDayDiaries(dtStr){
       list.forEach(function(d){
         var photosHtml = "";
         if (d.photos && d.photos.length > 0){
-          var pListJson = encodeURIComponent(JSON.stringify(d.photos.map(function(p){ return "/photos/" + p.file_name; })));
+          var pListJson = encodeURIComponent(JSON.stringify(d.photos.map(function(p){
+            return { src: "/photos/" + p.file_name, live: p.live_video ? ("/photos/" + p.live_video) : "" };
+          })));
           photosHtml = '<div class="polaroid-gallery">' +
             d.photos.map(function(p, pIdx){
+              var liveBadge = p.live_video ? '<span class="polaroid-live-badge"><span class="polaroid-live-dot"></span>LIVE</span>' : '';
               return '<div class="polaroid-card">' +
+                liveBadge +
                 '<img src="/photos/' + p.file_name + '" class="polaroid-img" alt="" data-act="preview-photo" data-idx="' + pIdx + '" data-list="' + pListJson + '">' +
               '</div>';
             }).join("") +
@@ -3560,9 +3638,13 @@ document.addEventListener("click", function(e){
       updatePhotoViewer();
     }
   }
+  else if (act === "pv-play-live"){
+    playPvLiveVideo();
+  }
   else if (act === "close-photo"){
     var pv = $("#ovPhotoViewer");
     if (pv){
+      stopPvLiveVideo();
       pv.style.display = "none";
       pv.classList.remove("show");
     }
@@ -3595,8 +3677,10 @@ document.addEventListener("click", function(e){
       var prev = $("#df_preview");
       if (prev){
         prev.innerHTML = (d.photos || []).map(function(p){
+          var liveTag = p.live_video ? '<span style="position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,0.65);color:#fbbf24;font-size:8px;font-weight:800;padding:0 3px;border-radius:4px;pointer-events:none">LIVE</span>' : '';
           return '<div class="edit-photo-thumb" data-file="' + p.file_name + '" style="position:relative;display:inline-block">' +
             '<img src="/photos/' + p.file_name + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ddd">' +
+            liveTag +
             '<span class="del-photo-btn" data-act="remove-edit-photo" data-file="' + p.file_name + '" style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold">×</span>' +
           '</div>';
         }).join("");
@@ -4047,13 +4131,47 @@ document.addEventListener("change", function(e){
   if (e.target && e.target.id === "df_files"){
     var files = Array.from(e.target.files);
     var prev = $("#df_preview");
-    files.forEach(function(file){
-      if (!file.type.startsWith("image/")) return;
+    var imgMap = {}, vidMap = {};
+
+    function baseKey(name){
+      return String(name || "").replace(/\.[^.]+$/, "").toLowerCase();
+    }
+
+    function appendPreviewItem(mediaObj){
+      diaryPhotosToUpload.push(mediaObj);
+      var pWrap = document.createElement("div");
+      pWrap.style.position = "relative";
+      pWrap.style.display = "inline-block";
+
+      var thumbEl = document.createElement("img");
+      thumbEl.src = mediaObj.image;
+      thumbEl.style.cssText = "width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ddd;display:block";
+      pWrap.appendChild(thumbEl);
+
+      if (mediaObj.live_video){
+        var lTag = document.createElement("span");
+        lTag.textContent = "LIVE";
+        lTag.style.cssText = "position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,0.68);color:#fbbf24;font-size:8px;font-weight:800;padding:0 3px;border-radius:4px;pointer-events:none";
+        pWrap.appendChild(lTag);
+      }
+
+      var delX = document.createElement("span");
+      delX.textContent = "×";
+      delX.style.cssText = "position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold";
+      delX.onclick = function(){
+        var idx = diaryPhotosToUpload.indexOf(mediaObj);
+        if (idx !== -1) diaryPhotosToUpload.splice(idx, 1);
+        pWrap.remove();
+      };
+      pWrap.appendChild(delX);
+      if (prev) prev.appendChild(pWrap);
+    }
+
+    function compressImageFile(file, cb){
       var reader = new FileReader();
       reader.onload = function(evt){
         var img = new Image();
         img.onload = function(){
-          // 手机端自动等比压缩为轻量长边 1200px 拍立得照片
           var canvas = document.createElement("canvas");
           var maxSide = 1200;
           var w = img.width, h = img.height;
@@ -4061,41 +4179,101 @@ document.addEventListener("change", function(e){
             if (w > h){ h = Math.round(h * maxSide / w); w = maxSide; }
             else { w = Math.round(w * maxSide / h); h = maxSide; }
           }
-          canvas.width = w;
-          canvas.height = h;
-          var ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, w, h);
-          var compB64 = canvas.toDataURL("image/jpeg", 0.82);
-          diaryPhotosToUpload.push(compB64);
-
-          var pWrap = document.createElement("div");
-          pWrap.style.position = "relative";
-          pWrap.style.display = "inline-block";
-
-          var thumbEl = document.createElement("img");
-          thumbEl.src = compB64;
-          thumbEl.style.width = "48px";
-          thumbEl.style.height = "48px";
-          thumbEl.style.objectFit = "cover";
-          thumbEl.style.borderRadius = "6px";
-          thumbEl.style.border = "1px solid #ddd";
-
-          var delX = document.createElement("span");
-          delX.textContent = "×";
-          delX.style.cssText = "position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold";
-          delX.onclick = function(){
-            var idx = diaryPhotosToUpload.indexOf(compB64);
-            if (idx !== -1) diaryPhotosToUpload.splice(idx, 1);
-            pWrap.remove();
-          };
-
-          pWrap.appendChild(thumbEl);
-          pWrap.appendChild(delX);
-          if (prev) prev.appendChild(pWrap);
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          cb(canvas.toDataURL("image/jpeg", 0.82));
         };
         img.src = evt.target.result;
       };
       reader.readAsDataURL(file);
+    }
+
+    function readVideoFileAndPoster(vFile, needPoster, cb){
+      if (vFile.size > 25 * 1024 * 1024){
+        toast("实况视频不能超过 25MB 哦 🐾");
+        return;
+      }
+      var vReader = new FileReader();
+      vReader.onload = function(vevt){
+        var videoB64 = vevt.target.result;
+        if (!needPoster){
+          cb(null, videoB64);
+          return;
+        }
+        var url = URL.createObjectURL(vFile);
+        var vid = document.createElement("video");
+        vid.preload = "metadata";
+        vid.muted = true;
+        vid.playsInline = true;
+        var done = false;
+        function finishPoster(posterB64){
+          if (done) return;
+          done = true;
+          try { URL.revokeObjectURL(url); } catch(e){}
+          cb(posterB64, videoB64);
+        }
+        vid.onloadeddata = function(){
+          try { vid.currentTime = Math.min(0.15, (vid.duration || 0) / 2); } catch(e){}
+        };
+        vid.onseeked = function(){
+          try {
+            var c = document.createElement("canvas");
+            var maxS = 1000;
+            var vw = vid.videoWidth || 640, vh = vid.videoHeight || 640;
+            if (vw > maxS || vh > maxS){
+              if (vw > vh){ vh = Math.round(vh * maxS / vw); vw = maxS; }
+              else { vw = Math.round(vw * maxS / vh); vh = maxS; }
+            }
+            c.width = vw; c.height = vh;
+            c.getContext("2d").drawImage(vid, 0, 0, vw, vh);
+            finishPoster(c.toDataURL("image/jpeg", 0.82));
+          } catch(e){ finishPoster(""); }
+        };
+        setTimeout(function(){
+          if (!done){
+            try {
+              var c = document.createElement("canvas");
+              c.width = vid.videoWidth || 480; c.height = vid.videoHeight || 480;
+              c.getContext("2d").drawImage(vid, 0, 0, c.width, c.height);
+              finishPoster(c.toDataURL("image/jpeg", 0.82));
+            } catch(e){ finishPoster(""); }
+          }
+        }, 1200);
+        vid.src = url;
+      };
+      vReader.readAsDataURL(vFile);
+    }
+
+    files.forEach(function(f){
+      var k = baseKey(f.name) || ("_" + Math.random());
+      if (f.type.indexOf("image/") === 0) imgMap[k] = f;
+      else if (f.type.indexOf("video/") === 0) vidMap[k] = f;
+    });
+
+    // 1. 处理所有图片（若存在同名视频，自动配对合成一张实况 Live Photo）
+    Object.keys(imgMap).forEach(function(k){
+      var iFile = imgMap[k];
+      var pairedVid = vidMap[k];
+      if (pairedVid) delete vidMap[k];
+      compressImageFile(iFile, function(compB64){
+        if (pairedVid){
+          readVideoFileAndPoster(pairedVid, false, function(_, vB64){
+            appendPreviewItem({ image: compB64, live_video: vB64 });
+          });
+        } else {
+          appendPreviewItem({ image: compB64, live_video: "" });
+        }
+      });
+    });
+
+    // 2. 处理单独选择的实况短视频（自动截取首帧做拍立得封面）
+    Object.keys(vidMap).forEach(function(k){
+      var vFile = vidMap[k];
+      readVideoFileAndPoster(vFile, true, function(posterB64, vB64){
+        if (posterB64){
+          appendPreviewItem({ image: posterB64, live_video: vB64 });
+        }
+      });
     });
   }
 });
@@ -4105,6 +4283,7 @@ document.addEventListener("keydown", function(e){
   var isOpen = pv && pv.style.display !== "none";
   if (e.key === "Escape"){
     if (isOpen){
+      stopPvLiveVideo();
       pv.style.display = "none";
       pv.classList.remove("show");
       return;
@@ -4131,6 +4310,7 @@ document.addEventListener("keydown", function(e){
   var initDist = 0, initScale = 1;
   var isPanning = false, panStartX = 0, panStartY = 0, initialTx = 0, initialTy = 0;
   var lastTapTime = 0;
+  var liveHoldTimer = null;
 
   function getDistance(t1, t2){
     var dx = t1.clientX - t2.clientX;
@@ -4167,6 +4347,13 @@ document.addEventListener("keydown", function(e){
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
 
+      clearTimeout(liveHoldTimer);
+      if (pvScale <= 1.05){
+        liveHoldTimer = setTimeout(function(){
+          playPvLiveVideo();
+        }, 320);
+      }
+
       if (pvScale > 1.05){
         isPanning = true;
         panStartX = e.touches[0].clientX;
@@ -4178,6 +4365,7 @@ document.addEventListener("keydown", function(e){
   }, {passive:false});
 
   document.addEventListener("touchmove", function(e){
+    clearTimeout(liveHoldTimer);
     var pv = $("#ovPhotoViewer");
     if (!pv || pv.style.display === "none") return;
 
@@ -4202,6 +4390,7 @@ document.addEventListener("keydown", function(e){
   }, {passive:false});
 
   document.addEventListener("touchend", function(e){
+    clearTimeout(liveHoldTimer);
     var pv = $("#ovPhotoViewer");
     if (!pv || pv.style.display === "none") return;
 
@@ -4364,8 +4553,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def body_json(self):
         n = int(self.headers.get("Content-Length") or 0)
-        # 上传手账多张拍立得图片时请求体积会达到几 MB，放宽限制到 30MB
-        if n <= 0 or n > 31457280:
+        # 上传手账多张拍立得图片与实况视频时请求体积会达到几十 MB，放宽限制到 60MB
+        if n <= 0 or n > 62914560:
             return {}
         raw = self.rfile.read(n)
         try:
@@ -4460,11 +4649,16 @@ class Handler(BaseHTTPRequestHandler):
                 fp = os.path.join(PHOTOS_DIR, fn)
                 if fp and os.path.exists(fp):
                     mime = "image/jpeg"
-                    if fn.endswith(".png"): mime = "image/png"
-                    elif fn.endswith(".webp"): mime = "image/webp"
+                    lfn = fn.lower()
+                    if lfn.endswith(".png"): mime = "image/png"
+                    elif lfn.endswith(".webp"): mime = "image/webp"
+                    elif lfn.endswith(".mp4"): mime = "video/mp4"
+                    elif lfn.endswith(".mov"): mime = "video/quicktime"
+                    elif lfn.endswith(".webm"): mime = "video/webm"
                     with open(fp, "rb") as f:
                         return self.send_bytes(200, f.read(), mime,
-                                               extra=[("Cache-Control", "public, max-age=604800")])
+                                               extra=[("Cache-Control", "public, max-age=604800"),
+                                                      ("Accept-Ranges", "bytes")])
                 return self.send_json({"error": "not found"}, 404)
             if path == "/api/week":
                 uid = self.authed()
@@ -5103,6 +5297,51 @@ class Handler(BaseHTTPRequestHandler):
                 res.append(item)
         return {"date": dt, "diaries": res}
 
+    def _save_diary_media_items(self, dt, photos_input):
+        import base64
+        os.makedirs(PHOTOS_DIR, exist_ok=True)
+        saved_items = []
+        for idx, item in enumerate((photos_input or [])[:18]):
+            try:
+                if isinstance(item, dict):
+                    p_b64 = item.get("image") or item.get("photo") or ""
+                    v_b64 = item.get("live_video") or item.get("video") or ""
+                else:
+                    p_b64 = str(item or "")
+                    v_b64 = ""
+                if not p_b64:
+                    continue
+                if "," in p_b64:
+                    p_b64 = p_b64.split(",", 1)[1]
+                data = base64.b64decode(p_b64)
+                token = secrets.token_hex(4)
+                fname = f"pic_{dt}_{int(time.time())}_{token}.jpg"
+                fpath = os.path.join(PHOTOS_DIR, fname)
+                with open(fpath, "wb") as pf:
+                    pf.write(data)
+
+                v_fname = ""
+                if v_b64:
+                    v_ext = ".mp4"
+                    if v_b64.startswith("data:"):
+                        head = v_b64.split(",", 1)[0].lower()
+                        if "quicktime" in head or "mov" in head:
+                            v_ext = ".mov"
+                        elif "webm" in head:
+                            v_ext = ".webm"
+                    if "," in v_b64:
+                        v_b64 = v_b64.split(",", 1)[1]
+                    v_data = base64.b64decode(v_b64)
+                    v_fname = f"live_{dt}_{int(time.time())}_{token}{v_ext}"
+                    v_fpath = os.path.join(PHOTOS_DIR, v_fname)
+                    with open(v_fpath, "wb") as vf:
+                        vf.write(v_data)
+
+                saved_items.append((fname, v_fname))
+            except Exception as e:
+                self.log_error("保存手账媒体失败: %s", e)
+        return saved_items
+
     def create_diary(self, d):
         uid = self.current_uid()
         title = str(d.get("title") or "").strip()[:80]
@@ -5111,29 +5350,14 @@ class Handler(BaseHTTPRequestHandler):
         mood = str(d.get("mood") or "").strip()[:30]
         weather = str(d.get("weather") or "").strip()[:30]
         content = str(d.get("content") or "").strip()[:4000]
-        photos_base64 = d.get("photos") or []  # list of base64 strings
+        photos_input = d.get("photos") or []
 
         if not title:
             return self.send_json({"error": "游玩主题/标题不能为空"}, 400)
         if not dt or not DATE_RE.match(dt):
             return self.send_json({"error": "日期无效"}, 400)
 
-        os.makedirs(PHOTOS_DIR, exist_ok=True)
-        saved_photos = []
-
-        import base64
-        for idx, p_b64 in enumerate(photos_base64[:18]):  # 放宽至最多18张
-            try:
-                if "," in p_b64:
-                    p_b64 = p_b64.split(",", 1)[1]
-                data = base64.b64decode(p_b64)
-                fname = f"pic_{dt}_{int(time.time())}_{secrets.token_hex(4)}.jpg"
-                fpath = os.path.join(PHOTOS_DIR, fname)
-                with open(fpath, "wb") as pf:
-                    pf.write(data)
-                saved_photos.append(fname)
-            except Exception as e:
-                self.log_error("保存图片失败: %s", e)
+        saved_photos = self._save_diary_media_items(dt, photos_input)
 
         now_str = time.strftime("%Y-%m-%d %H:%M:%S")
         with LOCK:
@@ -5143,10 +5367,10 @@ class Handler(BaseHTTPRequestHandler):
                 (dt, title, location, mood, weather, content, uid, now_str)
             )
             diary_id = cur.lastrowid
-            for s_idx, fname in enumerate(saved_photos):
+            for s_idx, (fname, v_fname) in enumerate(saved_photos):
                 CONN.execute(
-                    "INSERT INTO diary_photos(diary_id, file_name, sort_order) VALUES(?,?,?)",
-                    (diary_id, fname, s_idx)
+                    "INSERT INTO diary_photos(diary_id, file_name, live_video, sort_order) VALUES(?,?,?,?)",
+                    (diary_id, fname, v_fname, s_idx)
                 )
 
         # 微信与系统原生推送新手账通知给对方狗狗
@@ -5182,7 +5406,7 @@ class Handler(BaseHTTPRequestHandler):
         location = str(d.get("location") or "").strip()[:100]
         mood = str(d.get("mood") or "").strip()[:30]
         content = str(d.get("content") or "").strip()[:4000]
-        photos_base64 = d.get("photos") or []  # 新增的照片
+        photos_input = d.get("photos") or []  # 新增的照片或实况
         keep_photos = d.get("keep_photos") or []  # 保留的原有照片文件名
 
         if not title:
@@ -5190,45 +5414,37 @@ class Handler(BaseHTTPRequestHandler):
         if not dt or not DATE_RE.match(dt):
             return self.send_json({"error": "日期无效"}, 400)
 
-        os.makedirs(PHOTOS_DIR, exist_ok=True)
-        import base64
-        new_saved_photos = []
-        for idx, p_b64 in enumerate(photos_base64[:18]):  # 放宽至最多18张
-            try:
-                if "," in p_b64:
-                    p_b64 = p_b64.split(",", 1)[1]
-                data = base64.b64decode(p_b64)
-                fname = f"pic_{dt}_{int(time.time())}_{secrets.token_hex(4)}.jpg"
-                fpath = os.path.join(PHOTOS_DIR, fname)
-                with open(fpath, "wb") as pf:
-                    pf.write(data)
-                new_saved_photos.append(fname)
-            except Exception as e:
-                self.log_error("保存图片失败: %s", e)
+        new_saved_photos = self._save_diary_media_items(dt, photos_input)
 
         with LOCK:
             CONN.execute(
                 "UPDATE diaries SET date=?, title=?, location=?, mood=?, content=? WHERE id=?",
                 (dt, title, location, mood, content, did)
             )
-            # 处理删除旧照片
-            old_photos = CONN.execute("SELECT file_name FROM diary_photos WHERE diary_id=?", (did,)).fetchall()
+            # 处理删除旧照片与实况视频
+            old_photos = CONN.execute("SELECT file_name, live_video FROM diary_photos WHERE diary_id=?", (did,)).fetchall()
+            old_map = {op["file_name"]: (op["live_video"] or "") for op in old_photos}
             for op in old_photos:
                 fn = op["file_name"]
+                vfn = op["live_video"] or ""
                 if fn not in keep_photos:
-                    try:
-                        fp = os.path.join(PHOTOS_DIR, fn)
-                        if os.path.exists(fp):
-                            os.remove(fp)
-                    except Exception:
-                        pass
+                    for del_fn in (fn, vfn):
+                        if not del_fn:
+                            continue
+                        try:
+                            fp = os.path.join(PHOTOS_DIR, del_fn)
+                            if os.path.exists(fp):
+                                os.remove(fp)
+                        except Exception:
+                            pass
             CONN.execute("DELETE FROM diary_photos WHERE diary_id=?", (did,))
             # 重新插入保留的旧照片和新增的照片
-            all_current = [p for p in keep_photos if any(op["file_name"] == p for op in old_photos)] + new_saved_photos
-            for s_idx, fname in enumerate(all_current):
+            kept_tuples = [(p, old_map[p]) for p in keep_photos if p in old_map]
+            all_current = kept_tuples + new_saved_photos
+            for s_idx, (fname, v_fname) in enumerate(all_current):
                 CONN.execute(
-                    "INSERT INTO diary_photos(diary_id, file_name, sort_order) VALUES(?,?,?)",
-                    (did, fname, s_idx)
+                    "INSERT INTO diary_photos(diary_id, file_name, live_video, sort_order) VALUES(?,?,?,?)",
+                    (did, fname, v_fname, s_idx)
                 )
 
         return self.send_json({"ok": True, "id": did})
@@ -5239,14 +5455,17 @@ class Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             return self.send_json({"error": "参数错误"}, 400)
         with LOCK:
-            photos = CONN.execute("SELECT file_name FROM diary_photos WHERE diary_id=?", (did,)).fetchall()
+            photos = CONN.execute("SELECT file_name, live_video FROM diary_photos WHERE diary_id=?", (did,)).fetchall()
             for p in photos:
-                try:
-                    fp = os.path.join(PHOTOS_DIR, p["file_name"])
-                    if os.path.exists(fp):
-                        os.remove(fp)
-                except Exception:
-                    pass
+                for del_fn in (p["file_name"], p["live_video"] or ""):
+                    if not del_fn:
+                        continue
+                    try:
+                        fp = os.path.join(PHOTOS_DIR, del_fn)
+                        if os.path.exists(fp):
+                            os.remove(fp)
+                    except Exception:
+                        pass
             CONN.execute("DELETE FROM diary_photos WHERE diary_id=?", (did,))
             CONN.execute("DELETE FROM diaries WHERE id=?", (did,))
         return self.send_json({"ok": True})
