@@ -4523,7 +4523,9 @@ document.addEventListener("keydown", function(e){
           var imgUrl = (typeof curItem === "object" && curItem !== null) ? curItem.src : curItem;
           var liveUrl = (typeof curItem === "object" && curItem !== null) ? (curItem.live || "") : "";
           if (liveUrl) playPvLiveVideo();
-          if (!window.AndroidApp) showPhotoActionSheet(imgUrl, liveUrl);
+          if (!window.AndroidApp || window.AndroidApp.saveMediaToGallery){
+            showPhotoActionSheet(imgUrl, liveUrl);
+          }
         }, 420);
       }
 
@@ -4613,7 +4615,7 @@ document.addEventListener("keydown", function(e){
     var t = e.target;
     if (!t || !t.closest) return;
 
-    var polaroidImg = window.AndroidApp ? null : t.closest(".polaroid-img");
+    var polaroidImg = (window.AndroidApp && !window.AndroidApp.saveMediaToGallery) ? null : t.closest(".polaroid-img");
     var evCard = t.closest(".ev, .ev-stack");
     var brandLogo = t.closest(".brand");
     if (!polaroidImg && !evCard && !brandLogo) return;
@@ -4661,8 +4663,8 @@ document.addEventListener("keydown", function(e){
     var pvImg = t.closest("#pvImage, #pvVideo");
     if (polaroidImg || pvImg){
       e.preventDefault();
-      // 若在 Android 客户端内，原生 onLongClickListener 已弹出保存图片弹窗，无需重复弹网页菜单
-      if (window.AndroidApp) return;
+      // 若在旧版 v1.7.0 Android 客户端内，原生已弹弹窗；新版 v1.7.1+ 统一弹底部精致菜单
+      if (window.AndroidApp && !window.AndroidApp.saveMediaToGallery) return;
       if (polaroidImg){
         var src = polaroidImg.getAttribute("src") || "";
         var liveUrl = "";
