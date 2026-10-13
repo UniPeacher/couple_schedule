@@ -15,4 +15,5 @@ services:
       - ./data:/data
       - ./data/photos:/data/photos
       - ./app.py:/app/app.py
+      - ./template_page.html:/app/template_page.html
       - ./dog-couple.png:/app/dog-couple.png

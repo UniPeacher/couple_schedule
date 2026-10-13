@@ -1367,7 +1367,9 @@ function eventBlock(ev, uid, date){
     '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button></div>';
 }
 
-/* 将同一用户、时间相互重叠的日程归为一组（同一时段可切换显示） */
+/* 将同一用户、时间相互重叠的日程进行智能分组：
+   若两日程重叠时长 >= 30 分钟，归为一组堆叠切换（避免重度遮盖）；
+   若重叠时长 < 30 分钟（如交接班、蹭边几分钟），保持独立两个日程展示，各自根据真实起止时间渲染。 */
 function groupOverlapping(list){
   var sorted = list.slice().sort(function(a, b){
     var d = t2m(a.tstart) - t2m(b.tstart);
@@ -1380,7 +1382,8 @@ function groupOverlapping(list){
     var joined = false;
     if (last){
       joined = last.some(function(o){
-        return Math.max(t2m(o.tstart), s) < Math.min(t2m(o.tend), e);
+        var overlap = Math.min(t2m(o.tend), e) - Math.max(t2m(o.tstart), s);
+        return overlap >= 30;
       });
     }
     if (joined){ last.push(ev); }

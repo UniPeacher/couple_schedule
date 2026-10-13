@@ -21,10 +21,13 @@ from datetime import date, timedelta, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request
+import contextlib
+import shutil
 
 PORT = int(os.environ.get("PORT", "8795"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
+PHOTOS_TRASH_DIR = os.path.join(DATA_DIR, "photos_trash")
 DB_PATH = os.path.join(DATA_DIR, "sched.db")
 SECRET_FILE = os.path.join(DATA_DIR, "secret.key")
 COOKIE = "sched_sess"
@@ -33,11 +36,46 @@ SESSION_DAYS = 30
 TIME_RE = re.compile(r"^\d{2}:\d{2}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-LOCK = threading.Lock()
-CONN = None
+_TLOCAL = threading.local()
+LOCK = threading.RLock()
 SECRET = None
 FAILS = {}  # 登录失败限流：ip -> [次数, 首次时间戳]
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def get_connection():
+    """获取当前线程独立的 SQLite 连接，充分利用 WAL 模式多读并发优势"""
+    conn = getattr(_TLOCAL, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(DB_PATH, timeout=20, check_same_thread=False, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=20000")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        _TLOCAL.conn = conn
+    return conn
+
+class DBProxy:
+    """线程透明的数据库连接代理，保证各线程使用独立连接"""
+    def __getattr__(self, name):
+        return getattr(get_connection(), name)
+
+CONN = DBProxy()
+
+@contextlib.contextmanager
+def db_transaction():
+    """写事务上下文管理器：在排他写入锁保护下提供 BEGIN IMMEDIATE / COMMIT / ROLLBACK 原子保障"""
+    with LOCK:
+        conn = get_connection()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+            conn.execute("COMMIT")
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
 IMG_FILES = {"dogs": "dogs.png", "dogheads": "dogheads.png", "dogrest": "dogrest.png",
              "dog-hero": "dog-hero.png", "dog-add": "dog-add.png", "dog-set": "dog-set.png",
              "dog-wave": "dog-wave.png", "dog-walk1": "dog-walk1.png", "dog-walk2": "dog-walk2.png",
@@ -202,7 +240,7 @@ def call_llm_api(system_prompt, user_prompt):
         }
     )
     try:
-        with urllib.request.urlopen(req, timeout=25) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             res_json = json.loads(resp.read().decode("utf-8"))
             choices = res_json.get("choices") or []
             if choices:
@@ -440,6 +478,7 @@ def push_summary_to_both(summary_type="day"):
 
 
 NTFY_TOPIC_PREFIX = "couple_schedule_uni_"
+NTFY_BASE_URL = os.environ.get("NTFY_BASE_URL", "https://push.unipeacher.email").rstrip("/")
 
 def send_ntfy_push(target_uid, title, content, target_action=""):
     if not target_uid:
@@ -447,7 +486,10 @@ def send_ntfy_push(target_uid, title, content, target_action=""):
     def _do_send():
         try:
             topic = f"{NTFY_TOPIC_PREFIX}{target_uid}"
-            url = f"http://127.0.0.1:8075/{topic}"
+            urls_to_try = [f"{NTFY_BASE_URL}/{topic}"]
+            if "127.0.0.1" not in NTFY_BASE_URL:
+                urls_to_try.append(f"http://127.0.0.1:8075/{topic}")
+
             headers = {
                 "Title": title.encode("utf-8"),
                 "Priority": "4",
@@ -456,8 +498,16 @@ def send_ntfy_push(target_uid, title, content, target_action=""):
             if target_action:
                 headers["X-Click"] = f"schedule://open?action={target_action}"
                 headers["Click"] = f"schedule://open?action={target_action}"
-            req = urllib.request.Request(url, data=content.encode("utf-8"), headers=headers, method="POST")
-            urllib.request.urlopen(req, timeout=5)
+
+            data_bytes = content.encode("utf-8")
+            for url in urls_to_try:
+                try:
+                    req = urllib.request.Request(url, data=data_bytes, headers=headers, method="POST")
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        if resp.status < 400:
+                            break
+                except Exception:
+                    continue
         except Exception as e:
             sys.stderr.write(f"ntfy push error: {e}\n")
     threading.Thread(target=_do_send, daemon=True).start()
@@ -547,15 +597,53 @@ def get_anniversaries():
         return [dict(r) for r in rows]
 
 
-def init_db():
-    global CONN
-    os.makedirs(DATA_DIR, exist_ok=True)
-    CONN = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False, isolation_level=None)
-    CONN.row_factory = sqlite3.Row
-    CONN.execute("PRAGMA journal_mode=WAL")
-    CONN.execute("PRAGMA busy_timeout=15000")
+def set_setting(key, value):
     with LOCK:
-        CONN.executescript(SCHEMA)
+        CONN.execute(
+            "INSERT INTO meta(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, str(value))
+        )
+
+def wal_checkpoint():
+    try:
+        with LOCK:
+            CONN.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    except Exception:
+        pass
+
+def safe_trash_file(fname):
+    """安全软删除：将文件移至安全回收站，防误删丢失，保留 30 天自动清理"""
+    if not fname:
+        return
+    try:
+        src = os.path.join(PHOTOS_DIR, fname)
+        if os.path.exists(src):
+            os.makedirs(PHOTOS_TRASH_DIR, exist_ok=True)
+            dst = os.path.join(PHOTOS_TRASH_DIR, f"{int(time.time())}_{fname}")
+            shutil.move(src, dst)
+    except Exception as e:
+        sys.stderr.write(f"[safe_trash_file warn]: {e}\n")
+
+def cleanup_trash():
+    """定期清理回收站中超过 30 天的废弃照片，控制磁盘体积"""
+    if not os.path.exists(PHOTOS_TRASH_DIR):
+        return
+    now = time.time()
+    for fn in os.listdir(PHOTOS_TRASH_DIR):
+        fp = os.path.join(PHOTOS_TRASH_DIR, fn)
+        try:
+            if os.path.isfile(fp) and (now - os.path.getmtime(fp)) > (30 * 86400):
+                os.remove(fp)
+        except Exception:
+            pass
+
+def init_db():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    # 初始化主线程连接并建表
+    conn = get_connection()
+    with LOCK:
+        conn.executescript(SCHEMA)
         try:
             CONN.execute("ALTER TABLE comments ADD COLUMN date TEXT DEFAULT ''")
         except Exception:
@@ -615,6 +703,20 @@ def init_db():
             print("[init] seeded %d schedule events" % len(SEED_EVENTS), flush=True)
         for k, v in (("window_start", "08:00"), ("window_end", "22:00"), ("min_gap", "20")):
             CONN.execute("INSERT OR IGNORE INTO meta(key,value) VALUES(?,?)", (k, v))
+        # 创建高性能二级索引，大幅加速高频日程、日记、评论及未读通知轮询
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_events_lookup ON events(uid, repeat, weekday, date)",
+            "CREATE INDEX IF NOT EXISTS idx_comments_lookup ON comments(event_id, date, created)",
+            "CREATE INDEX IF NOT EXISTS idx_diaries_lookup ON diaries(date, id)",
+            "CREATE INDEX IF NOT EXISTS idx_diary_photos_lookup ON diary_photos(diary_id, sort_order)",
+            "CREATE INDEX IF NOT EXISTS idx_notifications_lookup ON notifications(target_uid, is_read, id)",
+            "CREATE INDEX IF NOT EXISTS idx_wishes_lookup ON wishes(is_done, priority, id)",
+        ]
+        for idx_sql in indexes:
+            try:
+                CONN.execute(idx_sql)
+            except Exception as e:
+                sys.stderr.write(f"[init_db] index warn: {e}\n")
 
 
 # ---------------------------------------------------------------- 周次 / 时间计算
@@ -811,7 +913,7 @@ def week_payload(anchor_iso, uid=None):
         "settings": {
             "window_start": m2t(ws), "window_end": m2t(we), "min_gap": min_gap,
             "llm_api_base": get_setting("llm_api_base", ""),
-            "llm_api_key": get_setting("llm_api_key", ""),
+            "llm_api_key": get_setting("llm_api_key", "") if uid == "a" else "",
             "llm_model": get_setting("llm_model", "deepseek-chat")
         },
         "days": out_days,
@@ -843,6 +945,13 @@ def parse_token(tok):
         return None
 
 
+def cleanup_fails():
+    """清理超时的登录失败记录，防止内存泄漏"""
+    now = time.time()
+    for ip, rec in list(FAILS.items()):
+        if now - rec[1] > 600:
+            FAILS.pop(ip, None)
+
 def rate_ok(ip):
     rec = FAILS.get(ip)
     if not rec:
@@ -852,13 +961,24 @@ def rate_ok(ip):
         return True
     return rec[0] < 10
 
-
 def rate_fail(ip):
+    cleanup_fails()
     rec = FAILS.get(ip)
     if not rec or time.time() - rec[1] > 600:
         FAILS[ip] = [1, time.time()]
     else:
         rec[0] += 1
+
+def get_page_html():
+    """优先加载外部 template_page.html 模板，若不存在则使用内嵌 PAGE 兜底"""
+    tpl_file = os.path.join(APP_DIR, "template_page.html")
+    if os.path.isfile(tpl_file):
+        try:
+            with open(tpl_file, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception as e:
+            sys.stderr.write(f"[Warn] Failed reading external template: {e}\n")
+    return PAGE
 
 
 # ---------------------------------------------------------------- 前端页面
@@ -2232,7 +2352,9 @@ function eventBlock(ev, uid, date){
     '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button></div>';
 }
 
-/* 将同一用户、时间相互重叠的日程归为一组（同一时段可切换显示） */
+/* 将同一用户、时间相互重叠的日程进行智能分组：
+   若两日程重叠时长 >= 30 分钟，归为一组堆叠切换（避免重度遮盖）；
+   若重叠时长 < 30 分钟（如交接班、蹭边几分钟），保持独立两个日程展示，各自根据真实起止时间渲染。 */
 function groupOverlapping(list){
   var sorted = list.slice().sort(function(a, b){
     var d = t2m(a.tstart) - t2m(b.tstart);
@@ -2245,7 +2367,8 @@ function groupOverlapping(list){
     var joined = false;
     if (last){
       joined = last.some(function(o){
-        return Math.max(t2m(o.tstart), s) < Math.min(t2m(o.tend), e);
+        var overlap = Math.min(t2m(o.tend), e) - Math.max(t2m(o.tstart), s);
+        return overlap >= 30;
       });
     }
     if (joined){ last.push(ev); }
@@ -4828,10 +4951,26 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     # ---- 基础工具 ----
+    def get_client_ip(self):
+        """智能提取真实客户端 IP（优先 X-Forwarded-For 与 X-Real-IP）"""
+        xff = self.headers.get("X-Forwarded-For")
+        if xff:
+            first_ip = xff.split(",")[0].strip()
+            if first_ip:
+                return first_ip
+        xri = self.headers.get("X-Real-IP")
+        if xri and xri.strip():
+            return xri.strip()
+        return self.client_address[0]
+
     def send_bytes(self, code, body, ctype, extra=None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        # 现代 Web 安全防护响应头
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         for k, v in (extra or []):
             self.send_header(k, v)
         self.end_headers()
@@ -4874,11 +5013,20 @@ class Handler(BaseHTTPRequestHandler):
         return uid
 
     # ---- 路由 ----
+    def do_HEAD(self):
+        """支持健康探针与 HEAD 探测"""
+        path = urlparse(self.path).path
+        if path == "/api/health":
+            return self.send_bytes(200, b"", "application/json; charset=utf-8")
+        if path in ("/", "/index.html"):
+            return self.send_bytes(200, b"", "text/html; charset=utf-8")
+        return self.send_bytes(200, b"", "text/plain; charset=utf-8")
+
     def do_GET(self):
         path = urlparse(self.path).path
         try:
             if path in ("/", "/index.html"):
-                return self.send_html(PAGE)
+                return self.send_html(get_page_html())
             if path.startswith("/img/"):
                 base = path[5:].split(".")[0]
                 fn = IMG_FILES.get(base)
@@ -4978,7 +5126,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "not found"}, 404)
             if path == "/api/week":
                 uid = self.authed()
-                if self.authed() is None:
+                if uid is None:
                     return
                 qs = parse_qs(urlparse(self.path).query)
                 d = (qs.get("date") or [""])[0]
@@ -4991,7 +5139,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(week_payload(d, uid=uid))
             if path == "/api/month":
                 uid = self.authed()
-                if self.authed() is None:
+                if uid is None:
                     return
                 qs = parse_qs(urlparse(self.path).query)
                 ym = (qs.get("month") or [""])[0]
@@ -5077,7 +5225,7 @@ class Handler(BaseHTTPRequestHandler):
         d = self.body_json()
         try:
             if path == "/api/login":
-                ip = self.client_address[0]
+                ip = self.get_client_ip()
                 if not rate_ok(ip):
                     return self.send_json({"error": "尝试过多，请 10 分钟后再试"}, 429)
                 uid = d.get("uid")
@@ -5254,7 +5402,7 @@ class Handler(BaseHTTPRequestHandler):
                 eid = d.get("id")
                 if not isinstance(eid, int):
                     return self.send_json({"error": "参数错误"}, 400)
-                with LOCK:
+                with db_transaction():
                     CONN.execute("DELETE FROM events WHERE id=?", (eid,))
                     CONN.execute("DELETE FROM comments WHERE event_id=?", (eid,))
                 return self.send_json({"ok": True})
@@ -5519,7 +5667,7 @@ class Handler(BaseHTTPRequestHandler):
                 ("llm_model", llm_model)
             ]
 
-        with LOCK:
+        with db_transaction():
             CONN.execute("UPDATE users SET name=?, week1=?, wx_uid=? WHERE uid='a'", (na, w1(d.get("week1_a")), wx_a))
             CONN.execute("UPDATE users SET name=?, week1=?, wx_uid=? WHERE uid='b'", (nb, w1(d.get("week1_b")), wx_b))
             for k, v in [("window_start", ws), ("window_end", we), ("min_gap", str(mg))] + llm_meta_updates:
@@ -5700,7 +5848,7 @@ class Handler(BaseHTTPRequestHandler):
         saved_photos = self._save_diary_media_items(dt, photos_input)
 
         now_str = time.strftime("%Y-%m-%d %H:%M:%S")
-        with LOCK:
+        with db_transaction():
             cur = CONN.execute(
                 "INSERT INTO diaries(date, title, location, mood, weather, content, author_uid, created_at) "
                 "VALUES(?,?,?,?,?,?,?,?)",
@@ -5756,7 +5904,8 @@ class Handler(BaseHTTPRequestHandler):
 
         new_saved_photos = self._save_diary_media_items(dt, photos_input)
 
-        with LOCK:
+        files_to_remove = []
+        with db_transaction():
             CONN.execute(
                 "UPDATE diaries SET date=?, title=?, location=?, mood=?, content=? WHERE id=?",
                 (dt, title, location, mood, content, did)
@@ -5768,15 +5917,8 @@ class Handler(BaseHTTPRequestHandler):
                 fn = op["file_name"]
                 vfn = op["live_video"] or ""
                 if fn not in keep_photos:
-                    for del_fn in (fn, vfn):
-                        if not del_fn:
-                            continue
-                        try:
-                            fp = os.path.join(PHOTOS_DIR, del_fn)
-                            if os.path.exists(fp):
-                                os.remove(fp)
-                        except Exception:
-                            pass
+                    if fn: files_to_remove.append(fn)
+                    if vfn: files_to_remove.append(vfn)
             CONN.execute("DELETE FROM diary_photos WHERE diary_id=?", (did,))
             # 重新插入保留的旧照片和新增的照片
             kept_tuples = [(p, old_map[p]) for p in keep_photos if p in old_map]
@@ -5786,6 +5928,9 @@ class Handler(BaseHTTPRequestHandler):
                     "INSERT INTO diary_photos(diary_id, file_name, live_video, sort_order) VALUES(?,?,?,?)",
                     (did, fname, v_fname, s_idx)
                 )
+        # 事务成功后安全移至回收站（防误删丢失，保留 30 天自动清理）
+        for del_fn in files_to_remove:
+            safe_trash_file(del_fn)
 
         return self.send_json({"ok": True, "id": did})
 
@@ -5794,53 +5939,62 @@ class Handler(BaseHTTPRequestHandler):
             did = int(d.get("id"))
         except (TypeError, ValueError):
             return self.send_json({"error": "参数错误"}, 400)
-        with LOCK:
+        files_to_remove = []
+        with db_transaction():
             photos = CONN.execute("SELECT file_name, live_video FROM diary_photos WHERE diary_id=?", (did,)).fetchall()
             for p in photos:
                 for del_fn in (p["file_name"], p["live_video"] or ""):
-                    if not del_fn:
-                        continue
-                    try:
-                        fp = os.path.join(PHOTOS_DIR, del_fn)
-                        if os.path.exists(fp):
-                            os.remove(fp)
-                    except Exception:
-                        pass
+                    if del_fn:
+                        files_to_remove.append(del_fn)
             CONN.execute("DELETE FROM diary_photos WHERE diary_id=?", (did,))
             CONN.execute("DELETE FROM diaries WHERE id=?", (did,))
+        # 事务成功后安全移至回收站（防误删丢失，保留 30 天自动清理）
+        for del_fn in files_to_remove:
+            safe_trash_file(del_fn)
         return self.send_json({"ok": True})
 
 
     def log_message(self, fmt, *args):
-        sys.stdout.write("%s %s %s\n" % (time.strftime("%F %T"), self.client_address[0], fmt % args))
+        client_ip = self.get_client_ip()
+        sys.stdout.write("%s %s %s\n" % (time.strftime("%F %T"), client_ip, fmt % args))
 
 
 def cron_summary_worker():
-    last_day_pushed = ""
-    last_week_pushed = ""
-    last_month_pushed = ""
+    """后台定时任务：持久化推送状态防重启重复推送，定期执行 WAL Checkpoint 与内存缓存回收"""
     while True:
         try:
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
-            # 1. 每日 22:30 晚安总结
-            if now.hour == 22 and now.minute >= 30 and last_day_pushed != today_str:
+            ym_str = now.strftime("%Y-%m")
+
+            last_day_pushed = get_setting("cron_last_day_pushed", "")
+            last_week_pushed = get_setting("cron_last_week_pushed", "")
+            last_month_pushed = get_setting("cron_last_month_pushed", "")
+
+            # 1. 每日 22:30 晚安总结（22:30~23:59 容错窗口）
+            if ((now.hour == 22 and now.minute >= 30) or now.hour == 23) and last_day_pushed != today_str:
                 push_summary_to_both("day")
-                last_day_pushed = today_str
+                set_setting("cron_last_day_pushed", today_str)
                 print(f"[Cron] 每日晚安总结推送完成: {today_str}", flush=True)
 
-            # 2. 每周日 21:00 心动周报 (weekday 6 为周日)
-            if now.weekday() == 6 and now.hour == 21 and now.minute >= 0 and last_week_pushed != today_str:
+            # 2. 每周日 21:00 心动周报 (weekday 6 为周日，21:00~23:59 容错窗口)
+            if now.weekday() == 6 and now.hour >= 21 and last_week_pushed != today_str:
                 push_summary_to_both("week")
-                last_week_pushed = today_str
+                set_setting("cron_last_week_pushed", today_str)
                 print(f"[Cron] 周度心动周报推送完成: {today_str}", flush=True)
 
-            # 3. 每月 1 号 09:00 月度时光胶囊
-            ym_str = now.strftime("%Y-%m")
-            if now.day == 1 and now.hour == 9 and now.minute >= 0 and last_month_pushed != ym_str:
+            # 3. 每月 1 号 09:00 月度时光胶囊 (09:00~23:59 容错窗口)
+            if now.day == 1 and now.hour >= 9 and last_month_pushed != ym_str:
                 push_summary_to_both("month")
-                last_month_pushed = ym_str
+                set_setting("cron_last_month_pushed", ym_str)
                 print(f"[Cron] 月度时光胶囊推送完成: {ym_str}", flush=True)
+
+            # 4. 定期轻量自维护：每 10 分钟回收过期限流字典并执行 SQLite WAL checkpoint，每日凌晨清理回收站
+            if now.minute % 10 == 0 and now.second < 30:
+                cleanup_fails()
+                wal_checkpoint()
+            if now.hour == 4 and now.minute == 0 and now.second < 30:
+                cleanup_trash()
 
         except Exception as e:
             sys.stderr.write(f"[Cron Worker Error]: {e}\n")
