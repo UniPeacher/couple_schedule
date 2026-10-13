@@ -2352,9 +2352,30 @@ function eventBlock(ev, uid, date){
     '<button class="del" data-act="del" data-id="' + ev.id + '" title="删除此日程">×</button></div>';
 }
 
-/* 将同一用户、时间相互重叠的日程进行智能分组：
-   若两日程重叠时长 >= 30 分钟，归为一组堆叠切换（避免重度遮盖）；
-   若重叠时长 < 30 分钟（如交接班、蹭边几分钟），保持独立两个日程展示，各自根据真实起止时间渲染。 */
+/* 将同一用户、时间相互重叠的日程进行动态比例智能分组：
+   若重叠部分占其中任一日程自身时长的比例较高（>= 45%），或者重叠占两者较短者的比例很高，说明属于实质性冲突/重合，归为一组堆叠切换（避免大面积遮盖）；
+   若重叠部分占比较小（如交接班微量重合、长活动蹭到短课尾巴 < 40%），且重叠时长没有超过短日程一半，则动态判定为独立日程，各自按实际起止时间渲染，绝不异常拉长。 */
+function shouldMergeOverlapping(evA, evB){
+  var sA = t2m(evA.tstart), eA = t2m(evA.tend);
+  var sB = t2m(evB.tstart), eB = t2m(evB.tend);
+  var overlap = Math.min(eA, eB) - Math.max(sA, sB);
+  if (overlap <= 0) return false;
+
+  var durA = Math.max(eA - sA, 1);
+  var durB = Math.max(eB - sB, 1);
+  var minDur = Math.min(durA, durB);
+
+  // 1. 动态比例：重叠时间占较短日程的比例 (ratioMin)
+  var ratioMin = overlap / minDur;
+
+  // 2. 动态比例：重叠时间占整个时间跨度的比例（交并比 IoU）
+  var unionSpan = Math.max(eA, eB) - Math.min(sA, sB);
+  var iou = overlap / Math.max(unionSpan, 1);
+
+  // 若重叠超过较短日程的 45%，或者整体重合度 (IoU) 超过 35%，视为同一时段日程合并为切换卡
+  return ratioMin >= 0.45 || iou >= 0.35;
+}
+
 function groupOverlapping(list){
   var sorted = list.slice().sort(function(a, b){
     var d = t2m(a.tstart) - t2m(b.tstart);
@@ -2362,13 +2383,11 @@ function groupOverlapping(list){
   });
   var groups = [];
   sorted.forEach(function(ev){
-    var s = t2m(ev.tstart), e = t2m(ev.tend);
     var last = groups[groups.length - 1];
     var joined = false;
     if (last){
       joined = last.some(function(o){
-        var overlap = Math.min(t2m(o.tend), e) - Math.max(t2m(o.tstart), s);
-        return overlap >= 30;
+        return shouldMergeOverlapping(o, ev);
       });
     }
     if (joined){ last.push(ev); }
