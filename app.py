@@ -5909,9 +5909,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
 
             if path == "/api/notifications/test":
-                uid = self.current_uid()
+                uid = self.authed()
                 if not uid:
-                    uid = d.get("uid") or "a"
+                    return
                 users = get_users()
                 u_name = users.get(uid, {}).get("name", "小狗")
                 push_system_notice(uid, "🐾 线条小狗原生通知测试", f"汪！{u_name}，你的手机通知权限已成功打通！点击此通知可直达小窝设置页面 🐾", "view:settings")
