@@ -81,6 +81,24 @@ IMG_FILES = {"dogs": "dogs.png", "dogheads": "dogheads.png", "dogrest": "dogrest
              "dog-wave": "dog-wave.png", "dog-walk1": "dog-walk1.png", "dog-walk2": "dog-walk2.png",
              "dog-walk3": "dog-walk3.png", "dog-walk4": "dog-walk4.png", "dog-couple": "dog-couple.png"}
 
+_IMG_CACHE = {}  # {base: (bytes, etag)}
+
+def get_image_asset(base):
+    """内存级图片缓存，避免频繁磁盘 I/O 并计算 ETag 支持 304 极速重用"""
+    if base in _IMG_CACHE:
+        return _IMG_CACHE[base]
+    fn = IMG_FILES.get(base)
+    if not fn:
+        return None, None
+    fp = os.path.join(APP_DIR, fn)
+    if os.path.exists(fp):
+        with open(fp, "rb") as f:
+            data = f.read()
+        etag = f'"{hashlib.md5(data).hexdigest()[:16]}"'
+        _IMG_CACHE[base] = (data, etag)
+        return data, etag
+    return None, None
+
 # ---------------------------------------------------------------- 数据库
 
 SCHEMA = """
@@ -969,13 +987,23 @@ def rate_fail(ip):
     else:
         rec[0] += 1
 
+_TEMPLATE_CACHE = None
+_TEMPLATE_MTIME = 0
+
 def get_page_html():
-    """优先加载外部 template_page.html 模板，若不存在则使用内嵌 PAGE 兜底"""
+    """优先加载外部 template_page.html 模板，支持 mtime 内存缓存提升性能"""
+    global _TEMPLATE_CACHE, _TEMPLATE_MTIME
     tpl_file = os.path.join(APP_DIR, "template_page.html")
     if os.path.isfile(tpl_file):
         try:
+            mtime = os.path.getmtime(tpl_file)
+            if _TEMPLATE_CACHE is not None and _TEMPLATE_MTIME == mtime:
+                return _TEMPLATE_CACHE
             with open(tpl_file, "r", encoding="utf-8") as f:
-                return f.read()
+                content = f.read()
+            _TEMPLATE_CACHE = content
+            _TEMPLATE_MTIME = mtime
+            return content
         except Exception as e:
             sys.stderr.write(f"[Warn] Failed reading external template: {e}\n")
     return PAGE
@@ -990,6 +1018,7 @@ PAGE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>线条小狗 · 两人日程 🐾</title>
 <link rel="icon" type="image/png" href="/img/dogheads.png">
+<link rel="preload" as="image" href="/img/dogheads.png">
 <style>
 :root{
   --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
@@ -2079,10 +2108,172 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
   .anniv-bar{padding:0 6px;margin:2px auto 4px}
   .anniv-capsule{font-size:11px;padding:2px 8px}
 }
+
+/* 萌系小狗首屏骨架屏 */
+.skeleton-app {
+  padding: 0 10px;
+  max-width: 100%;
+  animation: fadeIn .25s ease;
+}
+.skeleton-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 4px;
+  border-bottom: 1.5px solid var(--line-subtle);
+}
+.skeleton-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.skeleton-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  animation: skPulse 1.2s ease-in-out infinite;
+}
+.skeleton-title {
+  width: 100px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--line-strong);
+  animation: skPulse 1.2s ease-in-out infinite;
+}
+.skeleton-pill {
+  width: 76px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--line-strong);
+  animation: skPulse 1.2s ease-in-out infinite;
+}
+.skeleton-weekbar {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 6px;
+}
+.skeleton-bar-md {
+  width: 200px;
+  height: 30px;
+  border-radius: 15px;
+  background: var(--line-strong);
+  animation: skPulse 1.2s ease-in-out infinite;
+}
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  min-height: 440px;
+  padding-top: 8px;
+}
+.skeleton-col {
+  background: var(--bg-card);
+  border: 1.5px dashed var(--line-subtle);
+  border-radius: 12px;
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skeleton-col-header {
+  height: 26px;
+  border-radius: 6px;
+  background: var(--line-strong);
+  opacity: 0.55;
+  animation: skPulse 1.2s ease-in-out infinite;
+}
+.skeleton-block {
+  border-radius: 8px;
+  background: var(--line-strong);
+  opacity: 0.45;
+  animation: skPulse 1.2s ease-in-out infinite;
+}
+.skeleton-bnav {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 24px);
+  max-width: 440px;
+  height: 52px;
+  border-radius: 28px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--line-strong);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  box-shadow: var(--shadow-lg);
+  z-index: 45;
+}
+.skeleton-bnav-item {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--line-subtle);
+  animation: skPulse 1.2s ease-in-out infinite;
+}
+@keyframes skPulse {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.75; transform: scale(0.99); }
+}
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="app">
+  <div class="skeleton-app">
+    <div class="skeleton-topbar">
+      <div class="skeleton-brand">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-title"></div>
+      </div>
+      <div class="skeleton-pill"></div>
+    </div>
+    <div class="skeleton-weekbar">
+      <div class="skeleton-bar-md"></div>
+    </div>
+    <div class="skeleton-grid">
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:60px;margin-top:15px"></div>
+        <div class="skeleton-block" style="height:80px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:100px;margin-top:35px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:70px;margin-top:10px"></div>
+        <div class="skeleton-block" style="height:55px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:90px;margin-top:50px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:65px;margin-top:20px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:50px;margin-top:30px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:60px;margin-top:60px"></div>
+      </div>
+    </div>
+    <div class="skeleton-bnav">
+      <div class="skeleton-bnav-item"></div>
+      <div class="skeleton-bnav-item"></div>
+      <div class="skeleton-bnav-item"></div>
+      <div class="skeleton-bnav-item"></div>
+      <div class="skeleton-bnav-item"></div>
+    </div>
+  </div>
+</div>
+<script id="__SSR_DATA__">window.__INITIAL_DATA__ = null;</script>
 <div class="toast" id="toast"></div>
 <script>
 "use strict";
@@ -2188,7 +2379,13 @@ function api(path, opts){
   return fetch(path, opts).then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(j){
       if (!r.ok){
-        if (r.status === 401 && path !== "/api/login"){ ME = null; render(); }
+        if (r.status === 401 && path !== "/api/login"){
+          try {
+            localStorage.removeItem("sched_me");
+            localStorage.removeItem("sched_week_" + ANCHOR);
+          } catch(e){}
+          ME = null; DATA = null; render();
+        }
         throw new Error(j.error || ("请求失败 " + r.status));
       }
       return j;
@@ -2199,12 +2396,19 @@ function api(path, opts){
 function load(opts){
   var silent = opts && opts.silent;
   if (CURRENT_VIEW === "month"){
+    if (!MONTH_DATA){
+      try {
+        var cm = localStorage.getItem("sched_month_" + MONTH_ANCHOR);
+        if (cm) MONTH_DATA = JSON.parse(cm);
+      } catch(e){}
+    }
     if (MONTH_DATA){
       render();
       if (silent) return Promise.resolve();
     }
     return api("/api/month?month=" + MONTH_ANCHOR).then(function(j){
       MONTH_DATA = j;
+      try { localStorage.setItem("sched_month_" + MONTH_ANCHOR, JSON.stringify(j)); } catch(e){}
       if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
       render();
     }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
@@ -2220,22 +2424,32 @@ function load(opts){
     }
     return api("/api/week?date=" + ANCHOR).then(function(j){
       DATA = j;
+      try { localStorage.setItem("sched_week_" + ANCHOR, JSON.stringify(j)); } catch(e){}
       if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
       render();
     }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
   } else {
     if (DATA){
       render();
-      if (silent) return Promise.resolve();
+      if (silent) {
+        return api("/api/week?date=" + ANCHOR).then(function(j){
+          DATA = j;
+          try { localStorage.setItem("sched_week_" + ANCHOR, JSON.stringify(j)); } catch(e){}
+          if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
+          render();
+        }).catch(function(){});
+      }
     }
     return api("/api/week?date=" + ANCHOR).then(function(j){
       DATA = j;
+      try { localStorage.setItem("sched_week_" + ANCHOR, JSON.stringify(j)); } catch(e){}
       if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
       render();
       // 预取月历手账数据，实现后续点击零延迟秒开
       if (!MONTH_DATA){
         api("/api/month?month=" + MONTH_ANCHOR).then(function(mj){
           MONTH_DATA = mj;
+          try { localStorage.setItem("sched_month_" + MONTH_ANCHOR, JSON.stringify(mj)); } catch(e){}
           if (mj && mj.unread_count !== undefined) setUnreadCount(mj.unread_count);
         }).catch(function(){});
       }
@@ -3154,10 +3368,10 @@ function renderApp(){
       '<span class="heart-pulse">🐾</span>' +
     '</div>' +
     '<div class="dogwalk">' +
-      '<div class="walker step-1"><img src="/img/dog-walk1.png" alt="线条小狗"></div>' +
-      '<div class="walker step-2"><img src="/img/dog-walk2.png" alt="线条小狗"></div>' +
-      '<div class="walker step-3"><img src="/img/dog-walk3.png" alt="线条小狗"></div>' +
-      '<div class="walker step-4"><img src="/img/dog-walk4.png" alt="线条小狗"></div>' +
+      '<div class="walker step-1"><img src="/img/dog-walk1.png" alt="线条小狗" loading="lazy" decoding="async"></div>' +
+      '<div class="walker step-2"><img src="/img/dog-walk2.png" alt="线条小狗" loading="lazy" decoding="async"></div>' +
+      '<div class="walker step-3"><img src="/img/dog-walk3.png" alt="线条小狗" loading="lazy" decoding="async"></div>' +
+      '<div class="walker step-4"><img src="/img/dog-walk4.png" alt="线条小狗" loading="lazy" decoding="async"></div>' +
     '</div>' +
   '</div>' +
   '<button class="fab" data-act="open-add">🐾 记新日程 ＋</button>';
@@ -4127,7 +4341,13 @@ document.addEventListener("click", function(e){
   else if (act === "logout"){
     api("/api/logout", {method:"POST"}).catch(function(){}).then(function(){
       document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
-      ME = null; render();
+      try {
+        localStorage.removeItem("sched_me");
+        localStorage.removeItem("sched_week_" + ANCHOR);
+        localStorage.removeItem("sched_month_" + MONTH_ANCHOR);
+      } catch(e){}
+      ME = null; DATA = null; MONTH_DATA = null;
+      render();
     });
   }
   else if (act === "msg-filter"){
@@ -4286,12 +4506,28 @@ document.addEventListener("submit", function(e){
       .then(function(j){
         ME = {uid:j.uid, name:j.name};
         ANCHOR = todayISO();
+        try { localStorage.setItem("sched_me", JSON.stringify(ME)); } catch(e){}
         if (window.AndroidApp && window.AndroidApp.saveAuthUid) {
           window.AndroidApp.saveAuthUid(j.uid);
         }
         toast("欢迎回家，" + j.name + " 🐾");
         if (j.unread_count !== undefined) setUnreadCount(j.unread_count);
-        load().then(function(){ pollMessages(); });
+        if (j.week) {
+          DATA = j.week;
+          try { localStorage.setItem("sched_week_" + ANCHOR, JSON.stringify(DATA)); } catch(e){}
+          render();
+          if (CURRENT_VIEW === "week") setTimeout(scrollToToday, 80);
+          pollMessages();
+          if (!MONTH_DATA) {
+            api("/api/month?month=" + MONTH_ANCHOR).then(function(mj){
+              MONTH_DATA = mj;
+              try { localStorage.setItem("sched_month_" + MONTH_ANCHOR, JSON.stringify(mj)); } catch(e){}
+              if (mj && mj.unread_count !== undefined) setUnreadCount(mj.unread_count);
+            }).catch(function(){});
+          }
+        } else {
+          load().then(function(){ pollMessages(); });
+        }
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   } else if (f.id === "addForm"){
@@ -4879,10 +5115,66 @@ window.addEventListener("popstate", function(e){
 });
 
 ANCHOR = todayISO();
-api("/api/meta").then(function(j){ META = j; }).catch(function(){})
-  .then(function(){ return api("/api/me").then(function(j){ ME = j; }); })
-  .catch(function(){})
-  .then(function(){
+
+// 1. 服务端直出数据极速水合（0 RTT 秒开）
+var initData = window.__INITIAL_DATA__;
+if (initData) {
+  if (initData.meta) {
+    META = initData.meta;
+    try { localStorage.setItem("sched_meta", JSON.stringify(META)); } catch(e){}
+  }
+  if (initData.me) {
+    ME = initData.me;
+    try { localStorage.setItem("sched_me", JSON.stringify(ME)); } catch(e){}
+    if (window.AndroidApp && window.AndroidApp.saveAuthUid) {
+      window.AndroidApp.saveAuthUid(ME.uid);
+    }
+  }
+  if (initData.week) {
+    DATA = initData.week;
+    try { localStorage.setItem("sched_week_" + ANCHOR, JSON.stringify(DATA)); } catch(e){}
+    if (DATA.unread_count !== undefined) setUnreadCount(DATA.unread_count);
+  }
+}
+
+// 2. 本地持久化缓存快速兜底（SWR 离线/弱网秒开）
+if (!ME || !DATA) {
+  try {
+    if (!META) {
+      var cm = localStorage.getItem("sched_meta");
+      if (cm) META = JSON.parse(cm);
+    }
+    if (!ME) {
+      var cu = localStorage.getItem("sched_me");
+      if (cu) ME = JSON.parse(cu);
+    }
+    if (ME && !DATA) {
+      var cw = localStorage.getItem("sched_week_" + ANCHOR);
+      if (cw) {
+        DATA = JSON.parse(cw);
+        if (DATA.unread_count !== undefined) setUnreadCount(DATA.unread_count);
+      }
+    }
+  } catch(e){}
+}
+
+// 3. 立即呈现首屏（消除任何空白等待）
+if (ME && DATA) {
+  render();
+  if (CURRENT_VIEW === "week") setTimeout(scrollToToday, 80);
+  // 后台静默校验与最新数据重同步
+  setTimeout(function(){
+    load({silent: true});
+    pollMessages();
+  }, 120);
+} else if (!ME && META) {
+  render();
+} else {
+  // 无 SSR 也无本地缓存时，并行发起拉取，消除串行瀑布
+  Promise.all([
+    api("/api/meta").then(function(j){ META = j; try { localStorage.setItem("sched_meta", JSON.stringify(j)); } catch(e){} }).catch(function(){}),
+    api("/api/me").then(function(j){ ME = j; try { localStorage.setItem("sched_me", JSON.stringify(j)); } catch(e){} }).catch(function(){})
+  ]).then(function(){
     if (ME) {
       if (window.AndroidApp && window.AndroidApp.saveAuthUid) {
         window.AndroidApp.saveAuthUid(ME.uid);
@@ -4895,6 +5187,7 @@ api("/api/meta").then(function(j){ META = j; }).catch(function(){})
       render();
     }
   });
+}
 
   window.handleTargetAction = function(action) {
     if (!action || typeof action !== "string") return;
@@ -5041,19 +5334,67 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(200, b"", "text/html; charset=utf-8")
         return self.send_bytes(200, b"", "text/plain; charset=utf-8")
 
+    def render_index_html(self):
+        """直出首屏数据水合（SSR），使前端零延迟秒开课表"""
+        raw_html = get_page_html()
+        uid = self.current_uid()
+        users = get_users()
+        meta_data = {"users": [{"uid": u, "name": users[u]["name"]} for u in ("a", "b")]}
+        if uid in ("a", "b"):
+            today_iso = date.today().isoformat()
+            try:
+                week_data = week_payload(today_iso, uid=uid)
+            except Exception as e:
+                sys.stderr.write(f"[Warn] Failed generating initial week payload: {e}\n")
+                week_data = None
+            me_data = {
+                "uid": uid,
+                "name": users.get(uid, {}).get("name", uid),
+                "unread_count": get_unread_notifications_count(uid)
+            }
+        else:
+            me_data = None
+            week_data = None
+
+        ssr_payload = {
+            "meta": meta_data,
+            "me": me_data,
+            "week": week_data,
+            "server_time": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        json_str = json.dumps(ssr_payload, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+        script_tag = f'<script id="__SSR_DATA__">window.__INITIAL_DATA__ = {json_str};</script>'
+
+        if '<script id="__SSR_DATA__">' in raw_html:
+            final_html = re.sub(r'<script id="__SSR_DATA__">.*?</script>', script_tag, raw_html, flags=re.DOTALL)
+        elif '<div class="toast"' in raw_html:
+            final_html = raw_html.replace('<div class="toast"', script_tag + '\n<div class="toast"', 1)
+        else:
+            final_html = raw_html.replace('</body>', script_tag + '\n</body>', 1)
+
+        return self.send_html(final_html)
+
     def do_GET(self):
         path = urlparse(self.path).path
         try:
             if path in ("/", "/index.html"):
-                return self.send_html(get_page_html())
+                return self.render_index_html()
             if path.startswith("/img/"):
                 base = path[5:].split(".")[0]
-                fn = IMG_FILES.get(base)
-                fp = os.path.join(APP_DIR, fn) if fn else None
-                if fp and os.path.exists(fp):
-                    with open(fp, "rb") as f:
-                        return self.send_bytes(200, f.read(), "image/png",
-                                               extra=[("Cache-Control", "public, max-age=86400")])
+                data, etag = get_image_asset(base)
+                if data:
+                    inm = self.headers.get("If-None-Match")
+                    if inm and (inm == etag or inm.strip() == etag):
+                        return self.send_bytes(304, b"", "image/png",
+                                               extra=[("ETag", etag),
+                                                      ("Cache-Control", "public, max-age=2592000, immutable")])
+                    return self.send_bytes(
+                        200, data, "image/png",
+                        extra=[
+                            ("ETag", etag),
+                            ("Cache-Control", "public, max-age=2592000, immutable")
+                        ]
+                    )
                 return self.send_json({"error": "not found"}, 404)
             if path.startswith("/api/event/"):
                 if self.authed() is None:
@@ -5256,11 +5597,14 @@ class Handler(BaseHTTPRequestHandler):
                     secure = (self.headers.get("X-Forwarded-Proto") == "https")
                     cookie = "%s=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%d%s" % (
                         COOKIE, token, SESSION_DAYS * 86400, "; Secure" if secure else "")
+                    today_iso = date.today().isoformat()
+                    init_week = week_payload(today_iso, uid=uid)
                     return self.send_json({
                         "ok": True,
                         "uid": uid,
                         "name": users[uid]["name"],
-                        "unread_count": get_unread_notifications_count(uid)
+                        "unread_count": get_unread_notifications_count(uid),
+                        "week": init_week
                     }, extra=[("Set-Cookie", cookie)])
                 rate_fail(ip)
                 time.sleep(0.4)
