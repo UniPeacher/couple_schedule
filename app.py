@@ -5613,6 +5613,8 @@ class Handler(BaseHTTPRequestHandler):
                     "unread_count": get_unread_notifications_count(uid)
                 })
             if path.startswith("/photos/"):
+                if self.authed() is None:
+                    return
                 fn = os.path.basename(path[8:])
                 fp = os.path.join(PHOTOS_DIR, fn)
                 if fp and os.path.exists(fp):
@@ -5726,12 +5728,9 @@ class Handler(BaseHTTPRequestHandler):
                     "stats": {"total": total, "done": done, "pending": pending}
                 })
             if path == "/api/notifications/poll":
-                uid = self.current_uid()
+                uid = self.authed()
                 if not uid:
-                    qs = parse_qs(urlparse(self.path).query)
-                    uid = (qs.get("uid") or [""])[0]
-                if not uid or uid not in ("a", "b"):
-                    return self.send_json({"ok": True, "notifications": []})
+                    return
                 with LOCK:
                     rows = CONN.execute(
                         "SELECT id, title, content, target_action, is_read, created_at FROM notifications WHERE target_uid=? AND is_pushed=0 ORDER BY id ASC",
