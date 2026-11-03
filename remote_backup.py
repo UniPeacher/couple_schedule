@@ -118,24 +118,8 @@ def run():
                     shutil.copy2(src_file, dst_file)
                     new_photo_count += 1
 
-    # 5.3 仅维护单份最新全量恢复压缩包 (latest_full_backup.tar.gz)，彻底替换旧机制下累积 30 份巨型压缩包的严重历史膨胀
-    full_archive_path = os.path.join(REMOTE_REPO_DIR, "latest_full_backup.tar.gz")
-    with tarfile.open(full_archive_path, "w:gz") as tar:
-        tar.add(remote_snapshot, arcname="sched.db")
-        if os.path.exists(PHOTOS_DIR):
-            tar.add(PHOTOS_DIR, arcname="photos")
-
-    # 清理掉之前旧机制下生成的 backup_*.tar.gz 多份重复全量包
-    old_full_archives = glob.glob(os.path.join(REMOTE_REPO_DIR, "backup_*.tar.gz"))
-    for ofa in old_full_archives:
-        try:
-            os.remove(ofa)
-        except Exception:
-            pass
-
     # 6. 生成一份详细的 README 说明当前灾备状态
     total_photos = len(os.listdir(PHOTOS_DIR)) if os.path.exists(PHOTOS_DIR) else 0
-    full_size_mb = round(os.path.getsize(full_archive_path) / (1024 * 1024), 2)
     with open(os.path.join(REMOTE_REPO_DIR, "README.md"), "w", encoding="utf-8") as f:
         f.write("# Couple Schedule Private Backup 🔐\n\n")
         f.write("此仓库为情侣日程系统的**私有异地高可用灾备库**，由服务器自动每日定时同步备份。\n\n")
@@ -143,11 +127,10 @@ def run():
         f.write("- 隐私说明：经期、身体感受、分享设置与关怀需求仅保留本地备份，不包含在异地恢复包中。\n")
         f.write("- `photos/`：手账照片与实况视频的原生增量存储（支持网页直接预览，Git 天然去重防磁盘膨胀）。\n")
         f.write("- `db_snapshots/`：SQLite 数据库核心快照（保留最近 30 天历史快照）。\n")
-        f.write("- `latest_full_backup.tar.gz`：最新全量一键还原压缩包。\n\n")
+        f.write("- 恢复方法：取最新 `db_snapshots/` 解压为 `data/sched.db`，`photos/` 拷回 `data/photos/` 即可。\n\n")
         f.write("### 🕒 最近备份状态\n")
         f.write(f"- 最近一次备份完成时间: `{time.strftime('%Y-%m-%d %H:%M:%S')}`\n")
         f.write(f"- 照片总数: `{total_photos}` 张（本次增量同步 `{new_photo_count}` 张）\n")
-        f.write(f"- 全量包大小: `{full_size_mb} MB`\n")
 
     # 7. 提交并推送到 GitHub 私有仓库
     try:
