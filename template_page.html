@@ -1412,6 +1412,10 @@ html.dark .splash-img {
 </div>
 <script id="__SSR_DATA__">window.__INITIAL_DATA__ = null;</script>
 <div class="toast" id="toast"></div>
+<link rel="stylesheet" href="/cycle.css">
+<script src="/cycle.js"></script>
+<link rel="stylesheet" href="/settings_ui.css">
+<script src="/settings_ui.js"></script>
 <script>
 "use strict";
 var splashStart = Date.now();
@@ -1547,6 +1551,7 @@ function api(path, opts){
 }
 
 function load(opts){
+  if (CURRENT_VIEW === "cycle") { render(); return Promise.resolve(); }
   var silent = opts && opts.silent;
   if (CURRENT_VIEW === "month"){
     if (!MONTH_DATA){
@@ -1660,8 +1665,10 @@ function render(){
     else if (CURRENT_VIEW === "wishes") renderWishesPage();
     else if (CURRENT_VIEW === "anniv") renderAnnivPage();
     else if (CURRENT_VIEW === "settings") renderSettingsPage();
+    else if (CURRENT_VIEW === "cycle") Cycle.renderPage();
     else renderApp();
   }
+  Cycle.mount();
   dismissSplash();
 }
 
@@ -2117,130 +2124,7 @@ function renderAnnivPage(){
   renderAnnivList();
 }
 
-function renderSettingsPage(){
-  var u = (DATA && DATA.users) || (MONTH_DATA && MONTH_DATA.users) || {a:{name:"小金毛"},b:{name:"小白狗"}};
-  var s = (DATA && DATA.settings) || {window_start:"08:00",window_end:"22:00",min_gap:20};
-  var isAdmin = ME && ME.uid === "a";
-  var llmConfigHtml = isAdmin ? (
-    '<div class="field" style="margin-top:16px;display:flex;align-items:center;justify-content:space-between">' +
-      '<label style="margin-bottom:0">🤖 AI 时光小信大模型配置</label>' +
-      '<span style="font-size:10px;background:var(--dog-a-bg);color:var(--dog-a-text);border:1px solid var(--dog-a-bd);padding:2px 8px;border-radius:12px;font-weight:800">👑 管理员专属 (两人共享)</span>' +
-    '</div>' +
-    '<div class="field"><label>API 基础地址 (Base URL)</label><input id="s_llm_base" placeholder="如: https://api.deepseek.com/v1" value="' + esc(s.llm_api_base||"") + '"></div>' +
-    '<div class="row2">' +
-      '<div class="field"><label>API Key 密钥</label><input type="password" id="s_llm_key" placeholder="sk-..." value="' + esc(s.llm_api_key||"") + '"></div>' +
-      '<div class="field"><label>模型名称 (Model)</label><input id="s_llm_model" placeholder="如: deepseek-chat" value="' + esc(s.llm_model||"deepseek-chat") + '"></div>' +
-    '</div>' +
-    '<p style="font-size:11px;color:var(--ink-muted);line-height:1.45;margin:2px 0 10px">' +
-      '💡 支持 DeepSeek、通义千问、Kimi、OpenAI 等标准兼容 API。配置后，时光简报将由 AI 以线条小狗口吻深情撰写！' +
-    '</p>'
-  ) : (
-    '<div class="field" style="margin-top:16px;display:flex;align-items:center;justify-content:space-between">' +
-      '<label style="margin-bottom:0">🤖 AI 时光小信大模型配置</label>' +
-      '<span style="font-size:10px;color:var(--ink-muted)">（已由寰宇管理员统一配置）</span>' +
-    '</div>' +
-    '<p style="font-size:12px;color:var(--ink-secondary);background:var(--bg-card-subtle);border:1px dashed var(--line-strong);padding:10px 14px;border-radius:12px;line-height:1.55">' +
-      '🐾 当前小窝已由 <strong>寰宇</strong> 配置守护，时光简报将自动由 AI 为你们两人专属生成，楚菁无需单独配置哦～✨' +
-    '</p>'
-  );
-
-  var html = renderTopBar() +
-    '<div class="page-container">' +
-      '<div class="page-header-card">' +
-        '<div>' +
-          '<div class="page-header-title">⚙️ 小窝偏好设置</div>' +
-          '<div class="page-header-desc">🛠️ 管理课表统计、微信提醒与小窝外观</div>' +
-        '</div>' +
-        '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-set.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
-      '</div>' +
-
-      '<div class="page-main-card">' +
-        '<form id="setForm">' +
-          '<div class="row2">' +
-            '<div class="field"><label>🐶 a 显示名（小金毛）</label><input id="s_na" maxlength="30" value="' + esc(u.a.name) + '"></div>' +
-            '<div class="field"><label>🐾 b 显示名（小白狗）</label><input id="s_nb" maxlength="30" value="' + esc(u.b.name) + '"></div>' +
-            '<div class="field"><label>🐶 a 第1周周一</label><input type="date" id="s_w1a" value="' + (u.a.week1||"") + '"></div>' +
-            '<div class="field"><label>🐾 b 第1周周一</label><input type="date" id="s_w1b" value="' + (u.b.week1||"") + '"></div>' +
-            '<div class="field"><label>每天统计窗口 开始</label><input type="time" id="s_ws" value="' + s.window_start + '"></div>' +
-            '<div class="field"><label>每天统计窗口 结束</label><input type="time" id="s_we" value="' + s.window_end + '"></div>' +
-            '<div class="field"><label>最短空闲（分钟）</label><input type="number" id="s_mg" min="5" max="180" value="' + s.min_gap + '"></div>' +
-          '</div>' +
-          '<p style="font-size:11.5px;color:var(--ink-muted);line-height:1.45;margin-top:4px">' +
-            '💡 周次与单双周换算基于各自「第1周周一」。两校可分别设定校历起始日期。' +
-          '</p>' +
-
-          '<div class="field" style="margin-top:16px"><label>📲 微信消息提醒（虾推啥/息知/Server酱）</label></div>' +
-          '<div class="row2">' +
-            '<div class="field"><label>🐶 a 微信 Token</label><input id="s_wxa" placeholder="贴入 a 的微信推送Token" value="' + esc((u.a.wx_uid)||"") + '"></div>' +
-            '<div class="field"><label>🐾 b 微信 Token</label><input id="s_wxb" placeholder="贴入 b 的微信推送Token" value="' + esc((u.b.wx_uid)||"") + '"></div>' +
-          '</div>' +
-          '<p style="font-size:11px;color:var(--ink-muted);line-height:1.4;margin:2px 0 10px">' +
-            '💡 支持 <strong>虾推啥 (wx.xtuis.cn)</strong>，对方留言或新手账时，微信卡片秒弹并直接显示对方说的话。' +
-          '</p>' +
-
-          '<div class="field" style="margin-top:16px"><label>🔔 手机原生通知（Android App）</label></div>' +
-          '<div style="background:var(--bg-chip,#fff5ea);padding:10px 14px;border-radius:12px;font-size:12px;color:var(--ink-secondary);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
-            '<div>' +
-              '<span>客户端状态：<strong>' + (window.AndroidApp ? '🟢 前后台常驻守护已就绪' : '⚪ 网页浏览器环境') + '</strong></span>' +
-              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">' + (window.AndroidApp ? '新日程、留言将通过手机顶部横幅实时提醒，支持后台静默守护' : '使用 Android 客户端登录即可自动开启系统通知') + '</div>' +
-            '</div>' +
-            '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-              (window.AndroidApp ? '<button type="button" class="p-btn" data-act="battery-protect" style="padding:5px 10px;font-size:11px">🔋 后台防杀</button>' : '') +
-              (window.AndroidApp && window.AndroidApp.openServerSettings ? '<button type="button" class="p-btn" data-act="open-server-url" style="padding:5px 10px;font-size:11px">🌐 服务地址</button>' : '') +
-              '<button type="button" class="p-btn" data-act="test-app-notice" style="padding:5px 12px;font-size:11px">🔔 测试通知</button>' +
-            '</div>' +
-          '</div>' +
-
-          llmConfigHtml +
-
-          '<div class="field" style="margin-top:16px"><label>🌓 外观主题模式</label></div>' +
-          '<div style="margin-bottom:12px">' +
-            '<div class="seg" id="themeSeg">' +
-              '<div class="opt' + (!document.documentElement.classList.contains("dark") ? " on" : "") + '" data-act="set-theme" data-theme="light">☀️ 浅色温暖</div>' +
-              '<div class="opt' + (document.documentElement.classList.contains("dark") ? " on" : "") + '" data-act="set-theme" data-theme="dark">🌙 暗夜黑夜</div>' +
-            '</div>' +
-          '</div>' +
-
-          '<div class="field" style="margin-top:16px"><label>💖 纪念日与倒计时</label></div>' +
-          '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:14px" data-act="open-anniv-list">' +
-            '<div>' +
-              '<div style="font-size:13.5px;font-weight:800;color:var(--ink-primary)">💖 管理纪念日与倒计时列表</div>' +
-              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">相恋天数累计、生日倒计时与重要日子管理</div>' +
-            '</div>' +
-            '<span style="font-size:12px;color:var(--dog-a-text);font-weight:800">前往 ➜</span>' +
-          '</div>' +
-
-          '<div class="field" style="margin-top:16px"><label>✨ 俩汪心愿备忘录</label></div>' +
-          '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:14px" data-act="switch-view" data-v="wishes">' +
-            '<div>' +
-              '<div style="font-size:13.5px;font-weight:800;color:var(--ink-primary)">✨ 管理俩汪心愿备忘清单 (Bucket List)</div>' +
-              '<div style="font-size:11px;color:var(--ink-muted);margin-top:2px">将来想一起做的事、想去的地方与想吃的美食</div>' +
-            '</div>' +
-            '<span style="font-size:12px;color:var(--dog-a-text);font-weight:800">前往 ➜</span>' +
-          '</div>' +
-
-          '<div class="field" style="margin-top:16px"><label>修改当前身份（' + esc(ME.name) + '）密码</label></div>' +
-          '<div class="row2">' +
-            '<div class="field"><input type="password" id="s_old" placeholder="旧密码（不改留空）" autocomplete="current-password"></div>' +
-            '<div class="field"><input type="password" id="s_new" placeholder="新密码 ≥ 6 位" autocomplete="new-password"></div>' +
-          '</div>' +
-
-          '<div style="margin-top:18px;padding-top:16px;border-top:1px dashed var(--line-strong);display:flex;align-items:center;justify-content:space-between">' +
-            '<span style="font-size:12px;color:var(--ink-muted)">当前狗狗：<strong>' + esc(ME.name) + '</strong></span>' +
-            '<button type="button" class="p-btn danger" data-act="logout">🚪 退出当前登录</button>' +
-          '</div>' +
-
-          '<div style="margin-top:16px">' +
-            '<button class="p-btn pri" style="width:100%;padding:11px;font-size:14.5px;justify-content:center">💾 保存设置</button>' +
-          '</div>' +
-        '</form>' +
-      '</div>' +
-    '</div>';
-
-  html += bottomNavHTML();
-  html += modalsHTML();
-  $("#app").innerHTML = html;
-}
+function renderSettingsPage(){ return Settings.render(); }
 
 function renderMonthApp(){
   var ym = MONTH_ANCHOR; // "YYYY-MM"
@@ -3766,6 +3650,14 @@ document.addEventListener("submit", function(e){
     }).catch(function(err){ toast(err.message || "添加失败"); });
   } else if (f.id === "addDiaryForm"){
     e.preventDefault();
+    var sBtn = $("#df_submit_btn");
+    if (sBtn && sBtn.disabled) return;
+    var origBtnText = sBtn ? sBtn.textContent : "";
+    if (sBtn){
+      sBtn.disabled = true;
+      sBtn.textContent = "正在保存中... 🐾";
+    }
+
     var editId = $("#df_edit_id") ? $("#df_edit_id").value : "";
     var keepPhotos = [];
     document.querySelectorAll(".edit-photo-thumb").forEach(function(el){
@@ -3798,7 +3690,13 @@ document.addEventListener("submit", function(e){
         load();
         if (activeDiaryDate) openDayDiaries(activeDiaryDate);
       })
-      .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message); })
+      .finally(function(){
+        if (sBtn){
+          sBtn.disabled = false;
+          sBtn.textContent = origBtnText || (editId ? "💾 保存手账修改" : "✨ 贴在手账本上！");
+        }
+      });
   }
 });
 

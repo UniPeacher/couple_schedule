@@ -15,7 +15,7 @@ release_apk/
 *.log
 backup.log
 remote_backup.log
-remote_backup.py
+
 
 # Python 缓存
 __pycache__/
@@ -26,6 +26,7 @@ venv/
 env/
 
 # 系统与编辑器缓存
+output/
 .DS_Store
 Thumbs.db
 .idea/

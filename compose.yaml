@@ -13,7 +13,14 @@ services:
       - "127.0.0.1:8795:8795"
     volumes:
       - ./data:/data
-      - ./data/photos:/data/photos
       - ./app.py:/app/app.py
+      - ./special_days.py:/app/special_days.py
+      - ./cycle.py:/app/cycle.py
+      - ./cycle_collaboration.py:/app/cycle_collaboration.py
+      - ./cycle.js:/app/cycle.js
+      - ./cycle.css:/app/cycle.css
+      - ./settings_service.py:/app/settings_service.py
+      - ./settings_ui.js:/app/settings_ui.js
+      - ./settings_ui.css:/app/settings_ui.css
       - ./template_page.html:/app/template_page.html
       - ./dog-couple.png:/app/dog-couple.png
