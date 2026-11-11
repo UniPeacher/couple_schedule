@@ -783,7 +783,8 @@ html.dark .ev.both .et-pill{color:#fda4af}
 .ev-stack{
   position:absolute;z-index:3;display:flex;flex-direction:column;
   border-radius:10px;overflow:hidden;box-sizing:border-box;
-  transition:transform .18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow .18s ease;
+  transition:top .24s cubic-bezier(0.22, 0.8, 0.3, 1), height .24s cubic-bezier(0.22, 0.8, 0.3, 1),
+             transform .18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow .18s ease;
 }
 .ev-stack:hover{transform:translateY(-1px) scale(1.02);z-index:6;box-shadow:var(--shadow-md)}
 .ev-stack.a{
@@ -817,8 +818,17 @@ html.dark .ev-stack.both{
 .ev-stack.a .ev-tab.on{background:var(--dog-a);border-color:var(--dog-a);color:#fff}
 .ev-stack.b .ev-tab.on{background:var(--dog-b);border-color:var(--dog-b);color:#fff}
 .ev-stack.both .ev-tab.on{background:var(--dog-b);border-color:var(--dog-b);color:#fff}
-.ev-stack-body{position:relative;padding:1px 5px 2px;overflow:hidden;flex:1;min-height:0}
-.ev-stack-body .et-pill{display:inline-block;font-size:9.5px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}
+.ev-stack-body{position:relative;padding:1px 5px 2px;overflow:hidden;flex:1;min-height:0;font-size:11px;line-height:1.28}
+/* 日程很短（<46px）时收紧排版：只留标题一行，保证可读不溢出 */
+.ev-stack.tight .ev-tabs{padding:1px 2px 0;gap:1px}
+.ev-stack.tight .ev-tab{font-size:8.5px;padding:0 4px;line-height:1.15;max-width:52px}
+.ev-stack.tight .ev-stack-body{padding:0 4px 1px}
+.ev-stack.tight .ev-stack-body .et-pill,
+.ev-stack.tight .ev-stack-body .em{display:none}
+.ev-stack.tight .ev-stack-body .etitle{font-size:10.5px;line-height:1.35}
+/* 中等高度（<68px）：省掉地点行，避免底部文字被裁一半 */
+.ev-stack.compact .ev-stack-body .em{display:none}
+.ev-stack-body .et-pill{display:inline-block;font-size:9.5px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap}
 .ev-stack.a .et-pill{color:var(--dog-a)}
 .ev-stack.b .et-pill{color:var(--dog-b)}
 .ev-stack.both .et-pill{color:var(--dog-b)}
@@ -1771,18 +1781,35 @@ function groupOverlapping(list){
   return groups;
 }
 
-/* 同一时间段多个日程：渲染为可点击切换的堆叠卡片 */
+/* 同一时间段多个日程：渲染为可点击切换的堆叠卡片。
+   关键：折叠卡的位置与高度始终跟随「当前选中日程」自身的真实起止时间，
+   绝不取整组的最早开始~最晚结束；否则 1 小时的健身会和 3 小时的组会一样高。 */
+var STACK_MIN_H = 40;     /* 标签条 + 一行标题的最小可读高度（低于真实时长时才兜底） */
+var STACK_TIGHT_H = 46;   /* 低于该高度：只留标题一行 */
+var STACK_COMPACT_H = 68; /* 低于该高度：标题 + 时间，隐藏地点行，避免半截文字被裁 */
+
+function stackFitCls(h){
+  if (h < STACK_TIGHT_H) return " tight";
+  if (h < STACK_COMPACT_H) return " compact";
+  return "";
+}
+
 function eventStackHTML(group, uid, date){
   var first = group[0];
-  var tEnd = 0;
-  group.forEach(function(ev){ tEnd = Math.max(tEnd, t2m(ev.tend)); });
-  var top = gpx(t2m(first.tstart)), h = Math.max(gpx(tEnd) - top, 26);
   var gid = "stk_" + uid + "_" + date.replace(/-/g, "") + "_" + first.id;
+
+  var geos = group.map(function(ev){
+    var etop = gpx(t2m(ev.tstart));
+    return { top: etop, h: Math.max(gpx(t2m(ev.tend)) - etop, STACK_MIN_H) };
+  });
 
   var tabs = group.map(function(ev, i){
     var jTag = ev.uid === "both" ? "💕" : "";
     return '<button type="button" class="ev-tab' + (i === 0 ? ' on' : '') +
-      '" data-act="ev-tab" data-g="' + gid + '" data-i="' + i + '" title="' + esc(ev.title) + '">' +
+      '" data-act="ev-tab" data-g="' + gid + '" data-i="' + i +
+      '" data-top="' + geos[i].top + '" data-h="' + geos[i].h + '"' +
+      ' title="' + esc(ev.title) + ' ' + ev.tstart + '–' + ev.tend +
+      '（' + durTxt(t2m(ev.tstart), t2m(ev.tend)) + '）">' +
       (group.length > 1 ? (i + 1) + '· ' : '') + jTag + esc(ev.title) + '</button>';
   }).join("");
 
@@ -1800,8 +1827,9 @@ function eventStackHTML(group, uid, date){
     '</div>';
   }).join("");
 
-  return '<div class="ev-stack ' + uid + '" data-stack="' + gid + '" data-act="detail" data-id="' + first.id +
-    '" data-date="' + date + '" style="top:' + top + 'px;height:' + h + 'px">' +
+  return '<div class="ev-stack ' + uid + stackFitCls(geos[0].h) +
+    '" data-stack="' + gid + '" data-act="detail" data-id="' + first.id +
+    '" data-date="' + date + '" style="top:' + geos[0].top + 'px;height:' + geos[0].h + 'px">' +
     '<div class="ev-tabs">' + tabs + '</div>' + bodies + '</div>';
 }
 
@@ -3298,6 +3326,15 @@ document.addEventListener("click", function(e){
     if (stk){
       var bodies = stk.querySelectorAll(".ev-stack-body");
       if (bodies[idx]) stk.setAttribute("data-id", bodies[idx].querySelector(".del").getAttribute("data-id"));
+      // 折叠卡的几何尺寸跟随当前选中日程的真实起止时间
+      var nTop = el.getAttribute("data-top"), nH = el.getAttribute("data-h");
+      if (nTop !== null && nH !== null){
+        stk.style.top = nTop + "px";
+        stk.style.height = nH + "px";
+        stk.classList.remove("compact", "tight");
+        var fit = stackFitCls(+nH);
+        if (fit) stk.classList.add(fit.trim());
+      }
     }
   }
   else if (act === "detail"){ openDetail(el.getAttribute("data-id"), el.getAttribute("data-date")); }
