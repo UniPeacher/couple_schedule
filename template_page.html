@@ -1348,6 +1348,9 @@ html.dark .splash-img {
   0%, 100% { opacity: 0.35; transform: scale(1); }
   50% { opacity: 0.75; transform: scale(0.99); }
 }
+/* 旅行清单：勾选框按下时给一点回弹，点击更"跟手" */
+.trip-check{ -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.trip-check:active{ transform: scale(.86); }
 </style>
 </head>
 <body>
@@ -2894,9 +2897,9 @@ function tripPct(t){
   return t.total ? Math.round(t.packed * 100 / t.total) : 0;
 }
 
-function tripBar(total, packed){
+function tripBar(total, packed, barId){
   var pct = total ? Math.round(packed * 100 / total) : 0;
-  return '<div class="wish-progress-bar" style="margin-top:7px"><div class="wish-progress-fill" style="width:' + pct + '%"></div></div>';
+  return '<div class="wish-progress-bar" style="margin-top:7px"><div class="wish-progress-fill"' + (barId ? ' id="' + barId + '"' : '') + ' style="width:' + pct + '%"></div></div>';
 }
 
 function diarySegHTML(active){
@@ -3015,14 +3018,14 @@ function tripDetailHTML(){
   html += '<div class="page-header-card">' +
     '<div style="min-width:0">' +
       '<div class="page-header-title">✈️ ' + esc(t.title || t.destination) + '</div>' +
-      '<div class="page-header-desc">' + esc(tripRange(t)) + ' · 已勾 ' + d.stats.packed + '/' + d.stats.total + '</div>' +
+      '<div class="page-header-desc">' + esc(tripRange(t)) + ' · 已勾 <span data-role="trip-packed">' + d.stats.packed + '</span>/<span data-role="trip-total">' + d.stats.total + '</span></div>' +
     '</div>' +
   '</div>';
 
-  html += '<div class="page-main-card">' + tripBar(d.stats.total, d.stats.packed) +
+  html += '<div class="page-main-card">' + tripBar(d.stats.total, d.stats.packed, "tripBarFill") +
     '<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--ink-muted)">' +
       '<span>' + (t.creator_name ? '由 ' + esc(t.creator_name) + ' 建' : '') + '</span>' +
-      '<span>' + (d.stats.total - d.stats.packed) + ' 样还没勾</span>' +
+      '<span data-role="trip-remaining">' + (d.stats.total - d.stats.packed) + ' 样还没勾</span>' +
     '</div></div>';
 
   // 编辑时就地把表单放在顶部，改完立刻能看到，不用滚到页面底部
@@ -3035,24 +3038,23 @@ function tripDetailHTML(){
     html += '<div class="page-main-card" style="margin-top:10px">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">' +
         '<div style="font-size:13px;font-weight:800;color:var(--ink-primary)">' + esc(c[1]) + '</div>' +
-        '<div style="font-size:11px;color:var(--ink-muted)">' + packed + '/' + list.length + '</div>' +
+        '<div style="font-size:11px;color:var(--ink-muted)" data-cat-count="' + c[0] + '">' + packed + '/' + list.length + '</div>' +
       '</div>' +
       '<div style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 28px;gap:5px;font-size:9.5px;color:var(--ink-muted);padding:2px 0 4px;border-bottom:1px solid var(--line-strong)">' +
         '<span></span><span>物品</span><span style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(tripUserNames().a) + '</span><span style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(tripUserNames().b) + '</span><span></span>' +
       '</div>' +
       list.map(function(i){
-        var dim = i.is_packed ? 'color:var(--ink-muted);' : '';
-        var cell = function(v, extra){
+        var cell = function(v, cls){
           var none = !String(v || "").trim();
-          return '<div style="font-size:11.5px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' +
+          return '<div class="' + cls + '" style="font-size:11.5px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' +
             (none ? 'color:var(--ink-muted);opacity:.45;' : (i.is_packed ? 'color:var(--ink-muted);' : 'color:var(--ink-secondary);')) +
-            (extra || '') + '" title="' + esc(none ? '不用带' : v) + '">' + esc(none ? '—' : v) + '</div>';
+            '" title="' + esc(none ? '不用带' : v) + '">' + esc(none ? '—' : v) + '</div>';
         };
-        return '<div style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 28px;align-items:center;gap:5px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
-          '<button class="p-btn" data-act="trip-toggle" data-id="' + i.id + '" style="width:22px;height:22px;min-width:22px;padding:0;border-radius:7px;font-size:11px;' + (i.is_packed ? 'background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)' : '') + '">' + (i.is_packed ? '✓' : '') + '</button>' +
-          '<div style="font-size:13px;' + (i.is_packed ? 'font-weight:500;text-decoration:line-through;' : 'font-weight:700;color:var(--ink-primary);') + dim + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(i.name) + '">' + esc(i.name) + '</div>' +
-          cell(i.qty_a) +
-          cell(i.qty_b) +
+        return '<div class="trip-row" data-row="' + i.id + '" style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 28px;align-items:center;gap:5px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
+          '<button class="p-btn trip-check" data-act="trip-toggle" data-id="' + i.id + '" style="width:22px;height:22px;min-width:22px;padding:0;border-radius:7px;font-size:11px;transition:transform .12s ease,background-color .12s ease,border-color .12s ease;' + (i.is_packed ? 'background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)' : '') + '">' + (i.is_packed ? '✓' : '') + '</button>' +
+          '<div class="trip-name" style="font-size:13px;' + (i.is_packed ? 'font-weight:500;text-decoration:line-through;color:var(--ink-muted);' : 'font-weight:700;color:var(--ink-primary);') + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(i.name) + '">' + esc(i.name) + '</div>' +
+          cell(i.qty_a, "trip-qa") +
+          cell(i.qty_b, "trip-qb") +
           '<button class="p-btn" data-act="trip-item-edit" data-id="' + i.id + '" style="padding:4px 5px;min-width:28px;font-size:11px;color:var(--ink-muted)">改</button>' +
         '</div>';
       }).join("") +
@@ -3120,6 +3122,56 @@ function tripScrollToItem(name){
 function tripAction(action, body){
   body.action = action;
   return api("/api/trips", {method:"POST", body: body});
+}
+
+/* 勾选走乐观更新：先改界面，再后台提交；失败回滚。不整页重绘，点起来不卡。 */
+function tripSetRowPacked(id){
+  var item = ((TRIP_DETAIL && TRIP_DETAIL.items) || []).filter(function(x){ return x.id === id; })[0];
+  var row = document.querySelector('[data-row="' + id + '"]');
+  if (!item || !row) return;
+  var on = !!item.is_packed;
+  var btn = row.querySelector('.trip-check');
+  if (btn){
+    btn.textContent = on ? "✓" : "";
+    btn.style.background = on ? "var(--dog-a-bg)" : "";
+    btn.style.borderColor = on ? "var(--dog-a-bd)" : "";
+    btn.style.color = on ? "var(--dog-a-text)" : "";
+  }
+  var name = row.querySelector('.trip-name');
+  if (name){
+    name.style.textDecoration = on ? "line-through" : "none";
+    name.style.color = on ? "var(--ink-muted)" : "var(--ink-primary)";
+    name.style.fontWeight = on ? "500" : "700";
+  }
+  [row.querySelector('.trip-qa'), row.querySelector('.trip-qb')].forEach(function(c){
+    if (!c) return;
+    if (c.textContent.trim() === "—"){ c.style.color = "var(--ink-muted)"; c.style.opacity = ".45"; return; }
+    c.style.opacity = "1";
+    c.style.color = on ? "var(--ink-muted)" : "var(--ink-secondary)";
+  });
+}
+
+function tripRefreshProgress(){
+  var d = TRIP_DETAIL;
+  if (!d) return;
+  var items = d.items || [], packed = 0, cats = {};
+  items.forEach(function(i){
+    var c = i.category;
+    cats[c] = cats[c] || {p: 0, t: 0};
+    cats[c].t++;
+    if (i.is_packed){ packed++; cats[c].p++; }
+  });
+  d.stats.packed = packed;
+  d.stats.total = items.length;
+  var put = function(sel, txt){ var el = document.querySelector(sel); if (el) el.textContent = txt; };
+  put('[data-role="trip-packed"]', packed);
+  put('[data-role="trip-total"]', items.length);
+  put('[data-role="trip-remaining"]', (items.length - packed) + " 样还没勾");
+  var fill = document.getElementById("tripBarFill");
+  if (fill) fill.style.width = (items.length ? Math.round(packed * 100 / items.length) : 0) + "%";
+  Object.keys(cats).forEach(function(c){
+    put('[data-cat-count="' + c + '"]', cats[c].p + "/" + cats[c].t);
+  });
 }
 
 function renderAnnivList(){
@@ -3585,9 +3637,21 @@ document.addEventListener("click", function(e){
     }).catch(function(e){ toast("❌ " + e.message); });
   }
   else if (act === "trip-toggle"){
-    tripAction("item_toggle", {id: parseInt(el.getAttribute("data-id"), 10)})
-      .then(function(){ return loadTrip(TRIP_ID); })
-      .catch(function(e){ toast("❌ " + e.message); });
+    var togId = parseInt(el.getAttribute("data-id"), 10);
+    var togItem = ((TRIP_DETAIL && TRIP_DETAIL.items) || []).filter(function(x){ return x.id === togId; })[0];
+    if (!togItem) return;
+    var nextState = togItem.is_packed ? 0 : 1;
+    togItem.is_packed = nextState;
+    if (navigator.vibrate){ try { navigator.vibrate(8); } catch(e){} }
+    tripSetRowPacked(togId);      // 先动界面，立刻有反馈
+    tripRefreshProgress();
+    tripAction("item_toggle", {id: togId, packed: nextState})
+      .catch(function(e){
+        togItem.is_packed = nextState ? 0 : 1;   // 失败回滚
+        tripSetRowPacked(togId);
+        tripRefreshProgress();
+        toast("❌ " + e.message);
+      });
   }
   else if (act === "trip-item-new"){
     tripEditingItem = null;

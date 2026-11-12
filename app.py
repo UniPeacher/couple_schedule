@@ -1861,8 +1861,13 @@ class Handler(BaseHTTPRequestHandler):
                         if action == "item_delete":
                             CONN.execute("DELETE FROM trip_items WHERE id=?", (iid,))
                         elif action == "item_toggle":
+                            want = d.get("packed")
+                            if want in (0, 1, "0", "1", True, False):
+                                val = 1 if want in (1, "1", True) else 0
+                            else:
+                                val = 0 if item["is_packed"] else 1
                             CONN.execute("UPDATE trip_items SET is_packed=?, updated_at=? WHERE id=?",
-                                         (0 if item["is_packed"] else 1, now, iid))
+                                         (val, now, iid))
                         else:
                             name = str(d.get("name") or item["name"]).strip()[:40] or item["name"]
                             category = str(d.get("category") or item["category"]).strip()
