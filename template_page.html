@@ -1843,23 +1843,23 @@ function renderSummaryPage(){
     '<div class="page-container">' +
       '<div class="page-header-card">' +
         '<div>' +
-          '<div class="page-header-title">💌 俩汪时光简报与胶囊</div>' +
-          '<div class="page-header-desc">✨ 由线条小狗 AI 陪伴记录的情侣时光小信</div>' +
+          '<div class="page-header-title">📔 月度时光胶囊</div>' +
+          '<div class="page-header-desc">每个月最后一天，把这个月的日程、手账和留言收进一个胶囊</div>' +
         '</div>' +
         '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dogheads.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
       '</div>' +
 
       '<div class="page-main-card">' +
-        '<div class="seg" id="summaryTabSeg" style="margin-bottom:16px">' +
-          '<div class="opt' + (curSummaryTab==="day"?" on":"") + '" data-act="summary-tab" data-tab="day">🌅 今日晚安</div>' +
-          '<div class="opt' + (curSummaryTab==="week"?" on":"") + '" data-act="summary-tab" data-tab="week">💌 心动周报</div>' +
-          '<div class="opt' + (curSummaryTab==="month"?" on":"") + '" data-act="summary-tab" data-tab="month">📔 月度胶囊</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px">' +
+          '<button type="button" class="p-btn" id="summaryPrevBtn" data-act="summary-month" data-d="-1" title="上一个月" style="padding:5px 12px;font-size:14px;line-height:1">‹</button>' +
+          '<div id="summaryMonthLabel" style="font-size:14.5px;font-weight:800;color:var(--ink-primary)">月度胶囊</div>' +
+          '<button type="button" class="p-btn" id="summaryNextBtn" data-act="summary-month" data-d="1" title="下一个月" style="padding:5px 12px;font-size:14px;line-height:1">›</button>' +
         '</div>' +
         '<div id="summaryContentBox" style="min-height:200px;font-size:13.5px;line-height:1.6"></div>' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;flex-wrap:wrap;gap:8px;padding-top:14px;border-top:1px dashed var(--line-strong)">' +
           '<div style="display:flex;gap:8px">' +
             '<button type="button" class="p-btn pri" data-act="send-summary-wx" style="font-size:12.5px;padding:6px 14px">📲 推送到俩人微信</button>' +
-            '<button type="button" class="p-btn" data-act="refresh-summary" title="让AI重新构思写一封" style="font-size:12.5px;padding:6px 14px">🔄 重新生成</button>' +
+            '<button type="button" class="p-btn" data-act="refresh-summary" title="按同样的材料重新写一版" style="font-size:12.5px;padding:6px 14px">🔄 重新生成</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -1868,7 +1868,7 @@ function renderSummaryPage(){
   html += bottomNavHTML();
   html += modalsHTML();
   $("#app").innerHTML = html;
-  loadSummary(curSummaryTab);
+  loadSummary(curSummaryMonth);
 }
 
 function renderMessagesPage(){
@@ -2811,18 +2811,38 @@ function updatePhotoViewer(){
   }
 }
 
-var curSummaryTab = "day";
+var curSummaryMonth = "";
 var curSummaryData = null;
 
-function loadSummary(tab, force){
-  curSummaryTab = tab || "day";
+function defaultSummaryMonth(){
+  var d = new Date();
+  var y = d.getFullYear(), m = d.getMonth() + 1;
+  var lastDay = new Date(y, m, 0).getDate();
+  if (d.getDate() !== lastDay){ m -= 1; if (m === 0){ m = 12; y -= 1; } }
+  return y + "-" + (m < 10 ? "0" : "") + m;
+}
+
+function shiftMonth(ym, delta){
+  var y = parseInt(ym.slice(0,4), 10), m = parseInt(ym.slice(5,7), 10);
+  var idx = y * 12 + (m - 1) + delta;
+  var ny = Math.floor(idx / 12), nm = idx % 12 + 1;
+  return ny + "-" + (nm < 10 ? "0" : "") + nm;
+}
+
+function loadSummary(month, force){
+  if (month) curSummaryMonth = month;
   var box = $("#summaryContentBox");
-  if (box) box.innerHTML = '<div style="text-align:center;padding:34px 0;color:var(--ink-muted);font-weight:700">🐶 线条小狗正在用心为你构思温馨时光信...<br><span style="font-size:11px;font-weight:normal;opacity:0.8">（若已配置AI模型，将由大模型深情撰写）</span></div>';
-  var url = "/api/summary?type=" + curSummaryTab + (force ? "&refresh=1" : "");
+  if (box) box.innerHTML = '<div style="text-align:center;padding:34px 0;color:var(--ink-muted);font-weight:700">🐶 正在翻这个月的日程和手账...<br><span style="font-size:11px;font-weight:normal;opacity:0.8">（若已配置AI模型，会按这些材料写一篇回顾）</span></div>';
+  var q = [];
+  if (curSummaryMonth) q.push("month=" + curSummaryMonth);
+  if (force) q.push("refresh=1");
+  var url = "/api/summary" + (q.length ? "?" + q.join("&") : "");
   api(url).then(function(res){
+    curSummaryMonth = res.month;
     curSummaryData = res;
     renderSummaryBox();
   }).catch(function(e){
+    if (e.message === "unauth") return;
     if (box) box.innerHTML = '<div style="color:red;padding:20px 0">加载失败：' + esc(e.message) + '</div>';
   });
 }
@@ -2831,12 +2851,27 @@ function renderSummaryBox(){
   var box = $("#summaryContentBox");
   if (!box || !curSummaryData) return;
   var d = curSummaryData;
-  var aiTag = d.is_ai ? '<span style="font-size:10px;background:linear-gradient(135deg,#ff758c,#ff7eb3);color:#fff;padding:2px 7px;border-radius:10px;margin-left:auto;font-weight:800">✨ AI 专属小信</span>' : '';
+  var label = $("#summaryMonthLabel");
+  if (label){
+    label.innerHTML = esc(d.month_label || curSummaryMonth) +
+      (d.is_current ? ' <span style="font-size:10.5px;font-weight:700;color:var(--ink-muted);background:var(--dog-a-bg);border:1px solid var(--dog-a-bd);border-radius:8px;padding:1px 6px;margin-left:4px">本月进行中</span>' : '');
+  }
+  var prevBtn = $("#summaryPrevBtn"), nextBtn = $("#summaryNextBtn");
+  if (prevBtn){
+    prevBtn.disabled = !d.has_prev;
+    prevBtn.style.opacity = d.has_prev ? "1" : "0.35";
+  }
+  if (nextBtn){
+    nextBtn.disabled = !d.has_next;
+    nextBtn.style.opacity = d.has_next ? "1" : "0.35";
+  }
+
+  var aiTag = d.is_ai ? '<span style="font-size:10px;background:var(--dog-a-bg);color:var(--ink-muted);border:1px solid var(--dog-a-bd);padding:1px 6px;border-radius:8px;margin-left:auto;font-weight:700">AI 代笔</span>' : '';
   var html = '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:16px;padding:14px;box-shadow:var(--shadow-sm)">' +
-    '<div style="font-size:14.5px;font-weight:800;color:var(--ink-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px">' +
+    '<div style="font-size:15px;font-weight:800;color:var(--ink-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px">' +
       '<span>' + esc(d.title) + '</span>' + aiTag +
     '</div>' +
-    '<div style="color:var(--ink-secondary);font-size:13px;line-height:1.75;white-space:pre-wrap;margin-bottom:10px;letter-spacing:0.2px">' + esc(d.content) + '</div>';
+    '<div style="color:var(--ink-secondary);font-size:13.5px;line-height:1.85;white-space:pre-wrap;margin-bottom:10px;letter-spacing:0.2px">' + esc(d.content) + '</div>';
 
   if (d.stats && d.stats.length > 0){
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line-strong)">' +
@@ -3111,7 +3146,7 @@ document.addEventListener("click", function(e){
   else if (act === "switch-view" || act === "open-settings" || act === "open-summary" || act === "open-anniv" || act === "open-anniv-list"){
     var targetV = el.getAttribute("data-v");
     if (act === "open-settings") targetV = "settings";
-    else if (act === "open-summary") targetV = "summary";
+    else if (act === "open-summary"){ targetV = "summary"; curSummaryMonth = ""; }
     else if (act === "open-anniv" || act === "open-anniv-list") targetV = "anniv";
 
     // 记录切换视图的历史记录（支持浏览器/手机返回键返回上一页）
@@ -3274,23 +3309,17 @@ document.addEventListener("click", function(e){
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
   }
-  else if (act === "open-summary"){
-    $("#ovSummary").classList.add("show");
-    loadSummary("day");
-  }
-  else if (act === "summary-tab"){
-    var tab = el.getAttribute("data-tab");
-    document.querySelectorAll("#summaryTabSeg .opt").forEach(function(o){
-      o.classList.toggle("on", o.getAttribute("data-tab") === tab);
-    });
-    loadSummary(tab);
+  else if (act === "summary-month"){
+    var delta = parseInt(el.getAttribute("data-d"), 10) || 0;
+    if (!delta) return;
+    loadSummary(shiftMonth(curSummaryMonth || defaultSummaryMonth(), delta));
   }
   else if (act === "refresh-summary"){
-    loadSummary(curSummaryTab, true);
+    loadSummary(curSummaryMonth, true);
   }
   else if (act === "send-summary-wx"){
-    api("/api/summary/push", {method:"POST", body:{type: curSummaryTab}}).then(function(res){
-      toast("💌 时光简报已成功推送至微信！(已发送至 " + res.sent_count + " 人的微信)");
+    api("/api/summary/push", {method:"POST", body:{month: curSummaryMonth}}).then(function(res){
+      toast("📔 月度胶囊已推送到微信（已发送给 " + res.sent_count + " 人）");
     }).catch(function(err){
       toast("❌ " + err.message);
     });
