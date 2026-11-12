@@ -183,6 +183,24 @@ CREATE TABLE IF NOT EXISTS wishes(
   is_done      INTEGER DEFAULT 0,
   done_at      TEXT DEFAULT '',
   created_at   TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS trips(
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  title        TEXT NOT NULL,
+  destination  TEXT DEFAULT '',
+  start_date   TEXT DEFAULT '',
+  end_date     TEXT DEFAULT '',
+  created_by   TEXT NOT NULL,
+  created_at   TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS trip_items(
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  trip_id      INTEGER NOT NULL,
+  category     TEXT NOT NULL DEFAULT 'other',
+  name         TEXT NOT NULL,
+  qty          TEXT DEFAULT '',
+  note         TEXT DEFAULT '',
+  is_packed    INTEGER NOT NULL DEFAULT 0,
+  sort_order   INTEGER DEFAULT 0,
+  updated_at   TEXT NOT NULL);
 """
 
 # 首次初始化时预置的两人示例日程（uid, 标题, 地点, 备注, repeat, 星期0-6, 单次日期, 开始, 结束, 周次）
@@ -276,6 +294,99 @@ def call_llm_api(system_prompt, user_prompt):
     except Exception as e:
         sys.stderr.write(f"[LLM API Error]: {e}\n")
     return None
+
+
+# ---------------------------------------------------------------- 旅行清单
+
+TRIP_CATEGORIES = [
+    ("doc", "证件"), ("toilet", "洗漱"), ("skin", "护肤化妆"),
+    ("cloth", "衣物"), ("tech", "电子"), ("med", "药品"), ("other", "其他"),
+]
+TRIP_CATEGORY_KEYS = [k for k, _ in TRIP_CATEGORIES]
+
+# 新建旅行时可选套用的常用清单（不含备注，备注留给人自己写）
+TRIP_TEMPLATE = [
+    ("doc", "身份证"), ("doc", "学生证"), ("doc", "银行卡"), ("doc", "现金"),
+    ("toilet", "牙刷牙膏"), ("toilet", "洗发水/护发素"), ("toilet", "沐浴露"),
+    ("toilet", "一次性浴巾"), ("toilet", "洗脸巾"),
+    ("skin", "防晒"), ("skin", "水乳"), ("skin", "粉底液"), ("skin", "口红"), ("skin", "面膜"),
+    ("cloth", "换洗衣物"), ("cloth", "睡衣"), ("cloth", "外套"), ("cloth", "袜子"),
+    ("tech", "充电器"), ("tech", "充电宝"), ("tech", "耳机"), ("tech", "自拍杆"),
+    ("med", "创可贴"), ("med", "常用药"),
+    ("other", "纸巾"), ("other", "雨伞"), ("other", "卫生巾"),
+]
+
+
+def _trip_status(start, end, today):
+    if end and end < today:
+        return "done"
+    if start and start > today:
+        return "upcoming"
+    if not start and not end:
+        return "upcoming"
+    return "ongoing"
+
+
+def _trip_item_order(trip_id, category):
+    row = CONN.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM trip_items WHERE trip_id=? AND category=?",
+        (trip_id, category)).fetchone()
+    return row["n"] if row else 1
+
+
+def _insert_trip_item(trip_id, category, name, qty="1", note=""):
+    if category not in TRIP_CATEGORY_KEYS:
+        category = "other"
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    CONN.execute(
+        "INSERT INTO trip_items(trip_id, category, name, qty, note, is_packed, sort_order, updated_at) "
+        "VALUES(?,?,?,?,?,0,?,?)",
+        (trip_id, category, name, qty, note, _trip_item_order(trip_id, category), now))
+
+
+def trips_overview():
+    today = date.today().isoformat()
+    users = get_users()
+    with LOCK:
+        rows = CONN.execute(
+            "SELECT t.*, "
+            " (SELECT COUNT(*) FROM trip_items i WHERE i.trip_id=t.id) AS total, "
+            " (SELECT COUNT(*) FROM trip_items i WHERE i.trip_id=t.id AND i.is_packed=1) AS packed "
+            "FROM trips t ORDER BY t.id DESC").fetchall()
+    trips = []
+    for r in rows:
+        item = dict(r)
+        item["status"] = _trip_status(item["start_date"], item["end_date"], today)
+        item["creator_name"] = users.get(item["created_by"], {}).get("name", "")
+        trips.append(item)
+    ongoing = [t for t in trips if t["status"] == "ongoing"]
+    upcoming = sorted([t for t in trips if t["status"] == "upcoming"],
+                      key=lambda t: t["start_date"] or "9999-99-99")
+    done = sorted([t for t in trips if t["status"] == "done"],
+                  key=lambda t: t["start_date"] or "", reverse=True)
+    return ongoing + upcoming + done
+
+
+def trip_detail(trip_id):
+    today = date.today().isoformat()
+    users = get_users()
+    with LOCK:
+        row = CONN.execute("SELECT * FROM trips WHERE id=?", (trip_id,)).fetchone()
+        if not row:
+            return None
+        items = [dict(r) for r in CONN.execute(
+            "SELECT * FROM trip_items WHERE trip_id=? ORDER BY category, sort_order, id",
+            (trip_id,)).fetchall()]
+    trip = dict(row)
+    trip["status"] = _trip_status(trip["start_date"], trip["end_date"], today)
+    trip["creator_name"] = users.get(trip["created_by"], {}).get("name", "")
+    items.sort(key=lambda i: TRIP_CATEGORY_KEYS.index(i["category"])
+               if i["category"] in TRIP_CATEGORY_KEYS else 99)
+    return {
+        "trip": trip,
+        "items": items,
+        "stats": {"total": len(items), "packed": sum(1 for i in items if i["is_packed"] == 1)},
+    }
 
 
 # ---------------------------------------------------------------- 时光简报（仅月度）
@@ -840,6 +951,8 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_diary_photos_lookup ON diary_photos(diary_id, sort_order)",
             "CREATE INDEX IF NOT EXISTS idx_notifications_lookup ON notifications(target_uid, is_read, id)",
             "CREATE INDEX IF NOT EXISTS idx_wishes_lookup ON wishes(is_done, priority, id)",
+            "CREATE INDEX IF NOT EXISTS idx_trips_lookup ON trips(start_date, id)",
+            "CREATE INDEX IF NOT EXISTS idx_trip_items_lookup ON trip_items(trip_id, category, sort_order)",
         ]
         for idx_sql in indexes:
             try:
@@ -1476,6 +1589,27 @@ class Handler(BaseHTTPRequestHandler):
                     "wishes": wishes,
                     "stats": {"total": total, "done": done, "pending": pending}
                 })
+            if path == "/api/trips":
+                uid = self.authed()
+                if uid is None:
+                    return
+                return self.send_json({"ok": True, "trips": trips_overview(),
+                                       "categories": TRIP_CATEGORIES})
+            if path == "/api/trips/detail":
+                uid = self.authed()
+                if uid is None:
+                    return
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    tid = int((qs.get("id") or [""])[0])
+                except ValueError:
+                    return self.send_json({"error": "旅行不存在"}, 404)
+                data = trip_detail(tid)
+                if not data:
+                    return self.send_json({"error": "旅行不存在"}, 404)
+                payload = {"ok": True, "categories": TRIP_CATEGORIES}
+                payload.update(data)
+                return self.send_json(payload)
             if path == "/api/notifications/poll":
                 uid = self.authed()
                 if not uid:
@@ -1584,6 +1718,138 @@ class Handler(BaseHTTPRequestHandler):
                         (uid,)
                     ).fetchone()["c"]
                 return self.send_json({"ok": True, "unread_count": cnt})
+
+            if path == "/api/trips":
+                uid = self.authed()
+                if uid is None:
+                    return
+                origin = self.headers.get("Origin")
+                if origin and (urlparse(origin).netloc != self.headers.get("Host")
+                               or urlparse(origin).scheme not in ("http", "https")):
+                    return self.send_json({"error": "不允许跨站写入"}, 403)
+                if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
+                    return self.send_json({"error": "须使用 application/json"}, 415)
+                action = str(d.get("action") or "").strip()
+                now = time.strftime("%Y-%m-%d %H:%M:%S")
+
+                def clean_date(key):
+                    v = str(d.get(key) or "").strip()
+                    if not v:
+                        return ""
+                    date.fromisoformat(v)
+                    return v
+
+                if action == "create":
+                    dest = str(d.get("destination") or "").strip()[:40]
+                    title = str(d.get("title") or "").strip()[:40] or dest
+                    if not dest and not title:
+                        return self.send_json({"error": "先写上要去哪儿"}, 400)
+                    try:
+                        start, end = clean_date("start_date"), clean_date("end_date")
+                    except ValueError:
+                        return self.send_json({"error": "日期格式不正确"}, 400)
+                    if start and end and end < start:
+                        return self.send_json({"error": "返程日期不能早于出发日期"}, 400)
+                    with LOCK:
+                        cur = CONN.execute(
+                            "INSERT INTO trips(title, destination, start_date, end_date, created_by, created_at) "
+                            "VALUES(?,?,?,?,?,?)",
+                            (title or dest, dest, start, end, uid, now))
+                        tid = cur.lastrowid
+                        if d.get("use_template", True) not in (False, 0, "0", "false"):
+                            for cat, name in TRIP_TEMPLATE:
+                                _insert_trip_item(tid, cat, name)
+                    users = get_users()
+                    other_uid = "b" if uid == "a" else "a"
+                    push_system_notice(
+                        other_uid, "✈️ %s 建了一个旅行清单" % users[uid]["name"],
+                        "【%s】%s" % (title or dest, start or "日期还没定"), "view:trips")
+                    return self.send_json({"ok": True, "id": tid})
+
+                if action == "delete":
+                    try:
+                        tid = int(d.get("id"))
+                    except (TypeError, ValueError):
+                        return self.send_json({"error": "旅行不存在"}, 404)
+                    with LOCK:
+                        if not CONN.execute("SELECT id FROM trips WHERE id=?", (tid,)).fetchone():
+                            return self.send_json({"error": "旅行不存在"}, 404)
+                        CONN.execute("DELETE FROM trip_items WHERE trip_id=?", (tid,))
+                        CONN.execute("DELETE FROM trips WHERE id=?", (tid,))
+                    return self.send_json({"ok": True})
+
+                if action == "copy_last":
+                    try:
+                        tid = int(d.get("id"))
+                    except (TypeError, ValueError):
+                        return self.send_json({"error": "旅行不存在"}, 404)
+                    with LOCK:
+                        if not CONN.execute("SELECT id FROM trips WHERE id=?", (tid,)).fetchone():
+                            return self.send_json({"error": "旅行不存在"}, 404)
+                        prev = CONN.execute(
+                            "SELECT id FROM trips WHERE id<>? AND EXISTS"
+                            "(SELECT 1 FROM trip_items i WHERE i.trip_id=trips.id) "
+                            "ORDER BY id DESC LIMIT 1", (tid,)).fetchone()
+                        if not prev:
+                            return self.send_json({"error": "还没有可复制的上一份清单"}, 400)
+                        copied = 0
+                        for it in CONN.execute(
+                                "SELECT * FROM trip_items WHERE trip_id=? ORDER BY category, sort_order, id",
+                                (prev["id"],)).fetchall():
+                            if CONN.execute(
+                                    "SELECT 1 FROM trip_items WHERE trip_id=? AND category=? AND name=?",
+                                    (tid, it["category"], it["name"])).fetchone():
+                                continue
+                            _insert_trip_item(tid, it["category"], it["name"], it["qty"], it["note"])
+                            copied += 1
+                    return self.send_json({"ok": True, "copied": copied})
+
+                if action == "item_add":
+                    try:
+                        tid = int(d.get("trip_id"))
+                    except (TypeError, ValueError):
+                        return self.send_json({"error": "旅行不存在"}, 404)
+                    name = str(d.get("name") or "").strip()[:40]
+                    if not name:
+                        return self.send_json({"error": "物品名称不能为空"}, 400)
+                    category = str(d.get("category") or "other").strip()
+                    if category not in TRIP_CATEGORY_KEYS:
+                        category = "other"
+                    qty = str(d.get("qty") or "").strip()[:10]
+                    note = str(d.get("note") or "").strip()[:60]
+                    with LOCK:
+                        if not CONN.execute("SELECT id FROM trips WHERE id=?", (tid,)).fetchone():
+                            return self.send_json({"error": "旅行不存在"}, 404)
+                        _insert_trip_item(tid, category, name, qty, note)
+                    return self.send_json({"ok": True})
+
+                if action in ("item_update", "item_toggle", "item_delete"):
+                    try:
+                        iid = int(d.get("id"))
+                    except (TypeError, ValueError):
+                        return self.send_json({"error": "物品不存在"}, 404)
+                    with LOCK:
+                        item = CONN.execute("SELECT * FROM trip_items WHERE id=?", (iid,)).fetchone()
+                        if not item:
+                            return self.send_json({"error": "物品不存在"}, 404)
+                        if action == "item_delete":
+                            CONN.execute("DELETE FROM trip_items WHERE id=?", (iid,))
+                        elif action == "item_toggle":
+                            CONN.execute("UPDATE trip_items SET is_packed=?, updated_at=? WHERE id=?",
+                                         (0 if item["is_packed"] else 1, now, iid))
+                        else:
+                            name = str(d.get("name") or item["name"]).strip()[:40] or item["name"]
+                            category = str(d.get("category") or item["category"]).strip()
+                            if category not in TRIP_CATEGORY_KEYS:
+                                category = item["category"]
+                            qty = str(d.get("qty") if "qty" in d else item["qty"]).strip()[:10]
+                            note = str(d.get("note") if "note" in d else item["note"]).strip()[:60]
+                            CONN.execute(
+                                "UPDATE trip_items SET name=?, category=?, qty=?, note=?, updated_at=? WHERE id=?",
+                                (name, category, qty, note, now, iid))
+                    return self.send_json({"ok": True})
+
+                return self.send_json({"error": "未知操作"}, 400)
 
             if path == "/api/wishes":
                 uid = self.authed()
