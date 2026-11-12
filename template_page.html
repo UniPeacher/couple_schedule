@@ -1580,7 +1580,7 @@ function load(opts){
       if (j && j.unread_count !== undefined) setUnreadCount(j.unread_count);
       render();
     }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
-  } else if (CURRENT_VIEW === "messages" || CURRENT_VIEW === "wishes"){
+  } else if (CURRENT_VIEW === "messages" || CURRENT_VIEW === "wishes" || CURRENT_VIEW === "trips"){
     render();
     if (silent) return Promise.resolve();
     return Promise.resolve();
@@ -1673,6 +1673,7 @@ function render(){
     else if (CURRENT_VIEW === "summary") renderSummaryPage();
     else if (CURRENT_VIEW === "messages") renderMessagesPage();
     else if (CURRENT_VIEW === "wishes") renderWishesPage();
+    else if (CURRENT_VIEW === "trips") renderTripsPage();
     else if (CURRENT_VIEW === "anniv") renderAnnivPage();
     else if (CURRENT_VIEW === "settings") renderSettingsPage();
     else if (CURRENT_VIEW === "cycle") Cycle.renderPage();
@@ -1979,12 +1980,7 @@ function renderMessagesList(){
 function renderWishesPage(){
   var html = renderTopBar() +
     '<div class="page-container">' +
-      '<div style="margin-bottom:12px">' +
-        '<div class="seg" style="margin-bottom:0">' +
-          '<div class="opt" data-act="switch-view" data-v="month">📔 足迹手账</div>' +
-          '<div class="opt on" data-act="switch-view" data-v="wishes">✨ 心愿备忘</div>' +
-        '</div>' +
-      '</div>' +
+      diarySegHTML("wishes") +
 
       '<div class="wish-progress-box" id="wishProgressBox">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:800;color:var(--ink-primary)">' +
@@ -2256,12 +2252,7 @@ function renderMonthApp(){
   '</div>' +
 
   '<div class="page-container">' +
-    '<div style="margin-bottom:12px">' +
-      '<div class="seg" style="margin-bottom:0">' +
-        '<div class="opt on" data-act="switch-view" data-v="month">📔 足迹手账</div>' +
-        '<div class="opt" data-act="switch-view" data-v="wishes">✨ 心愿备忘</div>' +
-      '</div>' +
-    '</div>' +
+    diarySegHTML("month") +
 
     '<div class="month-cal-wrap" style="padding:0">' +
       '<div class="month-topcard">' +
@@ -2887,6 +2878,213 @@ function renderSummaryBox(){
   box.innerHTML = html;
 }
 
+/* =========================================================================
+   旅行清单：一次旅行一份打包清单，按类别分组，物品 + 数量 + 备注
+   ========================================================================= */
+var TRIPS = null, TRIP_DETAIL = null, TRIP_ID = null;
+var tripNewOpen = false, tripEditingItem = null, tripFormCat = "doc";
+
+function tripRange(t){
+  if (!t.start_date && !t.end_date) return "日期还没定";
+  if (t.start_date && t.end_date) return t.start_date.slice(5) + " – " + t.end_date.slice(5);
+  return (t.start_date || t.end_date).slice(5) + (t.start_date ? " 出发" : " 返回");
+}
+
+function tripPct(t){
+  return t.total ? Math.round(t.packed * 100 / t.total) : 0;
+}
+
+function tripBar(total, packed){
+  var pct = total ? Math.round(packed * 100 / total) : 0;
+  return '<div class="wish-progress-bar" style="margin-top:7px"><div class="wish-progress-fill" style="width:' + pct + '%"></div></div>';
+}
+
+function diarySegHTML(active){
+  var items = [["month", "📔 足迹手账"], ["wishes", "✨ 心愿备忘"], ["trips", "✈️ 旅行清单"]];
+  return '<div style="margin-bottom:12px"><div class="seg" style="margin-bottom:0">' +
+    items.map(function(it){
+      return '<div class="opt' + (active === it[0] ? " on" : "") + '" data-act="switch-view" data-v="' + it[0] + '">' + it[1] + '</div>';
+    }).join("") + '</div></div>';
+}
+
+function renderTripsPage(){
+  var html = renderTopBar() + '<div class="page-container">' + diarySegHTML("trips");
+  html += TRIP_DETAIL ? tripDetailHTML() : tripListHTML();
+  html += '</div>' + bottomNavHTML() + modalsHTML();
+  $("#app").innerHTML = html;
+  if (!TRIP_DETAIL && !TRIPS) loadTrips();
+  if (TRIP_DETAIL && !TRIP_DETAIL.loaded) loadTrip(TRIP_ID);
+}
+
+function loadTrips(){
+  return api("/api/trips").then(function(j){
+    if (TRIP_ID) return;              // 已经点进某次旅行，别用列表覆盖详情
+    TRIPS = j;
+    render();
+  }).catch(function(e){ if (e.message !== "unauth") toast(e.message); });
+}
+
+function loadTrip(id){
+  if (!id) return;
+  var want = id;
+  return api("/api/trips/detail?id=" + want).then(function(j){
+    if (TRIP_ID !== want) return;      // 返回列表或切到别的旅行后，丢弃过期响应
+    TRIP_DETAIL = j;
+    TRIP_DETAIL.loaded = true;
+    render();
+  }).catch(function(e){
+    if (TRIP_ID !== want) return;
+    if (e.message !== "unauth") toast(e.message);
+    TRIP_DETAIL = null; TRIP_ID = null; TRIPS = null; render();
+  });
+}
+
+function tripListHTML(){
+  var html = '<div class="page-header-card">' +
+    '<div>' +
+      '<div class="page-header-title">✈️ 旅行清单</div>' +
+      '<div class="page-header-desc">一次旅行一份清单：证件、洗漱、衣服，谁带什么写清楚</div>' +
+    '</div>' +
+    '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-wave.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+  '</div>';
+
+  html += '<div class="page-main-card">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+    '<div style="font-size:13px;font-weight:800;color:var(--ink-primary)">' + (TRIPS ? (TRIPS.trips.length ? "共 " + TRIPS.trips.length + " 次旅行" : "还没有旅行清单") : "加载中…") + '</div>' +
+    '<button class="p-btn pri" data-act="trip-new-toggle" style="font-size:12px;padding:5px 12px">' + (tripNewOpen ? "收起" : "＋ 新建旅行") + '</button>' +
+  '</div>';
+
+  if (tripNewOpen){
+    html += '<div style="margin-top:12px;padding:12px;border:1.5px dashed var(--line-strong);border-radius:14px;background:var(--bg-card-subtle)">' +
+      '<div style="display:grid;gap:8px">' +
+        '<input id="trip_dest" placeholder="去哪儿？比如 青岛" maxlength="40" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)">' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+          '<input id="trip_start" type="date" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
+          '<input id="trip_end" type="date" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
+        '</div>' +
+        '<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-secondary)">' +
+          '<input id="trip_tpl" type="checkbox" checked style="width:15px;height:15px"> 套用常用清单（证件/洗漱/护肤/衣物/电子/药品）' +
+        '</label>' +
+        '<div style="display:flex;gap:8px"><button class="p-btn pri" data-act="trip-create" style="flex:1;font-size:12.5px">建清单</button></div>' +
+      '</div>' +
+    '</div>';
+  }
+  html += '</div>';
+
+  if (TRIPS && TRIPS.trips.length){
+    html += '<div style="margin-top:12px">' + TRIPS.trips.map(function(t){
+      var badge = t.status === "ongoing"
+        ? '<span style="font-size:10.5px;font-weight:800;color:var(--dog-a-text);background:var(--dog-a-bg);border:1px solid var(--dog-a-bd);border-radius:8px;padding:1px 7px;flex-shrink:0">进行中</span>'
+        : (t.status === "upcoming"
+          ? '<span style="font-size:10.5px;font-weight:700;color:var(--ink-muted);background:var(--bg-card);border:1px solid var(--line-strong);border-radius:8px;padding:1px 7px;flex-shrink:0">待出发</span>'
+          : '<span style="font-size:10.5px;font-weight:700;color:var(--ink-muted);background:var(--bg-card);border:1px solid var(--line-strong);border-radius:8px;padding:1px 7px;flex-shrink:0">已结束</span>');
+      return '<div class="page-main-card" data-act="trip-open" data-id="' + t.id + '" style="cursor:pointer;margin-bottom:10px;' + (t.status === "done" ? "opacity:.78;" : "") + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
+          '<div style="min-width:0">' +
+            '<div style="font-size:15px;font-weight:800;color:var(--ink-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.title || t.destination) + '</div>' +
+            '<div style="font-size:11.5px;color:var(--ink-muted);margin-top:3px">' + esc(tripRange(t)) + ' · 已勾 ' + t.packed + '/' + t.total + '</div>' +
+          '</div>' + badge +
+        '</div>' + tripBar(t.total, t.packed) +
+      '</div>';
+    }).join("") + '</div>';
+  } else if (TRIPS){
+    html += '<div class="page-main-card" style="text-align:center;color:var(--ink-muted);font-size:12.5px;line-height:1.9;padding:26px 14px">' +
+      '还没有旅行清单哦<br><span style="font-size:11.5px">建一个，出发前一晚就不会互相问「充电器你带了吗」</span></div>';
+  }
+
+  return html;
+}
+
+function tripDetailHTML(){
+  var d = TRIP_DETAIL, t = d.trip, items = d.items || [];
+  var cats = d.categories || [];
+  var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+    '<button class="p-btn" data-act="trip-back" style="font-size:12px;padding:5px 10px">‹ 全部旅行</button>' +
+    '<div style="flex:1"></div>' +
+    '<button class="p-btn" data-act="trip-delete" data-id="' + t.id + '" style="font-size:11.5px;padding:5px 9px;color:var(--ink-muted)">删除</button>' +
+  '</div>';
+
+  html += '<div class="page-header-card">' +
+    '<div style="min-width:0">' +
+      '<div class="page-header-title">✈️ ' + esc(t.title || t.destination) + '</div>' +
+      '<div class="page-header-desc">' + esc(tripRange(t)) + ' · 已勾 ' + d.stats.packed + '/' + d.stats.total + '</div>' +
+    '</div>' +
+  '</div>';
+
+  html += '<div class="page-main-card">' + tripBar(d.stats.total, d.stats.packed) +
+    '<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--ink-muted)">' +
+      '<span>' + (t.creator_name ? '由 ' + esc(t.creator_name) + ' 建' : '') + '</span>' +
+      '<span>' + (d.stats.total - d.stats.packed) + ' 样还没勾</span>' +
+    '</div></div>';
+
+  cats.forEach(function(c){
+    var list = items.filter(function(i){ return i.category === c[0]; });
+    if (!list.length) return;
+    var packed = list.filter(function(i){ return i.is_packed; }).length;
+    html += '<div class="page-main-card" style="margin-top:10px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">' +
+        '<div style="font-size:13px;font-weight:800;color:var(--ink-primary)">' + esc(c[1]) + '</div>' +
+        '<div style="font-size:11px;color:var(--ink-muted)">' + packed + '/' + list.length + '</div>' +
+      '</div>' +
+      list.map(function(i){
+        return '<div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
+          '<button class="p-btn" data-act="trip-toggle" data-id="' + i.id + '" style="width:24px;height:24px;min-width:24px;padding:0;border-radius:8px;font-size:12px;' + (i.is_packed ? 'background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)' : '') + '">' + (i.is_packed ? '✓' : '') + '</button>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-size:13.5px;' + (i.is_packed ? 'color:var(--ink-muted);font-weight:500;text-decoration:line-through' : 'color:var(--ink-primary);font-weight:700') + '">' +
+              esc(i.name) + (i.qty ? ' <span style="font-size:11.5px;font-weight:600;color:var(--ink-muted)">×' + esc(i.qty) + '</span>' : '') +
+            '</div>' +
+            (i.note ? '<div style="font-size:11.5px;color:var(--ink-muted);margin-top:1px;word-break:break-all">' + esc(i.note) + '</div>' : '') +
+          '</div>' +
+          '<button class="p-btn" data-act="trip-item-edit" data-id="' + i.id + '" style="padding:2px 7px;font-size:11px;color:var(--ink-muted)">改</button>' +
+        '</div>';
+      }).join("") +
+      '<div style="padding-top:8px"><button class="p-btn" data-act="trip-item-new" data-cat="' + c[0] + '" style="font-size:11.5px;padding:4px 10px">＋ 加一件' + esc(c[1]) + '</button></div>' +
+    '</div>';
+  });
+
+  if (!items.length){
+    html += '<div class="page-main-card" style="text-align:center;color:var(--ink-muted);font-size:12.5px;padding:22px 12px">这份清单还是空的，下面加几样吧</div>';
+  }
+
+  html += tripItemFormHTML();
+  html += '<div style="margin-top:10px"><button class="p-btn" data-act="trip-copy-last" data-id="' + t.id + '" style="width:100%;font-size:12px;padding:8px">⬇️ 把上一份清单的物品复制过来</button></div>';
+  return html;
+}
+
+function tripItemFormHTML(){
+  var ed = tripEditingItem;
+  var cats = (TRIP_DETAIL && TRIP_DETAIL.categories) || [];
+  var cat = ed ? ed.category : (tripFormCat || "doc");
+  return '<div class="page-main-card" style="margin-top:10px">' +
+    '<div style="font-size:12.5px;font-weight:800;color:var(--ink-primary);margin-bottom:9px">' + (ed ? "改这一项" : "加一样东西") + '</div>' +
+    '<div style="display:grid;gap:7px">' +
+      '<div style="display:grid;grid-template-columns:1fr 84px;gap:7px">' +
+        '<input id="ti_name" placeholder="物品名称，比如 充电器" maxlength="40" value="' + esc(ed ? ed.name : "") + '" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)">' +
+        '<input id="ti_qty" placeholder="数量" maxlength="10" value="' + esc(ed ? ed.qty : "1") + '" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)">' +
+      '</div>' +
+      '<select id="ti_cat" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
+        cats.map(function(c){ return '<option value="' + c[0] + '"' + (c[0] === cat ? " selected" : "") + '>' + esc(c[1]) + '</option>'; }).join("") +
+      '</select>' +
+      '<input id="ti_note" placeholder="备注，比如 用你的 / 刷我的卡" maxlength="60" value="' + esc(ed ? ed.note : "") + '" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
+      '<div style="display:flex;gap:7px">' +
+        '<button class="p-btn pri" data-act="trip-item-save" style="flex:1;font-size:12px;padding:6px">' + (ed ? "保存" : "加进清单") + '</button>' +
+        (ed ? '<button class="p-btn" data-act="trip-item-del" data-id="' + ed.id + '" style="font-size:12px;padding:6px 10px;color:#c0564f">删除</button>' : '') +
+        (ed ? '<button class="p-btn" data-act="trip-item-cancel" style="font-size:12px;padding:6px 10px">取消</button>' : '') +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function tripFormValue(id){
+  var el = document.getElementById(id);
+  return el ? String(el.value || "").trim() : "";
+}
+
+function tripAction(action, body){
+  body.action = action;
+  return api("/api/trips", {method:"POST", body: body});
+}
+
 function renderAnnivList(){
   var box = $("#annivListContainer");
   if (!box) return;
@@ -3308,6 +3506,84 @@ document.addEventListener("click", function(e){
         if (activeDiaryDate) openDayDiaries(activeDiaryDate);
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message); });
+  }
+  else if (act === "trip-new-toggle"){
+    tripNewOpen = !tripNewOpen;
+    render();
+  }
+  else if (act === "trip-create"){
+    var tDest = tripFormValue("trip_dest");
+    if (!tDest){ toast("先写上要去哪儿"); return; }
+    tripAction("create", {
+      destination: tDest,
+      start_date: tripFormValue("trip_start"),
+      end_date: tripFormValue("trip_end"),
+      use_template: !!($("#trip_tpl") && $("#trip_tpl").checked)
+    }).then(function(res){
+      tripNewOpen = false; TRIPS = null; TRIP_DETAIL = null; TRIP_ID = res.id;
+      toast("✈️ 清单建好了");
+      return loadTrip(res.id);
+    }).catch(function(e){ toast("❌ " + e.message); });
+  }
+  else if (act === "trip-open"){
+    TRIP_ID = parseInt(el.getAttribute("data-id"), 10);
+    TRIP_DETAIL = null; tripEditingItem = null; tripNewOpen = false;
+    loadTrip(TRIP_ID);
+  }
+  else if (act === "trip-back"){
+    TRIP_ID = null; TRIP_DETAIL = null; tripEditingItem = null; TRIPS = null;
+    loadTrips();
+  }
+  else if (act === "trip-delete"){
+    if (!confirm("整份清单都会删掉，确定？")) return;
+    tripAction("delete", {id: parseInt(el.getAttribute("data-id"), 10)}).then(function(){
+      TRIP_ID = null; TRIP_DETAIL = null; TRIPS = null; toast("已删除");
+      render();
+    }).catch(function(e){ toast("❌ " + e.message); });
+  }
+  else if (act === "trip-copy-last"){
+    tripAction("copy_last", {id: parseInt(el.getAttribute("data-id"), 10)}).then(function(res){
+      toast(res.copied ? ("复制了 " + res.copied + " 件") : "没有要新增的物品");
+      return loadTrip(TRIP_ID);
+    }).catch(function(e){ toast("❌ " + e.message); });
+  }
+  else if (act === "trip-toggle"){
+    tripAction("item_toggle", {id: parseInt(el.getAttribute("data-id"), 10)})
+      .then(function(){ return loadTrip(TRIP_ID); })
+      .catch(function(e){ toast("❌ " + e.message); });
+  }
+  else if (act === "trip-item-new"){
+    tripEditingItem = null;
+    tripFormCat = el.getAttribute("data-cat") || "doc";
+    render();
+    var nameEl = $("#ti_name");
+    if (nameEl) nameEl.focus();
+  }
+  else if (act === "trip-item-edit"){
+    var iid = parseInt(el.getAttribute("data-id"), 10);
+    tripEditingItem = ((TRIP_DETAIL && TRIP_DETAIL.items) || []).filter(function(i){ return i.id === iid; })[0] || null;
+    render();
+  }
+  else if (act === "trip-item-cancel"){
+    tripEditingItem = null;
+    render();
+  }
+  else if (act === "trip-item-save"){
+    var tName = tripFormValue("ti_name");
+    if (!tName){ toast("先写上物品名称"); return; }
+    var itemBody = {name: tName, qty: tripFormValue("ti_qty"), note: tripFormValue("ti_note"), category: tripFormValue("ti_cat")};
+    var req;
+    if (tripEditingItem){ itemBody.id = tripEditingItem.id; req = tripAction("item_update", itemBody); }
+    else { itemBody.trip_id = TRIP_ID; req = tripAction("item_add", itemBody); }
+    req.then(function(){ tripEditingItem = null; return loadTrip(TRIP_ID); })
+       .catch(function(e){ toast("❌ " + e.message); });
+  }
+  else if (act === "trip-item-del"){
+    if (!confirm("删掉这一项？")) return;
+    tripAction("item_delete", {id: parseInt(el.getAttribute("data-id"), 10)}).then(function(){
+      tripEditingItem = null;
+      return loadTrip(TRIP_ID);
+    }).catch(function(e){ toast("❌ " + e.message); });
   }
   else if (act === "summary-month"){
     var delta = parseInt(el.getAttribute("data-d"), 10) || 0;
