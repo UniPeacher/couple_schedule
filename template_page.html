@@ -3025,6 +3025,9 @@ function tripDetailHTML(){
       '<span>' + (d.stats.total - d.stats.packed) + ' 样还没勾</span>' +
     '</div></div>';
 
+  // 编辑时就地把表单放在顶部，改完立刻能看到，不用滚到页面底部
+  if (tripEditingItem) html += tripItemFormHTML();
+
   cats.forEach(function(c){
     var list = items.filter(function(i){ return i.category === c[0]; });
     if (!list.length) return;
@@ -3034,7 +3037,7 @@ function tripDetailHTML(){
         '<div style="font-size:13px;font-weight:800;color:var(--ink-primary)">' + esc(c[1]) + '</div>' +
         '<div style="font-size:11px;color:var(--ink-muted)">' + packed + '/' + list.length + '</div>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 24px;gap:5px;font-size:9.5px;color:var(--ink-muted);padding:2px 0 4px;border-bottom:1px solid var(--line-strong)">' +
+      '<div style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 28px;gap:5px;font-size:9.5px;color:var(--ink-muted);padding:2px 0 4px;border-bottom:1px solid var(--line-strong)">' +
         '<span></span><span>物品</span><span style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(tripUserNames().a) + '</span><span style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(tripUserNames().b) + '</span><span></span>' +
       '</div>' +
       list.map(function(i){
@@ -3045,12 +3048,12 @@ function tripDetailHTML(){
             (none ? 'color:var(--ink-muted);opacity:.45;' : (i.is_packed ? 'color:var(--ink-muted);' : 'color:var(--ink-secondary);')) +
             (extra || '') + '" title="' + esc(none ? '不用带' : v) + '">' + esc(none ? '—' : v) + '</div>';
         };
-        return '<div style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 24px;align-items:center;gap:5px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
+        return '<div style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 28px;align-items:center;gap:5px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
           '<button class="p-btn" data-act="trip-toggle" data-id="' + i.id + '" style="width:22px;height:22px;min-width:22px;padding:0;border-radius:7px;font-size:11px;' + (i.is_packed ? 'background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)' : '') + '">' + (i.is_packed ? '✓' : '') + '</button>' +
           '<div style="font-size:13px;' + (i.is_packed ? 'font-weight:500;text-decoration:line-through;' : 'font-weight:700;color:var(--ink-primary);') + dim + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(i.name) + '">' + esc(i.name) + '</div>' +
           cell(i.qty_a) +
           cell(i.qty_b) +
-          '<button class="p-btn" data-act="trip-item-edit" data-id="' + i.id + '" style="padding:1px 4px;font-size:10.5px;color:var(--ink-muted)">改</button>' +
+          '<button class="p-btn" data-act="trip-item-edit" data-id="' + i.id + '" style="padding:4px 5px;min-width:28px;font-size:11px;color:var(--ink-muted)">改</button>' +
         '</div>';
       }).join("") +
       '<div style="padding-top:8px"><button class="p-btn" data-act="trip-item-new" data-cat="' + c[0] + '" style="font-size:11.5px;padding:4px 10px">＋ 加一件' + esc(c[1]) + '</button></div>' +
@@ -3061,7 +3064,7 @@ function tripDetailHTML(){
     html += '<div class="page-main-card" style="text-align:center;color:var(--ink-muted);font-size:12.5px;padding:22px 12px">这份清单还是空的，下面加几样吧</div>';
   }
 
-  html += tripItemFormHTML();
+  if (!tripEditingItem) html += tripItemFormHTML();
   html += '<div style="margin-top:10px"><button class="p-btn" data-act="trip-copy-last" data-id="' + t.id + '" style="width:100%;font-size:12px;padding:8px">⬇️ 把上一份清单的物品复制过来</button></div>';
   return html;
 }
@@ -3077,7 +3080,7 @@ function tripItemFormHTML(){
   var qa = ed ? (ed.qty_a || "") : defaultA;
   var qb = ed ? (ed.qty_b || "") : defaultB;
   var inputStyle = 'width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)';
-  return '<div class="page-main-card" style="margin-top:10px">' +
+  return '<div class="page-main-card" id="tripItemForm" style="margin-top:10px' + (ed ? ';border:2px solid var(--dog-a-bd);box-shadow:0 6px 18px rgba(0,0,0,.08)' : '') + '">' +
     '<div style="font-size:12.5px;font-weight:800;color:var(--ink-primary);margin-bottom:9px">' + (ed ? "改这一项" : "加一样东西") + '</div>' +
     '<div style="display:grid;gap:7px">' +
       '<input id="ti_name" placeholder="物品名称，比如 充电器" maxlength="40" value="' + esc(ed ? ed.name : "") + '" style="' + inputStyle + '">' +
@@ -3101,6 +3104,17 @@ function tripItemFormHTML(){
 function tripFormValue(id){
   var el = document.getElementById(id);
   return el ? String(el.value || "").trim() : "";
+}
+
+function tripScrollToItem(name){
+  if (!name) return;
+  var rows = document.querySelectorAll('div[style*="grid-template-columns:22px"]');
+  for (var i = 0; i < rows.length; i++){
+    if (rows[i].textContent.indexOf(name) === 0){
+      rows[i].scrollIntoView({behavior: "smooth", block: "center"});
+      return;
+    }
+  }
 }
 
 function tripAction(action, body){
@@ -3579,13 +3593,23 @@ document.addEventListener("click", function(e){
     tripEditingItem = null;
     tripFormCat = el.getAttribute("data-cat") || "doc";
     render();
-    var nameEl = $("#ti_name");
-    if (nameEl) nameEl.focus();
+    setTimeout(function(){
+      var f = document.getElementById("tripItemForm");
+      if (f) f.scrollIntoView({behavior: "smooth", block: "center"});
+      var nameEl = $("#ti_name");
+      if (nameEl) nameEl.focus({preventScroll: true});
+    }, 40);
   }
   else if (act === "trip-item-edit"){
     var iid = parseInt(el.getAttribute("data-id"), 10);
     tripEditingItem = ((TRIP_DETAIL && TRIP_DETAIL.items) || []).filter(function(i){ return i.id === iid; })[0] || null;
     render();
+    setTimeout(function(){
+      var f = document.getElementById("tripItemForm");
+      if (f) f.scrollIntoView({behavior: "smooth", block: "center"});
+      var nameEl = $("#ti_name");
+      if (nameEl) nameEl.focus({preventScroll: true});
+    }, 40);
   }
   else if (act === "trip-item-cancel"){
     tripEditingItem = null;
@@ -3599,7 +3623,12 @@ document.addEventListener("click", function(e){
     var req;
     if (tripEditingItem){ itemBody.id = tripEditingItem.id; req = tripAction("item_update", itemBody); }
     else { itemBody.trip_id = TRIP_ID; req = tripAction("item_add", itemBody); }
-    req.then(function(){ tripEditingItem = null; return loadTrip(TRIP_ID); })
+    req.then(function(){
+      tripEditingItem = null;
+      return loadTrip(TRIP_ID).then(function(){
+        setTimeout(function(){ tripScrollToItem(tName); }, 60);
+      });
+    })
        .catch(function(e){ toast("❌ " + e.message); });
   }
   else if (act === "trip-item-del"){
