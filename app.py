@@ -268,7 +268,7 @@ def call_llm_api(system_prompt, user_prompt):
         }
     )
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             res_json = json.loads(resp.read().decode("utf-8"))
             choices = res_json.get("choices") or []
             if choices:
@@ -428,6 +428,7 @@ SUMMARY_SYSTEM_PROMPT = (
     "- 挑 2 到 3 个具体的点展开：某篇手账、某条留言、某个反复出现的日程、两个人的空档怎么错开的；其余一笔带过。\n"
     "- 最多写三件事，每件一两句。不要把材料逐条过一遍，也不要写「先翻日程」「其余手账翻过去」这类翻页旁白。\n"
     "- 数字最多留两三个，其余删掉；不要报流水账式的次数统计。\n"
+    "- 不要比较谁更忙、谁排第一；材料里的「出现最多」只作背景，不要改写成结论。\n"
     "- 可以有温度，但不要煽情、不要升华、不要给建议、不要替他们安排下个月。\n"
     "- 称呼直接用名字，不用「宝贝们」「亲爱的」这类泛称。\n"
     "\n"
