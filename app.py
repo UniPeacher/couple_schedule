@@ -198,6 +198,8 @@ CREATE TABLE IF NOT EXISTS trip_items(
   name         TEXT NOT NULL,
   qty          TEXT DEFAULT '',
   note         TEXT DEFAULT '',
+  qty_a        TEXT DEFAULT '',
+  qty_b        TEXT DEFAULT '',
   is_packed    INTEGER NOT NULL DEFAULT 0,
   sort_order   INTEGER DEFAULT 0,
   updated_at   TEXT NOT NULL);
@@ -304,17 +306,25 @@ TRIP_CATEGORIES = [
 ]
 TRIP_CATEGORY_KEYS = [k for k, _ in TRIP_CATEGORIES]
 
-# 新建旅行时可选套用的常用清单（不含备注，备注留给人自己写）
+# 新建旅行时可选套用的常用清单：(分组, 名称, 他带, 她带)，空字符串表示这一方不用带
 TRIP_TEMPLATE = [
-    ("doc", "身份证"), ("doc", "学生证"), ("doc", "银行卡"), ("doc", "现金"),
-    ("toilet", "牙刷牙膏"), ("toilet", "洗发水/护发素"), ("toilet", "沐浴露"),
-    ("toilet", "一次性浴巾"), ("toilet", "洗脸巾"),
-    ("skin", "防晒"), ("skin", "水乳"), ("skin", "粉底液"), ("skin", "口红"), ("skin", "面膜"),
-    ("cloth", "换洗衣物"), ("cloth", "睡衣"), ("cloth", "外套"), ("cloth", "袜子"),
-    ("tech", "充电器"), ("tech", "充电宝"), ("tech", "耳机"), ("tech", "自拍杆"),
-    ("med", "创可贴"), ("med", "常用药"),
-    ("other", "纸巾"), ("other", "雨伞"), ("other", "卫生巾"),
+    ("doc", "身份证", "1", "1"), ("doc", "学生证", "1", "1"),
+    ("doc", "银行卡", "1", "1"), ("doc", "现金", "1", ""),
+    ("toilet", "牙刷牙膏", "1", "1"), ("toilet", "洗发水/护发素", "1", "1"),
+    ("toilet", "沐浴露", "1", "1"), ("toilet", "一次性浴巾", "1", "1"),
+    ("toilet", "洗脸巾", "1", "1"),
+    ("skin", "防晒", "", "1"), ("skin", "水乳", "", "1"),
+    ("skin", "粉底液", "", "1"), ("skin", "口红", "", "1"),
+    ("skin", "面膜", "", "4"),
+    ("cloth", "换洗衣物", "1", "1"), ("cloth", "睡衣", "1", "1"),
+    ("cloth", "外套", "1", "1"), ("cloth", "袜子", "1", "1"),
+    ("tech", "充电器", "1", "1"), ("tech", "充电宝", "1", "1"),
+    ("tech", "耳机", "1", "1"), ("tech", "自拍杆", "1", ""),
+    ("med", "创可贴", "1", ""), ("med", "常用药", "1", ""),
+    ("other", "纸巾", "1", ""), ("other", "雨伞", "1", ""),
+    ("other", "卫生巾", "", "1"),
 ]
+TRIP_TEMPLATE_BY_NAME = {name: (a, b) for _, name, a, b in TRIP_TEMPLATE}
 
 
 def _trip_status(start, end, today):
@@ -334,14 +344,14 @@ def _trip_item_order(trip_id, category):
     return row["n"] if row else 1
 
 
-def _insert_trip_item(trip_id, category, name, qty="1", note=""):
+def _insert_trip_item(trip_id, category, name, qty_a="1", qty_b="1"):
     if category not in TRIP_CATEGORY_KEYS:
         category = "other"
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     CONN.execute(
-        "INSERT INTO trip_items(trip_id, category, name, qty, note, is_packed, sort_order, updated_at) "
-        "VALUES(?,?,?,?,?,0,?,?)",
-        (trip_id, category, name, qty, note, _trip_item_order(trip_id, category), now))
+        "INSERT INTO trip_items(trip_id, category, name, qty, note, qty_a, qty_b, is_packed, sort_order, updated_at) "
+        "VALUES(?,?,?,'','',?,?,0,?,?)",
+        (trip_id, category, name, qty_a, qty_b, _trip_item_order(trip_id, category), now))
 
 
 def trips_overview():
@@ -919,6 +929,19 @@ def init_db():
             CONN.execute("ALTER TABLE diary_photos ADD COLUMN live_video TEXT DEFAULT ''")
         except Exception:
             pass
+        try:
+            # 旅行清单：每件物品分成"他带 / 她带"两列；老数据按模板补默认值
+            cols = {r["name"] for r in CONN.execute("PRAGMA table_info(trip_items)").fetchall()}
+            if "qty_a" not in cols:
+                CONN.execute("ALTER TABLE trip_items ADD COLUMN qty_a TEXT DEFAULT ''")
+                CONN.execute("ALTER TABLE trip_items ADD COLUMN qty_b TEXT DEFAULT ''")
+            for r in CONN.execute("SELECT id,name,qty,qty_a,qty_b FROM trip_items").fetchall():
+                if (r["qty_a"] or r["qty_b"]) or not (r["qty"] or "").strip():
+                    continue
+                qa, qb = TRIP_TEMPLATE_BY_NAME.get(r["name"], (r["qty"], r["qty"]))
+                CONN.execute("UPDATE trip_items SET qty_a=?, qty_b=? WHERE id=?", (qa, qb, r["id"]))
+        except Exception as e:
+            sys.stderr.write(f"[init_db] trip_items migrate warn: {e}\n")
         n_user = CONN.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
         if n_user == 0:
             pw_a = secrets.token_urlsafe(6)
@@ -1757,8 +1780,8 @@ class Handler(BaseHTTPRequestHandler):
                             (title or dest, dest, start, end, uid, now))
                         tid = cur.lastrowid
                         if d.get("use_template", True) not in (False, 0, "0", "false"):
-                            for cat, name in TRIP_TEMPLATE:
-                                _insert_trip_item(tid, cat, name)
+                            for cat, name, qa, qb in TRIP_TEMPLATE:
+                                _insert_trip_item(tid, cat, name, qa, qb)
                     users = get_users()
                     other_uid = "b" if uid == "a" else "a"
                     push_system_notice(
@@ -1800,7 +1823,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "SELECT 1 FROM trip_items WHERE trip_id=? AND category=? AND name=?",
                                     (tid, it["category"], it["name"])).fetchone():
                                 continue
-                            _insert_trip_item(tid, it["category"], it["name"], it["qty"], it["note"])
+                            _insert_trip_item(tid, it["category"], it["name"],
+                                              it["qty_a"] or "", it["qty_b"] or "")
                             copied += 1
                     return self.send_json({"ok": True, "copied": copied})
 
@@ -1815,12 +1839,14 @@ class Handler(BaseHTTPRequestHandler):
                     category = str(d.get("category") or "other").strip()
                     if category not in TRIP_CATEGORY_KEYS:
                         category = "other"
-                    qty = str(d.get("qty") or "").strip()[:10]
-                    note = str(d.get("note") or "").strip()[:60]
+                    qty_a = str(d.get("qty_a") or "").strip()[:10]
+                    qty_b = str(d.get("qty_b") or "").strip()[:10]
+                    if "qty" in d and not qty_a and not qty_b:   # 兼容旧字段
+                        qty_a = qty_b = str(d.get("qty") or "").strip()[:10]
                     with LOCK:
                         if not CONN.execute("SELECT id FROM trips WHERE id=?", (tid,)).fetchone():
                             return self.send_json({"error": "旅行不存在"}, 404)
-                        _insert_trip_item(tid, category, name, qty, note)
+                        _insert_trip_item(tid, category, name, qty_a, qty_b)
                     return self.send_json({"ok": True})
 
                 if action in ("item_update", "item_toggle", "item_delete"):
@@ -1842,11 +1868,11 @@ class Handler(BaseHTTPRequestHandler):
                             category = str(d.get("category") or item["category"]).strip()
                             if category not in TRIP_CATEGORY_KEYS:
                                 category = item["category"]
-                            qty = str(d.get("qty") if "qty" in d else item["qty"]).strip()[:10]
-                            note = str(d.get("note") if "note" in d else item["note"]).strip()[:60]
+                            qty_a = str(d.get("qty_a") if "qty_a" in d else item["qty_a"] or "").strip()[:10]
+                            qty_b = str(d.get("qty_b") if "qty_b" in d else item["qty_b"] or "").strip()[:10]
                             CONN.execute(
-                                "UPDATE trip_items SET name=?, category=?, qty=?, note=?, updated_at=? WHERE id=?",
-                                (name, category, qty, note, now, iid))
+                                "UPDATE trip_items SET name=?, category=?, qty_a=?, qty_b=?, updated_at=? WHERE id=?",
+                                (name, category, qty_a, qty_b, now, iid))
                     return self.send_json({"ok": True})
 
                 return self.send_json({"error": "未知操作"}, 400)

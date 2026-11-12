@@ -2995,6 +2995,14 @@ function tripListHTML(){
   return html;
 }
 
+function tripUserNames(){
+  var out = {a: "小金毛", b: "小白狗"};
+  ((META && META.users) || []).forEach(function(u){
+    if (u && (u.uid === "a" || u.uid === "b") && u.name) out[u.uid] = u.name;
+  });
+  return out;
+}
+
 function tripDetailHTML(){
   var d = TRIP_DETAIL, t = d.trip, items = d.items || [];
   var cats = d.categories || [];
@@ -3026,16 +3034,22 @@ function tripDetailHTML(){
         '<div style="font-size:13px;font-weight:800;color:var(--ink-primary)">' + esc(c[1]) + '</div>' +
         '<div style="font-size:11px;color:var(--ink-muted)">' + packed + '/' + list.length + '</div>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:22px minmax(64px,1.05fr) 44px minmax(52px,1fr) 24px;gap:6px;font-size:10px;color:var(--ink-muted);padding:2px 0 4px;border-bottom:1px solid var(--line-strong)">' +
-        '<span></span><span>物品</span><span style="text-align:center">数量</span><span>备注</span><span></span>' +
+      '<div style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 24px;gap:5px;font-size:9.5px;color:var(--ink-muted);padding:2px 0 4px;border-bottom:1px solid var(--line-strong)">' +
+        '<span></span><span>物品</span><span style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(tripUserNames().a) + '</span><span style="text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(tripUserNames().b) + '</span><span></span>' +
       '</div>' +
       list.map(function(i){
         var dim = i.is_packed ? 'color:var(--ink-muted);' : '';
-        return '<div style="display:grid;grid-template-columns:22px minmax(64px,1.05fr) 44px minmax(52px,1fr) 24px;align-items:center;gap:6px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
+        var cell = function(v, extra){
+          var none = !String(v || "").trim();
+          return '<div style="font-size:11.5px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' +
+            (none ? 'color:var(--ink-muted);opacity:.45;' : (i.is_packed ? 'color:var(--ink-muted);' : 'color:var(--ink-secondary);')) +
+            (extra || '') + '" title="' + esc(none ? '不用带' : v) + '">' + esc(none ? '—' : v) + '</div>';
+        };
+        return '<div style="display:grid;grid-template-columns:22px minmax(52px,1fr) 42px 42px 24px;align-items:center;gap:5px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
           '<button class="p-btn" data-act="trip-toggle" data-id="' + i.id + '" style="width:22px;height:22px;min-width:22px;padding:0;border-radius:7px;font-size:11px;' + (i.is_packed ? 'background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)' : '') + '">' + (i.is_packed ? '✓' : '') + '</button>' +
           '<div style="font-size:13px;' + (i.is_packed ? 'font-weight:500;text-decoration:line-through;' : 'font-weight:700;color:var(--ink-primary);') + dim + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(i.name) + '">' + esc(i.name) + '</div>' +
-          '<div style="font-size:11.5px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + (i.is_packed ? 'color:var(--ink-muted);' : 'color:var(--ink-secondary);') + '" title="' + esc(i.qty) + '">' + esc(i.qty || '—') + '</div>' +
-          '<div style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-muted)" title="' + esc(i.note) + '">' + esc(i.note || '') + '</div>' +
+          cell(i.qty_a) +
+          cell(i.qty_b) +
           '<button class="p-btn" data-act="trip-item-edit" data-id="' + i.id + '" style="padding:1px 4px;font-size:10.5px;color:var(--ink-muted)">改</button>' +
         '</div>';
       }).join("") +
@@ -3056,17 +3070,25 @@ function tripItemFormHTML(){
   var ed = tripEditingItem;
   var cats = (TRIP_DETAIL && TRIP_DETAIL.categories) || [];
   var cat = ed ? ed.category : (tripFormCat || "doc");
+  var nm = tripUserNames();
+  var meIsB = ME && ME.uid === "b";
+  var defaultA = meIsB ? "" : "1";
+  var defaultB = meIsB ? "1" : "";
+  var qa = ed ? (ed.qty_a || "") : defaultA;
+  var qb = ed ? (ed.qty_b || "") : defaultB;
+  var inputStyle = 'width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)';
   return '<div class="page-main-card" style="margin-top:10px">' +
     '<div style="font-size:12.5px;font-weight:800;color:var(--ink-primary);margin-bottom:9px">' + (ed ? "改这一项" : "加一样东西") + '</div>' +
     '<div style="display:grid;gap:7px">' +
-      '<div style="display:grid;grid-template-columns:1fr 84px;gap:7px">' +
-        '<input id="ti_name" placeholder="物品名称，比如 充电器" maxlength="40" value="' + esc(ed ? ed.name : "") + '" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)">' +
-        '<input id="ti_qty" placeholder="数量" maxlength="10" value="' + esc(ed ? ed.qty : "1") + '" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)">' +
-      '</div>' +
+      '<input id="ti_name" placeholder="物品名称，比如 充电器" maxlength="40" value="' + esc(ed ? ed.name : "") + '" style="' + inputStyle + '">' +
       '<select id="ti_cat" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
         cats.map(function(c){ return '<option value="' + c[0] + '"' + (c[0] === cat ? " selected" : "") + '>' + esc(c[1]) + '</option>'; }).join("") +
       '</select>' +
-      '<input id="ti_note" placeholder="备注，比如 用你的 / 刷我的卡" maxlength="60" value="' + esc(ed ? ed.note : "") + '" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">' +
+        '<div><div style="font-size:10px;color:var(--ink-muted);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(nm.a) + ' 带</div><input id="ti_qa" maxlength="10" value="' + esc(qa) + '" placeholder="1" style="' + inputStyle + '"></div>' +
+        '<div><div style="font-size:10px;color:var(--ink-muted);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(nm.b) + ' 带</div><input id="ti_qb" maxlength="10" value="' + esc(qb) + '" placeholder="1" style="' + inputStyle + '"></div>' +
+      '</div>' +
+      '<div style="font-size:10.5px;color:var(--ink-muted);line-height:1.6">留空 = 这一方不用带；也可以写「没有」「用你的」「刷我的卡」</div>' +
       '<div style="display:flex;gap:7px">' +
         '<button class="p-btn pri" data-act="trip-item-save" style="flex:1;font-size:12px;padding:6px">' + (ed ? "保存" : "加进清单") + '</button>' +
         (ed ? '<button class="p-btn" data-act="trip-item-del" data-id="' + ed.id + '" style="font-size:12px;padding:6px 10px;color:#c0564f">删除</button>' : '') +
@@ -3572,7 +3594,8 @@ document.addEventListener("click", function(e){
   else if (act === "trip-item-save"){
     var tName = tripFormValue("ti_name");
     if (!tName){ toast("先写上物品名称"); return; }
-    var itemBody = {name: tName, qty: tripFormValue("ti_qty"), note: tripFormValue("ti_note"), category: tripFormValue("ti_cat")};
+    var itemBody = {name: tName, category: tripFormValue("ti_cat"),
+                    qty_a: tripFormValue("ti_qa"), qty_b: tripFormValue("ti_qb")};
     var req;
     if (tripEditingItem){ itemBody.id = tripEditingItem.id; req = tripAction("item_update", itemBody); }
     else { itemBody.trip_id = TRIP_ID; req = tripAction("item_add", itemBody); }
