@@ -89,6 +89,11 @@ class TripHttpTests(unittest.TestCase):
         cats = [c[0] for c in d["categories"]]
         self.assertEqual(cats, app.TRIP_CATEGORY_KEYS)
         self.assertTrue(all(i["category"] in cats for i in d["items"]))
+        by_name = {i["name"]: i for i in d["items"]}
+        # 模板里只有一方带的物品：另一方留空
+        self.assertEqual((by_name["现金"]["qty_a"], by_name["现金"]["qty_b"]), ("1", ""))
+        self.assertEqual((by_name["面膜"]["qty_a"], by_name["面膜"]["qty_b"]), ("", "4"))
+        self.assertEqual((by_name["身份证"]["qty_a"], by_name["身份证"]["qty_b"]), ("1", "1"))
 
     def test_create_without_template_is_empty(self):
         tid = self.create(template=False)
@@ -97,9 +102,9 @@ class TripHttpTests(unittest.TestCase):
     def test_item_add_update_toggle_delete(self):
         tid = self.create(template=False)
         self.assertEqual(self.post(dict(action="item_add", trip_id=tid, category="tech",
-                                        name="充电器", qty="2", note="用你的"))[0], 200)
+                                        name="充电器", qty_a="1", qty_b=""))[0], 200)
         item = self.detail(tid)["items"][0]
-        self.assertEqual((item["name"], item["qty"], item["note"]), ("充电器", "2", "用你的"))
+        self.assertEqual((item["name"], item["qty_a"], item["qty_b"]), ("充电器", "1", ""))
 
         self.assertEqual(self.post(dict(action="item_toggle", id=item["id"]))[0], 200)
         self.assertEqual(self.detail(tid)["stats"]["packed"], 1)
@@ -107,9 +112,9 @@ class TripHttpTests(unittest.TestCase):
         self.assertEqual(self.detail(tid)["stats"]["packed"], 0)
 
         self.assertEqual(self.post(dict(action="item_update", id=item["id"], name="充电宝",
-                                        qty="1", note="刷我的卡", category="tech"))[0], 200)
+                                        qty_a="", qty_b="刷我的卡", category="tech"))[0], 200)
         item = self.detail(tid)["items"][0]
-        self.assertEqual((item["name"], item["note"]), ("充电宝", "刷我的卡"))
+        self.assertEqual((item["name"], item["qty_a"], item["qty_b"]), ("充电宝", "", "刷我的卡"))
 
         self.assertEqual(self.post(dict(action="item_delete", id=item["id"]))[0], 200)
         self.assertEqual(self.detail(tid)["stats"]["total"], 0)
