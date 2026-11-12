@@ -3022,20 +3022,21 @@ function tripDetailHTML(){
     if (!list.length) return;
     var packed = list.filter(function(i){ return i.is_packed; }).length;
     html += '<div class="page-main-card" style="margin-top:10px">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">' +
         '<div style="font-size:13px;font-weight:800;color:var(--ink-primary)">' + esc(c[1]) + '</div>' +
         '<div style="font-size:11px;color:var(--ink-muted)">' + packed + '/' + list.length + '</div>' +
       '</div>' +
+      '<div style="display:grid;grid-template-columns:22px minmax(64px,1.05fr) 44px minmax(52px,1fr) 24px;gap:6px;font-size:10px;color:var(--ink-muted);padding:2px 0 4px;border-bottom:1px solid var(--line-strong)">' +
+        '<span></span><span>物品</span><span style="text-align:center">数量</span><span>备注</span><span></span>' +
+      '</div>' +
       list.map(function(i){
-        return '<div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
-          '<button class="p-btn" data-act="trip-toggle" data-id="' + i.id + '" style="width:24px;height:24px;min-width:24px;padding:0;border-radius:8px;font-size:12px;' + (i.is_packed ? 'background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)' : '') + '">' + (i.is_packed ? '✓' : '') + '</button>' +
-          '<div style="flex:1;min-width:0">' +
-            '<div style="font-size:13.5px;' + (i.is_packed ? 'color:var(--ink-muted);font-weight:500;text-decoration:line-through' : 'color:var(--ink-primary);font-weight:700') + '">' +
-              esc(i.name) + (i.qty ? ' <span style="font-size:11.5px;font-weight:600;color:var(--ink-muted)">×' + esc(i.qty) + '</span>' : '') +
-            '</div>' +
-            (i.note ? '<div style="font-size:11.5px;color:var(--ink-muted);margin-top:1px;word-break:break-all">' + esc(i.note) + '</div>' : '') +
-          '</div>' +
-          '<button class="p-btn" data-act="trip-item-edit" data-id="' + i.id + '" style="padding:2px 7px;font-size:11px;color:var(--ink-muted)">改</button>' +
+        var dim = i.is_packed ? 'color:var(--ink-muted);' : '';
+        return '<div style="display:grid;grid-template-columns:22px minmax(64px,1.05fr) 44px minmax(52px,1fr) 24px;align-items:center;gap:6px;padding:7px 0;border-bottom:1px dashed var(--line-strong)">' +
+          '<button class="p-btn" data-act="trip-toggle" data-id="' + i.id + '" style="width:22px;height:22px;min-width:22px;padding:0;border-radius:7px;font-size:11px;' + (i.is_packed ? 'background:var(--dog-a-bg);border-color:var(--dog-a-bd);color:var(--dog-a-text)' : '') + '">' + (i.is_packed ? '✓' : '') + '</button>' +
+          '<div style="font-size:13px;' + (i.is_packed ? 'font-weight:500;text-decoration:line-through;' : 'font-weight:700;color:var(--ink-primary);') + dim + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(i.name) + '">' + esc(i.name) + '</div>' +
+          '<div style="font-size:11.5px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' + (i.is_packed ? 'color:var(--ink-muted);' : 'color:var(--ink-secondary);') + '" title="' + esc(i.qty) + '">' + esc(i.qty || '—') + '</div>' +
+          '<div style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-muted)" title="' + esc(i.note) + '">' + esc(i.note || '') + '</div>' +
+          '<button class="p-btn" data-act="trip-item-edit" data-id="' + i.id + '" style="padding:1px 4px;font-size:10.5px;color:var(--ink-muted)">改</button>' +
         '</div>';
       }).join("") +
       '<div style="padding-top:8px"><button class="p-btn" data-act="trip-item-new" data-cat="' + c[0] + '" style="font-size:11.5px;padding:4px 10px">＋ 加一件' + esc(c[1]) + '</button></div>' +
