@@ -255,7 +255,7 @@ def call_llm_api(system_prompt, user_prompt):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "temperature": 0.8,
+        "temperature": 0.7,
         "max_tokens": 800
     }
     data = json.dumps(payload).encode("utf-8")
@@ -278,222 +278,326 @@ def call_llm_api(system_prompt, user_prompt):
     return None
 
 
-def generate_period_summary(summary_type="day", force_refresh=False):
-    today = date.today()
+# ---------------------------------------------------------------- 时光简报（仅月度）
+
+def _month_bounds(ym):
+    """'2026-10' -> (2026-10-01, 2026-10-31)"""
+    y, m = int(ym[:4]), int(ym[5:7])
+    first = date(y, m, 1)
+    nxt = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+    return first, nxt - timedelta(days=1)
+
+
+def _shift_month(ym, delta):
+    y, m = int(ym[:4]), int(ym[5:7])
+    idx = y * 12 + (m - 1) + delta
+    return "%04d-%02d" % (idx // 12, idx % 12 + 1)
+
+
+def valid_month(ym):
+    return bool(re.match(r"^\d{4}-(0[1-9]|1[0-2])$", ym or ""))
+
+
+def default_summary_month(now=None):
+    """月底当天看当月，其余时间看最近一个已经过完的月份。"""
+    today = now or date.today()
+    month_end = _month_bounds(today.strftime("%Y-%m"))[1]
+    anchor = today if today == month_end else today.replace(day=1) - timedelta(days=1)
+    return anchor.strftime("%Y-%m")
+
+
+def _clip(text, limit):
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
+def month_facts(ym):
+    """把这个月的真实材料整理成一份朴素的事实清单，交给模型时不做任何文学加工。"""
+    first, last = _month_bounds(ym)
+    first_iso, last_iso = first.isoformat(), last.isoformat()
     users = get_users()
-    name_a = users["a"]["name"]
-    name_b = users["b"]["name"]
+    names = {"a": users["a"]["name"], "b": users["b"]["name"]}
 
-    # 缓存键：按日/周/月为单位
-    if summary_type == "day":
-        cache_key = f"day_{today.isoformat()}"
-    elif summary_type == "week":
-        mon = monday_of(today)
-        cache_key = f"week_{mon.isoformat()}"
+    days, seen, cursor = [], set(), first
+    while cursor <= last:
+        for day in week_payload(cursor.isoformat())["days"]:
+            d_iso = day["date"]
+            if d_iso in seen or not (first_iso <= d_iso <= last_iso):
+                continue
+            seen.add(d_iso)
+            days.append(day)
+        cursor += timedelta(days=7)
+    days.sort(key=lambda d: d["date"])
+
+    free_minutes, free_days, conflicts = 0, 0, 0
+    longest_free = {"minutes": 0, "date": "", "start": "", "end": ""}
+    event_counts = {"a": 0, "b": 0}
+    title_counts = {"a": {}, "b": {}}
+    busiest_day, busiest_total = "", 0
+    for day in days:
+        mins = sum(e - s for s, e in day["free"])
+        free_minutes += mins
+        if mins >= 60:
+            free_days += 1
+        for s, e in day["free"]:
+            if e - s > longest_free["minutes"]:
+                longest_free = {"minutes": e - s, "date": day["date"], "start": m2t(s), "end": m2t(e)}
+        conflicts += len(day["conflicts"])
+        day_total = 0
+        for uid in ("a", "b"):
+            evs = day["users"][uid]["events"]
+            event_counts[uid] += len(evs)
+            day_total += len(evs)
+            for ev in evs:
+                title_counts[uid][ev["title"]] = title_counts[uid].get(ev["title"], 0) + 1
+        if day_total > busiest_total:
+            busiest_day, busiest_total = day["date"], day_total
+
+    with LOCK:
+        diaries = [dict(r) for r in CONN.execute(
+            "SELECT * FROM diaries WHERE date >= ? AND date <= ? ORDER BY date, id",
+            (first_iso, last_iso)).fetchall()]
+        photo_row = CONN.execute(
+            "SELECT COUNT(*) c FROM diary_photos dp JOIN diaries d ON d.id=dp.diary_id "
+            "WHERE d.date >= ? AND d.date <= ?", (first_iso, last_iso)).fetchone()
+        comments = [dict(r) for r in CONN.execute(
+            "SELECT c.text, c.created, u.name FROM comments c LEFT JOIN users u ON u.uid=c.uid "
+            "WHERE c.created >= ? AND c.created <= ? ORDER BY c.id",
+            (first_iso + " 00:00", last_iso + " 23:59")).fetchall()]
+        try:
+            wishes = [r["title"] for r in CONN.execute(
+                "SELECT title FROM wishes WHERE is_done=1 AND done_at LIKE ? ORDER BY done_at",
+                (ym + "%",)).fetchall()]
+        except Exception:
+            wishes = []
+
+    top_titles = {}
+    for uid in ("a", "b"):
+        top_titles[uid] = sorted(title_counts[uid].items(), key=lambda kv: (-kv[1], kv[0]))[:4]
+
+    # 空档几乎占满 08:00-22:00 观察窗时，说明那天两个人都没安排，别写成"8 点到 22 点"
+    try:
+        ws, we = t2m(get_setting("window_start", "08:00")), t2m(get_setting("window_end", "22:00"))
+        longest_free["full_day"] = longest_free["minutes"] >= max(0, (we - ws) - 60)
+    except Exception:
+        longest_free["full_day"] = False
+
+    anniversaries = []
+    try:
+        for item in get_anniversaries():
+            if (item.get("date") or "")[5:7] == ym[5:7]:
+                anniversaries.append("%s（%s）" % (item.get("title", ""), item.get("date", "")))
+    except Exception:
+        pass
+
+    for d in diaries:
+        d["author_name"] = names.get(d.get("author_uid"), "")
+
+    return {
+        "ym": ym,
+        "first": first_iso,
+        "last": last_iso,
+        "month_label": "%d年%d月" % (first.year, first.month),
+        "names": names,
+        "days_count": len(days),
+        "free_hours": round(free_minutes / 60, 1),
+        "free_days": free_days,
+        "longest_free": longest_free,
+        "conflicts": conflicts,
+        "event_counts": event_counts,
+        "top_titles": top_titles,
+        "busiest_day": busiest_day,
+        "busiest_total": busiest_total,
+        "diaries": diaries,
+        "n_photos": photo_row["c"] if photo_row else 0,
+        "comments": comments,
+        "wishes": wishes,
+        "anniversaries": anniversaries,
+    }
+
+
+SUMMARY_SYSTEM_PROMPT = (
+    "你在帮一对情侣整理他们这个月的共同记录。材料全部来自他们自己填的日程表、手账和留言，不是你的想象。\n"
+    "任务：写一篇这个月的回顾，读起来像其中一个人翻完本子后随手写下的，而不是 AI、客服或者情感博主的文案。\n"
+    "\n"
+    "写法：\n"
+    "- 只用材料里出现过的东西。可以顺着材料想象当时的情景，但不要编造活动、地点、天气、对话或数字；拿不准就略过。\n"
+    "- 用具体的名词和动作，少用形容词。写「周三晚上九点还在实验楼」比写「你总是那么努力」好。\n"
+    "- 挑 2 到 3 个具体的点展开：某篇手账、某条留言、某个反复出现的日程、两个人的空档怎么错开的；其余一笔带过。\n"
+    "- 可以有温度，但不要煽情、不要升华、不要给建议、不要替他们安排下个月。\n"
+    "- 称呼直接用名字，不用「宝贝们」「亲爱的」这类泛称。\n"
+    "\n"
+    "不要出现：时光荏苒、岁月、点点滴滴、闪闪发光、小确幸、双向奔赴、未来可期、继续加油、愿你们、"
+    "陪伴是最长情的告白；也不要「总的来说」「值得一提的是」「这份记录」「数据表明」。\n"
+    "不要排比堆叠，不要「不是……而是……」，不要每段都放表情符号，不要用祝福或金句收尾。\n"
+    "\n"
+    "格式：3 段左右，段间空一行，300~450 字。不要标题、列表、加粗，表情符号最多两个。"
+)
+
+
+def build_month_user_prompt(facts):
+    a, b = facts["names"]["a"], facts["names"]["b"]
+    lines = ["【%s 的原始记录】" % facts["month_label"], "", "两个人：%s、%s" % (a, b), "", "日程"]
+    lines.append("- 两人课表里同时空出来的时间合计 %s 小时，分布在 %d 天。" %
+                 (facts["free_hours"], facts["free_days"]))
+    lf = facts["longest_free"]
+    if lf["minutes"] >= 60:
+        if lf.get("full_day"):
+            lines.append("- 最长的一段是 %s，那天两个人整天都没有安排。" % lf["date"][5:])
+        else:
+            lines.append("- 其中最长的一段是 %s %s–%s，%s 小时。" %
+                         (lf["date"][5:], lf["start"], lf["end"], round(lf["minutes"] / 60, 1)))
+    for uid, name in (("a", a), ("b", b)):
+        tops = "、".join("%s×%d" % (t, c) for t, c in facts["top_titles"][uid]) or "无"
+        lines.append("- %s：共 %d 次日程，出现最多的是 %s。" % (name, facts["event_counts"][uid], tops))
+    if facts["busiest_day"] and facts["busiest_total"] >= 4:
+        lines.append("- 最忙的一天是 %s，两个人加起来 %d 件事。" %
+                     (facts["busiest_day"], facts["busiest_total"]))
+    if facts["conflicts"]:
+        lines.append("- 有 %d 次两人的日程时间撞在一起。" % facts["conflicts"])
+
+    lines += ["", "手账（%d 篇，照片 %d 张）" % (len(facts["diaries"]), facts["n_photos"])]
+    if facts["diaries"]:
+        for d in facts["diaries"][:12]:
+            bits = ["%s 《%s》" % (d["date"][5:], d["title"])]
+            if d.get("location"):
+                bits.append("地点：" + d["location"])
+            if d.get("mood"):
+                bits.append("心情：" + d["mood"])
+            if d.get("content"):
+                bits.append("正文：" + _clip(d["content"], 50))
+            lines.append("- " + "｜".join(bits))
+        if len(facts["diaries"]) > 12:
+            lines.append("- 还有 %d 篇没列出来。" % (len(facts["diaries"]) - 12))
     else:
-        cache_key = f"month_{today.strftime('%Y-%m')}"
+        lines.append("- 这个月没有写手账。")
 
+    lines += ["", "留言（%d 条）" % len(facts["comments"])]
+    if facts["comments"]:
+        for c in facts["comments"][:8]:
+            lines.append("- %s：%s" % (c.get("name") or "对方", _clip(c.get("text"), 60)))
+    else:
+        lines.append("- 这个月没有留言。")
+
+    lines += ["", "其他"]
+    lines.append("- 完成的心愿：%s" % ("、".join(facts["wishes"]) if facts["wishes"] else "无"))
+    lines.append("- 这个月的纪念日：%s" % ("、".join(facts["anniversaries"]) if facts["anniversaries"] else "无"))
+    lines += ["", "请按前面的要求写这个月的回顾。只写上面出现过的内容。"]
+    return "\n".join(lines)
+
+
+def build_month_fallback(facts):
+    """没有配置模型时的兜底文案：只陈述材料，不硬写好听话术。"""
+    a, b = facts["names"]["a"], facts["names"]["b"]
+    paras = []
+    head = "%s过完了。" % facts["month_label"]
+    if facts["diaries"]:
+        titles = "、".join("《%s》" % d["title"] for d in facts["diaries"][:4])
+        head += "记了 %d 篇手账，%s%s。" % (len(facts["diaries"]), titles,
+                                       "等" if len(facts["diaries"]) > 4 else "")
+    else:
+        head += "这个月没有新手账。"
+    paras.append(head)
+
+    agenda = "%s的日程有 %d 次，%s有 %d 次。" % (
+        a, facts["event_counts"]["a"], b, facts["event_counts"]["b"])
+    if facts["free_hours"] > 0:
+        agenda += "课表上两个人同时空着的时间一共 %s 小时，分成 %d 天。" % (
+            facts["free_hours"], facts["free_days"])
+        lf = facts["longest_free"]
+        if lf["minutes"] >= 120:
+            if lf.get("full_day"):
+                agenda += "%s 那天两个人都没安排。" % lf["date"][5:]
+            else:
+                agenda += "最长的一段在 %s，%s 到 %s。" % (lf["date"][5:], lf["start"], lf["end"])
+    else:
+        agenda += "这个月两个人的日程几乎没有错开，没有整块的共同空档。"
+    if facts["busiest_day"] and facts["busiest_total"] >= 4:
+        agenda += "最挤的是 %s，两个人那天加起来 %d 件事。" % (
+            facts["busiest_day"][5:], facts["busiest_total"])
+    paras.append(agenda)
+
+    tail = []
+    if facts["n_photos"]:
+        tail.append("留下 %d 张照片" % facts["n_photos"])
+    if facts["comments"]:
+        tail.append("互相留了 %d 条留言" % len(facts["comments"]))
+    if facts["wishes"]:
+        tail.append("完成心愿：" + "、".join(facts["wishes"][:3]))
+    paras.append(("，".join(tail) + "。") if tail else "这个月没有留下照片和留言。")
+    return "\n\n".join(paras)
+
+
+def _month_nav(ym):
+    current = date.today().strftime("%Y-%m")
+    with LOCK:
+        diary_row = CONN.execute("SELECT MIN(date) AS m FROM diaries").fetchone()
+        comment_row = CONN.execute("SELECT MIN(created) AS m FROM comments").fetchone()
+    starts = [r["m"][:7] for r in (diary_row, comment_row) if r and r["m"]]
+    floor = _shift_month(current, -24)
+    earliest = min(starts) if starts else floor
+    if earliest < floor:
+        earliest = floor
+    prev_ym, next_ym = _shift_month(ym, -1), _shift_month(ym, 1)
+    return {
+        "month": ym,
+        "month_label": "%d年%d月" % (int(ym[:4]), int(ym[5:7])),
+        "is_current": ym == current,
+        "has_prev": prev_ym >= earliest and prev_ym < current,
+        "has_next": next_ym <= current,
+    }
+
+
+def generate_month_summary(ym=None, force_refresh=False):
+    ym = ym or default_summary_month()
+    cache_key = "month_%s" % ym
+
+    res = None
     if not force_refresh:
         with LOCK:
             cached = CONN.execute("SELECT summary_json FROM summary_cache WHERE cache_key=?", (cache_key,)).fetchone()
-            if cached:
-                try:
-                    return json.loads(cached["summary_json"])
-                except Exception:
-                    pass
+        if cached:
+            try:
+                res = json.loads(cached["summary_json"])
+            except Exception:
+                res = None
 
-    system_prompt = (
-        "你是一对恩爱甜蜜的年轻情侣专属的AI爱情管家，你的角色是'线条小狗'（小金毛与小白狗的化身）。\n"
-        "你的语气极其温暖、俏皮、可爱、治愈，喜欢用小狗的口吻（如摇尾巴、汪汪、贴贴、小狗爪印、小零食）表达细腻的关心。\n"
-        "请根据下面提供的今日/本周/本月情侣两人的真实生活轨迹数据，写一篇富有陪伴感、深情又生动的时光小信或总结。\n"
-        "要求：\n"
-        "1. 结合两人各自的具体日程与打卡，夸夸各自的认真努力；\n"
-        "2. 抓住两人的空闲贴贴时光、手账细节或留言小纸条，写出专属于他们的小温馨；\n"
-        "3. 分段自然（2~3段），适度搭配小狗和爱心 Emoji，字数在 200~320 字左右，不要写得像机械公文，要像手写的温度情书！"
-    )
-
-    if summary_type == "day":
-        target_date = today
-        dt_str = target_date.isoformat()
-        w_payload = week_payload(dt_str)
-        day_info = None
-        for d in w_payload["days"]:
-            if d["date"] == dt_str:
-                day_info = d
-                break
-        
-        free_minutes = sum((e - s) for s, e in (day_info["free"] if day_info else []))
-        free_hours = round(free_minutes / 60, 1)
-        evs_a = day_info["users"]["a"]["events"] if day_info else []
-        evs_b = day_info["users"]["b"]["events"] if day_info else []
-
-        with LOCK:
-            diaries = CONN.execute("SELECT * FROM diaries WHERE date=?", (dt_str,)).fetchall()
-            comments = CONN.execute(
-                "SELECT c.*, u.name FROM comments c LEFT JOIN users u ON u.uid=c.uid "
-                "WHERE c.created LIKE ? ORDER BY c.id", (f"{dt_str}%",)
-            ).fetchall()
-
-        title = f"🌅 俩汪今日晚安总结 · {dt_str}"
+    if res is None:
+        facts = month_facts(ym)
         stats = [
-            {"k": "共同空闲时长", "v": f"{free_hours}h"},
-            {"k": "今日日程总数", "v": f"{len(evs_a) + len(evs_b)}项"},
-            {"k": "手账足迹", "v": f"{len(diaries)}篇"},
-            {"k": "贴心留言", "v": f"{len(comments)}条"},
+            {"k": "共同空闲", "v": "%sh" % facts["free_hours"]},
+            {"k": "两人日程", "v": "%d项" % (facts["event_counts"]["a"] + facts["event_counts"]["b"])},
+            {"k": "手账 / 照片", "v": "%d篇 / %d张" % (len(facts["diaries"]), facts["n_photos"])},
+            {"k": "留言", "v": "%d条" % len(facts["comments"])},
         ]
+        ai_content = call_llm_api(SUMMARY_SYSTEM_PROMPT, build_month_user_prompt(facts))
+        res = {
+            "title": "月度胶囊 · %s" % facts["month_label"],
+            "content": ai_content or build_month_fallback(facts),
+            "stats": stats,
+            "is_ai": bool(ai_content),
+        }
+        try:
+            with LOCK:
+                CONN.execute(
+                    "INSERT INTO summary_cache(cache_key, summary_json, updated_at) VALUES(?,?,?) "
+                    "ON CONFLICT(cache_key) DO UPDATE SET summary_json=excluded.summary_json, updated_at=excluded.updated_at",
+                    (cache_key, json.dumps(res, ensure_ascii=False),
+                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                )
+        except Exception as e:
+            sys.stderr.write("[Cache save error]: %s\n" % e)
 
-        # 尝试调用 LLM 生成深度情感小信
-        user_prompt = (
-            f"【今日数据档案 ({dt_str})】\n"
-            f"- 伴侣：{name_a}（小金毛）与 {name_b}（小白狗）\n"
-            f"- 今日两人重合空闲时长：{free_hours} 小时\n"
-            f"- {name_a} 的日程安排：{[e['title'] for e in evs_a] or '今天放假/自主安排'}\n"
-            f"- {name_b} 的日程安排：{[e['title'] for e in evs_b] or '今天放假/自主安排'}\n"
-            f"- 今日手账游玩记录：{[d['title'] + '（' + (d['mood'] or '') + '）' for d in diaries] or '暂无新足迹'}\n"
-            f"- 今日双方互动留言：{[c['name'] + '说:' + c['text'] for c in comments] or '今日都在专注各自事务，心里挂念着对方'}\n\n"
-            f"请以线条小狗第一人称，为他们写一封今晚温暖治愈的晚安心语。"
-        )
-        ai_content = call_llm_api(system_prompt, user_prompt)
+    out = dict(res)
+    out.update(_month_nav(ym))
+    return out
 
-        if ai_content:
-            res_content = ai_content
-        else:
-            lines = [f"亲爱的小窝主人，今天也辛苦啦！🐾"]
-            if free_hours > 0:
-                lines.append(f"💕 今日默契贴贴时长：{free_hours} 小时（共同空闲）！")
-            else:
-                lines.append("💤 今天各自都有在认真奔波，晚上记得早点贴贴休息哦！")
-            if evs_a or evs_b:
-                lines.append(f"📋 今日足迹：{name_a} 完成了 {len(evs_a)} 项日程，{name_b} 完成了 {len(evs_b)} 项日程。")
-            if diaries:
-                d_titles = "、".join([d["title"] for d in diaries])
-                lines.append(f"📔 今日手账更新了：《{d_titles}》，留下了美好的瞬间！✨")
-            if comments:
-                lines.append(f"💬 今天小纸条留言互动了 {len(comments)} 次，心里都在挂念着对方呢～")
-            lines.append("🌙 无论今天遇到什么，小狗都最喜欢你啦。晚安，明天继续加油！🦴")
-            res_content = "\n\n".join(lines)
 
-        res = {"title": title, "content": res_content, "stats": stats, "is_ai": bool(ai_content)}
-
-    elif summary_type == "week":
-        # 本周统计
-        w_payload = week_payload(today.isoformat())
-        total_free_mins = 0
-        total_evs = 0
-        mon_str = w_payload["days"][0]["date"]
-        sun_str = w_payload["days"][-1]["date"]
-        for d in w_payload["days"]:
-            total_free_mins += sum((e - s) for s, e in d["free"])
-            total_evs += len(d["users"]["a"]["events"]) + len(d["users"]["b"]["events"])
-        total_free_hours = round(total_free_mins / 60, 1)
-
-        with LOCK:
-            diaries = CONN.execute("SELECT * FROM diaries WHERE date >= ? AND date <= ?", (mon_str, sun_str)).fetchall()
-            comments = CONN.execute(
-                "SELECT count(*) as cnt FROM comments WHERE created >= ? AND created <= ?",
-                (f"{mon_str} 00:00", f"{sun_str} 23:59")
-            ).fetchone()
-            n_cmts = comments["cnt"] if comments else 0
-
-        title = f"💌 俩汪本周心动周报 · ({mon_str} ~ {sun_str})"
-        stats = [
-            {"k": "本周贴贴总长", "v": f"{total_free_hours}h"},
-            {"k": "共同日程打卡", "v": f"{total_evs}项"},
-            {"k": "新增游玩手账", "v": f"{len(diaries)}篇"},
-            {"k": "互动留言小纸条", "v": f"{n_cmts}条"},
-        ]
-
-        user_prompt = (
-            f"【本周爱情周报档案 ({mon_str} ~ {sun_str})】\n"
-            f"- 伴侣：{name_a}（小金毛）与 {name_b}（小白狗）\n"
-            f"- 整周两人重合贴贴总时长：{total_free_hours} 小时\n"
-            f"- 两人并肩完成的课业与日程打卡总计：{total_evs} 项\n"
-            f"- 本周手账本记录数：{len(diaries)} 篇\n"
-            f"- 纸条留言互动次数：{n_cmts} 条\n\n"
-            f"请以线条小狗第一人称，为他们写一封充满爱意、总结这一周并展望下一周的周报小情信。"
-        )
-        ai_content = call_llm_api(system_prompt, user_prompt)
-
-        if ai_content:
-            res_content = ai_content
-        else:
-            lines = [
-                f"叮咚！这一周俩汪的默契生活报告出炉啦~ 🐾",
-                f"💖 本周俩人共同重叠贴贴空闲时间高达 {total_free_hours} 小时！陪伴是最长情的告白。",
-                f"🎒 这一周两人一共并肩完成了 {total_evs} 项课业与日程，每一个努力的瞬间都闪闪发光。",
-                f"📷 手账本里新增了 {len(diaries)} 篇游玩回忆，互动留言小纸条 {n_cmts} 条。",
-                "✨ 下周又是全新的七天，俩汪继续认真生活，努力奔向彼此吧！💕"
-            ]
-            res_content = "\n\n".join(lines)
-
-        res = {"title": title, "content": res_content, "stats": stats, "is_ai": bool(ai_content)}
-
-    elif summary_type == "month":
-        # 本月胶囊
-        ym = today.strftime("%Y-%m")
-        with LOCK:
-            diaries = CONN.execute("SELECT * FROM diaries WHERE date LIKE ? ORDER BY date", (f"{ym}%",)).fetchall()
-            photos = CONN.execute(
-                "SELECT count(*) as cnt FROM diary_photos dp JOIN diaries d ON d.id=dp.diary_id WHERE d.date LIKE ?",
-                (f"{ym}%",)
-            ).fetchone()
-            n_photos = photos["cnt"] if photos else 0
-
-            moods = {}
-            for d in diaries:
-                m = d["mood"] or "💖 幸福贴贴"
-                moods[m] = moods.get(m, 0) + 1
-            top_mood = sorted(moods.items(), key=lambda x: x[1], reverse=True)[0][0] if moods else "🥰 幸福贴贴"
-
-        title = f"📔 俩汪月度时光胶囊 · {today.year}年{today.month}月"
-        stats = [
-            {"k": "本月手账日记", "v": f"{len(diaries)}篇"},
-            {"k": "拍立得照片", "v": f"{n_photos}张"},
-            {"k": "本月代表心情", "v": top_mood.split(" ")[0]},
-            {"k": "相伴日子", "v": "30天+"},
-        ]
-
-        user_prompt = (
-            f"【月度时光胶囊档案 ({ym})】\n"
-            f"- 伴侣：{name_a}（小金毛）与 {name_b}（小白狗）\n"
-            f"- 整月留下的手账日记：{len(diaries)} 篇\n"
-            f"- 拍下的拍立得合照回忆：{n_photos} 张\n"
-            f"- 本月最频繁的心情贴纸：{top_mood}\n\n"
-            f"请以线条小狗第一人称，为他们写一封感动浪漫、纪念这个月点点滴滴的时光胶囊序言。"
-        )
-        ai_content = call_llm_api(system_prompt, user_prompt)
-
-        if ai_content:
-            res_content = ai_content
-        else:
-            lines = [
-                f"岁月漫漫，有你常在。这里是属于你们的 {today.month} 月时光胶囊！🐾",
-                f"✨ 这个月你们一共踏出了足迹，写下了 {len(diaries)} 篇手账日记，定格了 {n_photos} 张拍立得照片！",
-                f"🌤️ 本月最高频心动贴纸是【{top_mood}】，充满着甜蜜与治愈。",
-                "🐾 时光会走远，但爱与照片永远留在小窝里。下个月也要创造更多回忆呀！💖"
-            ]
-            res_content = "\n\n".join(lines)
-
-        res = {"title": title, "content": res_content, "stats": stats, "is_ai": bool(ai_content)}
-
-    # 存入缓存
-    try:
-        with LOCK:
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            CONN.execute(
-                "INSERT INTO summary_cache(cache_key, summary_json, updated_at) VALUES(?,?,?) "
-                "ON CONFLICT(cache_key) DO UPDATE SET summary_json=excluded.summary_json, updated_at=excluded.updated_at",
-                (cache_key, json.dumps(res, ensure_ascii=False), now_str)
-            )
-    except Exception as e:
-        sys.stderr.write(f"[Cache save error]: {e}\n")
-
-    return res
-
-def push_summary_to_both(summary_type="day"):
-    summary = generate_period_summary(summary_type)
+def push_month_summary(ym=None):
+    summary = generate_month_summary(ym)
     title = summary["title"]
-    content = summary["content"] + "\n\n【数据概览】\n" + "\n".join([f"· {s['k']}: {s['v']}" for s in summary["stats"]])
+    content = summary["content"] + "\n\n【这个月的数字】\n" + "\n".join(
+        ["· %s：%s" % (s["k"], s["v"]) for s in summary["stats"]])
     users = get_users()
     sent_count = 0
     for uid in ("a", "b"):
@@ -737,6 +841,14 @@ def init_db():
                 CONN.execute(idx_sql)
             except Exception as e:
                 sys.stderr.write(f"[init_db] index warn: {e}\n")
+        # 简报改为仅月度 + 新增提示词：升级时一次性清空旧缓存（含空月份/旧文案）
+        if get_setting("summary_prompt_version", "") != "2":
+            try:
+                CONN.execute("DELETE FROM summary_cache")
+                CONN.execute("INSERT INTO meta(key,value) VALUES('summary_prompt_version','2') "
+                             "ON CONFLICT(key) DO UPDATE SET value='2'")
+            except Exception as e:
+                sys.stderr.write(f"[init_db] summary cache reset warn: {e}\n")
 
 
 # ---------------------------------------------------------------- 周次 / 时间计算
@@ -1313,9 +1425,13 @@ class Handler(BaseHTTPRequestHandler):
                 if self.authed() is None:
                     return
                 qs = parse_qs(urlparse(self.path).query)
-                stype = (qs.get("type") or ["day"])[0]
+                ym = (qs.get("month") or [""])[0]
+                if ym and not valid_month(ym):
+                    return self.send_json({"ok": False, "error": "month 需为 YYYY-MM"}, 400)
+                if ym and ym > date.today().strftime("%Y-%m"):
+                    return self.send_json({"ok": False, "error": "不能查看未来的月份"}, 400)
                 force = (qs.get("refresh") or ["0"])[0] == "1"
-                return self.send_json(generate_period_summary(stype, force_refresh=force))
+                return self.send_json(generate_month_summary(ym or None, force_refresh=force))
             if path in ("/api/messages", "/api/notifications"):
                 uid = self.authed()
                 if uid is None:
@@ -1657,8 +1773,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/summary/push":
                 if self.authed() is None:
                     return
-                stype = d.get("type") or "day"
-                summary, sent_count = push_summary_to_both(stype)
+                ym = d.get("month") or ""
+                if ym and not valid_month(ym):
+                    return self.send_json({"ok": False, "error": "month 需为 YYYY-MM"}, 400)
+                summary, sent_count = push_month_summary(ym or None)
                 if sent_count == 0:
                     return self.send_json({
                         "ok": False,
@@ -2192,37 +2310,35 @@ def anniv_reminder_pass(now=None):
     return sent
 
 
+def month_push_target(now, last_pushed):
+    """月底 21:00 之后推当月；月底整晚离线时 1~3 号补推上个月。已推过则返回 None。"""
+    today = now.date()
+    month_end = _month_bounds(today.strftime("%Y-%m"))[1]
+    if today == month_end and now.hour >= 21:
+        target = today.strftime("%Y-%m")
+    elif now.day <= 3 and now.hour >= 9:
+        target = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    else:
+        return None
+    return None if last_pushed == target else target
+
+
 def cron_summary_worker():
-    """后台定时任务：持久化推送状态防重启重复推送，定期执行 WAL Checkpoint 与内存缓存回收"""
+    """后台定时任务：只在每月月底推送一次月度胶囊；持久化状态防重启重复推送。"""
     while True:
         try:
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
-            ym_str = now.strftime("%Y-%m")
-
-            last_day_pushed = get_setting("cron_last_day_pushed", "")
-            last_week_pushed = get_setting("cron_last_week_pushed", "")
             last_month_pushed = get_setting("cron_last_month_pushed", "")
 
-            # 1. 每日 22:30 晚安总结（22:30~23:59 容错窗口）
-            if ((now.hour == 22 and now.minute >= 30) or now.hour == 23) and last_day_pushed != today_str:
-                push_summary_to_both("day")
-                set_setting("cron_last_day_pushed", today_str)
-                print(f"[Cron] 每日晚安总结推送完成: {today_str}", flush=True)
+            # 1. 每月月底（最后一天 21:00 起 / 次月 1~3 号补推）推送一次月度胶囊
+            target_month = month_push_target(now, last_month_pushed)
+            if target_month:
+                push_month_summary(target_month)
+                set_setting("cron_last_month_pushed", target_month)
+                print(f"[Cron] 月度胶囊推送完成: {target_month}", flush=True)
 
-            # 2. 每周日 21:00 心动周报 (weekday 6 为周日，21:00~23:59 容错窗口)
-            if now.weekday() == 6 and now.hour >= 21 and last_week_pushed != today_str:
-                push_summary_to_both("week")
-                set_setting("cron_last_week_pushed", today_str)
-                print(f"[Cron] 周度心动周报推送完成: {today_str}", flush=True)
-
-            # 3. 每月 1 号 09:00 月度时光胶囊 (09:00~23:59 容错窗口)
-            if now.day == 1 and now.hour >= 9 and last_month_pushed != ym_str:
-                push_summary_to_both("month")
-                set_setting("cron_last_month_pushed", ym_str)
-                print(f"[Cron] 月度时光胶囊推送完成: {ym_str}", flush=True)
-
-            # 3.5 每天 09:00 纪念日/节日提醒（引擎内部按事件去重，重启不重推）
+            # 2. 每天 09:00 纪念日/节日提醒（引擎内部按事件去重，重启不重推）
             last_anniv_pushed = get_setting("cron_last_anniv_pushed", "")
             if now.hour >= 9 and last_anniv_pushed != today_str:
                 n = anniv_reminder_pass(now)
