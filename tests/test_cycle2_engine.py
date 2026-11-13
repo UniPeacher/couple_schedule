@@ -24,13 +24,13 @@ class EngineTests(unittest.TestCase):
     def test_no_history_is_honest(self):
         r = engine.predict([], {'prediction_enabled': 1}, TODAY)
         self.assertFalse(r['available'])
-        self.assertIn('逐步形成预估', r['reason'])
+        self.assertIn('记下这次经期开始', r['reason'])
 
     def test_single_record_progress_hint(self):
         recs = [period('2026-10-01', '2026-10-05')]
         r = engine.predict(recs, {'prediction_enabled': 1}, TODAY)
         self.assertFalse(r['available'])
-        self.assertIn('再补充 1 次', r['reason'])
+        self.assertIn('只有 1 次经期记录', r['reason'])
 
     def test_weighted_two_gaps_gives_window(self):
         recs = [period('2026-10-01'), period('2026-09-02'), period('2026-08-03')]

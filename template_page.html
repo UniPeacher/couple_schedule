@@ -4159,6 +4159,9 @@ document.addEventListener("submit", function(e){
           sBtn.textContent = origBtnText || (editId ? "💾 保存手账修改" : "✨ 贴在手账本上！");
         }
       });
+  } else if (f.getAttribute("id") && /^cycle2/.test(f.getAttribute("id"))){
+    // Cycle v2 forms are handled by cycle2.js; never fall through to a native submit.
+    e.preventDefault();
   }
 });
 
