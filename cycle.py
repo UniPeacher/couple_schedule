@@ -351,10 +351,12 @@ def prepare_remote_backup(source_path, target_path):
     with closing(sqlite3.connect(source_path)) as src, closing(sqlite3.connect(target_path)) as dst:
         src.backup(dst)
         dst.execute('PRAGMA secure_delete=ON')
-        tables = [row[0] for row in dst.execute("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'cycle_*'")]
+        tables = [row[0] for row in dst.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND (name GLOB 'cycle_*' OR name GLOB 'cycle2_*')")]
         for table in tables:
             dst.execute('DELETE FROM "' + table.replace('"', '""') + '"')
-        dst.execute("DELETE FROM notifications WHERE target_action='view:cycle'")
+        dst.execute("DELETE FROM notifications WHERE target_action IN ('view:cycle', 'view:cycle2')")
         dst.commit()
         dst.execute('VACUUM')
         dst.commit()

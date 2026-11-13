@@ -1427,6 +1427,8 @@ html.dark .splash-img {
 <div class="toast" id="toast"></div>
 <link rel="stylesheet" href="/cycle.css">
 <script src="/cycle.js"></script>
+<link rel="stylesheet" href="/cycle2.css">
+<script src="/cycle2.js"></script>
 <link rel="stylesheet" href="/settings_ui.css">
 <script src="/settings_ui.js"></script>
 <script>
@@ -1564,7 +1566,7 @@ function api(path, opts){
 }
 
 function load(opts){
-  if (CURRENT_VIEW === "cycle") { render(); return Promise.resolve(); }
+  if (CURRENT_VIEW === "cycle" || CURRENT_VIEW === "cycle2") { render(); return Promise.resolve(); }
   var silent = opts && opts.silent;
   if (CURRENT_VIEW === "month"){
     if (!MONTH_DATA){
@@ -1680,9 +1682,10 @@ function render(){
     else if (CURRENT_VIEW === "anniv") renderAnnivPage();
     else if (CURRENT_VIEW === "settings") renderSettingsPage();
     else if (CURRENT_VIEW === "cycle") Cycle.renderPage();
+    else if (CURRENT_VIEW === "cycle2") Cycle2.renderPage();
     else renderApp();
   }
-  Cycle.mount();
+  Cycle2.mount();
   dismissSplash();
 }
 

@@ -1,0 +1,87 @@
+/* Cycle v2 module styles. New file keeps the v1 sheet untouched for rollback. */
+.c2-page{max-width:760px}
+.c2-card{background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:20px;padding:20px;margin-bottom:16px;box-shadow:var(--shadow-sm);color:var(--ink-primary)}
+.c2-card h2{font-size:20px;line-height:1.4;margin:6px 0}
+.c2-card h3{font-size:15px;margin:0 0 12px}
+.c2-card p{font-size:13px;margin:8px 0;line-height:1.7;overflow-wrap:anywhere}
+.c2-muted{color:var(--ink-muted);font-size:12px;line-height:1.65}
+.c2-eyebrow{font-size:11px;font-weight:700;color:var(--dog-b-text)}
+
+/* Ring */
+.c2-ring-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0 4px}
+.c2-ring{width:min(280px,74vw);height:min(280px,74vw);display:block}
+.c2-ring .c2-track{fill:none;stroke:var(--line-subtle);stroke-width:14}
+.c2-ring .c2-seg{fill:none;stroke-width:14;stroke-linecap:butt}
+.c2-ring .c2-menstrual{stroke:#e0607f}
+.c2-ring .c2-follicular{stroke:#6fb3a8}
+.c2-ring .c2-ovulation{stroke:#e8b45f}
+.c2-ring .c2-luteal{stroke:#9a86c4}
+.c2-ring .c2-unknown{stroke:var(--line-subtle)}
+.c2-ring .c2-window{fill:none;stroke:#e0607f;stroke-width:14;opacity:.45;stroke-dasharray:4 5}
+.c2-ring .c2-pointer{stroke:var(--ink-primary);stroke-width:2.5}
+.c2-ring .c2-pointer-dot{fill:var(--ink-primary)}
+.c2-ring text{fill:var(--ink-primary)}
+.c2-ring .c2-ring-phase{font-size:20px;font-weight:800}
+.c2-ring .c2-ring-day{font-size:12px;fill:var(--ink-muted)}
+.c2-ring .c2-ring-sub{font-size:10px;fill:var(--ink-muted)}
+.c2-legend{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;margin-top:10px}
+.c2-legend span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-muted)}
+.c2-legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.c2-legend .c2-menstrual{background:#e0607f}
+.c2-legend .c2-follicular{background:#6fb3a8}
+.c2-legend .c2-ovulation{background:#e8b45f}
+.c2-legend .c2-luteal{background:#9a86c4}
+
+/* Window strip */
+.c2-window-strip{margin-top:12px;padding:12px 14px;border-radius:14px;background:var(--dog-b-bg);border:1px solid var(--dog-b-bd)}
+.c2-window-strip strong{font-size:13px;color:var(--dog-b-text)}
+.c2-window-strip p{margin:4px 0 0;font-size:12px}
+.c2-conf{display:inline-block;font-size:10px;border-radius:999px;padding:1px 7px;margin-left:6px;border:1px solid currentColor;vertical-align:middle}
+.c2-conf.high{color:#3f8f5f}.c2-conf.medium{color:#a37f2c}.c2-conf.low{color:var(--ink-muted)}
+
+/* Insights */
+.c2-insights{list-style:none;padding:0;margin:0}
+.c2-insights li{font-size:12.5px;line-height:1.7;padding:9px 0;border-bottom:1px solid var(--line-subtle)}
+.c2-insights li:last-child{border:0}
+.c2-insights .c2-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.c2-insights .good .c2-dot{background:#4f9e6b}
+.c2-insights .fair .c2-dot{background:#c9a227}
+.c2-insights .watch .c2-dot{background:#d0724a}
+
+/* Form bits */
+.c2-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.c2-field{display:flex;flex-direction:column;gap:6px;font-size:12px;margin:12px 0;color:var(--ink-secondary)}
+.c2-field input,.c2-field select,.c2-field textarea{width:100%;max-width:100%;min-width:0;background:var(--input-bg);color:var(--ink-primary);border:1.5px solid var(--input-border);border-radius:12px;padding:10px;font:inherit;font-size:14px;box-sizing:border-box}
+.c2-field input:focus,.c2-field select:focus,.c2-field textarea:focus{outline:2px solid var(--dog-b)!important;outline-offset:2px}
+.c2-check{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.6;margin:10px 0;color:var(--ink-secondary)}
+.c2-check input{margin-top:4px;accent-color:var(--dog-b);width:16px;height:16px;flex-shrink:0}
+.c2-checks{display:flex;flex-wrap:wrap;gap:4px 14px}
+.c2-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.c2-actions .p-btn{font-size:12px;min-height:38px}
+.c2-history{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line-subtle);font-size:13px}
+.c2-history:last-child{border:0}
+.c2-history .c2-actions{margin:0}
+.c2-details>summary{cursor:pointer;font-size:14px;font-weight:700;color:var(--ink-secondary);padding:4px 0;line-height:1.6}
+.c2-details[open]>summary{margin-bottom:14px}
+.c2-day{border-top:1px solid var(--line-subtle);padding:14px 0}
+.c2-chip{display:inline-block;font-size:11px;border-radius:999px;padding:2px 9px;margin:0 6px 6px 0;background:var(--line-subtle);color:var(--ink-secondary)}
+
+/* Month cells */
+.c2-cell-mark{display:block;width:100%;border:0;border-radius:5px;font-size:9px;line-height:1.5;padding:1px 2px;margin-top:2px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;opacity:.9}
+.c2-cell-mark.c2-menstrual{background:#e0607f;color:#fff}
+.c2-cell-mark.c2-follicular{background:#6fb3a8;color:#10302c}
+.c2-cell-mark.c2-ovulation{background:#e8b45f;color:#3a2a08}
+.c2-cell-mark.c2-luteal{background:#9a86c4;color:#fff}
+.c2-cell-mark.c2-window{background:transparent;border:1px dashed #e0607f;color:#a8435e}
+
+@media(max-width:420px){
+  .c2-card{padding:16px}
+  .c2-card h2{font-size:18px}
+  .c2-grid{gap:8px}
+  .c2-history{flex-wrap:wrap}
+  .c2-ring{width:min(240px,68vw);height:min(240px,68vw)}
+}
+@media(prefers-color-scheme:dark){
+  .c2-ring .c2-pointer{stroke:#eee}
+  .c2-ring .c2-pointer-dot{fill:#eee}
+}
