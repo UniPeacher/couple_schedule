@@ -30,7 +30,9 @@ async function login(p, uid) {
   await p.locator('[data-act="pick-login"][data-uid="' + uid + '"]').click();
   await p.locator('#loginPw').fill('cycle2-test-password');
   await p.locator('#loginForm button').click();
-  await p.locator('#cycle2Home [data-c2="open"]').waitFor({state: 'visible'});
+  // 底栏改版后周期入口是「周期」标签页（98c08d9），进入后等周期页容器渲染
+  await p.locator('.bottom-nav [data-act="switch-view"][data-v="cycle2"]').click();
+  await p.locator('#cycle2Content .c2-card').first().waitFor({state: 'visible'});
 }
 function bInnerIncludes(text, marker) { return text.indexOf(marker) >= 0; }
 async function openCycle(p, opts) {
@@ -252,7 +254,7 @@ async function showRing(p) {
     await a.evaluate(() => localStorage.setItem('sched_dark_mode', '1'));
     await a.reload();
     await a.waitForFunction(() => document.documentElement.classList.contains('dark'));
-    await a.locator('#cycle2Home [data-c2="open"]').waitFor({state: 'visible'});
+    await a.locator('.bottom-nav [data-act="switch-view"][data-v="cycle2"]').waitFor({state: 'visible'});
     await openCycle(a);
     const darkFill = await a.evaluate(() => {
       const dot = document.querySelector('.c2-ring .c2-dot');
