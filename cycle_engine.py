@@ -49,7 +49,8 @@ def predict(records, prefs, today, luteal_length=None):
     starts = starts[-12:]
     gaps = [(b - a).days for a, b in zip(starts, starts[1:])]
     if not starts:
-        return {'available': False, 'reason': '记录经期开始日期后，可逐步形成预估'}
+        return {'available': False,
+                'reason': '还没有经期记录。记下这次经期开始的日期，之后每次记录都会让预估更准。'}
     if len(gaps) >= 1:
         stats = weighted_stats(gaps)
         if stats is None:
@@ -71,7 +72,8 @@ def predict(records, prefs, today, luteal_length=None):
         confidence = 'low'
     else:
         return {'available': False,
-                'reason': '已记录 %d 次经期，再补充 1 次即可形成预估' % len(starts)}
+                'reason': '目前只有 1 次经期记录，还看不出周期长度。'
+                          '再记录一次经期开始（可以直接用「补录历史」填之前的日期），就能算出预估。'}
     target = starts[-1] + timedelta(days=length)
     if target + timedelta(days=margin) < today:
         return {'available': False, 'expired': True,

@@ -125,7 +125,17 @@ var Cycle2 = (function () {
     var p = s.prediction;
     if (!p) return '';
     if (!p.available) {
-      return '<section class="c2-card"><h3>🔮 下次经期</h3><p class="c2-muted">' + h(p.reason || '暂无可用预估') + '</p></section>';
+      var n = (s.periods || []).length;
+      if (n === 0) {
+        return '<section class="c2-card"><h3>🌱 从这一次开始</h3>' +
+          '<p>先记下最近一次经期的开始日期。之后再记一次，就能算出你的周期长度和下次预估。</p>' +
+          '<div class="c2-actions">' + btn('记录经期开始', 'start') +
+          btn('补录之前的日期', 'add') + '</div></section>';
+      }
+      return '<section class="c2-card"><h3>🌱 还差一次记录</h3>' +
+        '<p>现在只有 1 条经期记录，看不出周期长度。</p>' +
+        '<p class="c2-muted">再记一次经期开始——如果之前那次没记，用「补录之前的日期」倒填就行。</p>' +
+        '<div class="c2-actions">' + btn('补录之前的日期', 'add') + '</div></section>';
     }
     return '<section class="c2-window-strip"><strong>下次预计 ' + h(p.estimated_start) +
       '<span class="c2-conf ' + h(p.confidence) + '">' + h(CONF_LABEL[p.confidence] || '') + '</span></strong>' +
@@ -331,6 +341,7 @@ var Cycle2 = (function () {
       if (dayForm) dayForm.scrollIntoView({block: 'center'});
       selectedDate = null;
     }
+    bindForms();
   }
 
   function fillDay(date) {
@@ -471,8 +482,20 @@ var Cycle2 = (function () {
     if (e.target.matches('#cycle2DayForm [name="date"]')) fillDay(e.target.value);
   });
 
-  document.addEventListener('submit', function (e) {
-    var f = e.target, id = f.getAttribute('id') || '';
+  // Forms are re-rendered by paintPage, so bind on each render instead of once on document.
+  function bindForms() {
+    ['cycle2PeriodForm', 'cycle2DayForm', 'cycle2BbtForm',
+     'cycle2PreferencesForm', 'cycle2SettingsForm'].forEach(function (id) {
+      var f = document.getElementById(id);
+      if (!f || f.dataset.c2Bound === '1') return;
+      f.dataset.c2Bound = '1';
+      f.addEventListener('submit', onSubmit);
+    });
+  }
+
+  function onSubmit(e) {
+    var f = e.currentTarget || e.target;
+    var id = f.getAttribute('id') || '';
     if (!/^cycle2/.test(id)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -513,7 +536,7 @@ var Cycle2 = (function () {
       d = {settings: p, collaboration: x};
     } else return;
     save(action, d, f.querySelector('button:not([type="button"])'));
-  }, true);
+  }
 
   document.addEventListener('click', function (e) {
     var el = e.target.closest('[data-c2]');

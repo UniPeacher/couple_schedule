@@ -5,8 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const base = process.env.CYCLE2_TEST_URL || 'http://127.0.0.1:18799';
-assert.ok(/:(1879[7-9])$/.test(base), 'Refusing to run against a non-fixture port');
+const base = process.env.CYCLE2_TEST_URL || 'http://127.0.0.1:18805';
+assert.ok(/:188\d\d$/.test(base), 'Refusing to run against a non-fixture port');
 const out = path.resolve(__dirname, '../output');
 
 function dayOffset(n) {
@@ -152,6 +152,32 @@ async function openCycle(p, opts) {
     const after = await b.locator('.c2-card').first().innerText();
     assert.ok(!/黄体期|卵泡期|排卵期/.test(after), 'revoked phase must disappear: ' + after);
     console.log('PASS revoking prediction hides phase');
+
+    // Backfill through the modal must actually persist (v1's /^cycle/ handler used
+    // to swallow cycle2 forms, so this is the regression guard).
+    await post(a, 'preferences', {role: 'recorder', enabled: false});
+    await openCycle(a);
+    await a.evaluate(() => window.scrollTo(0, 400));
+    await a.locator('[data-c2="add"]').click();
+    await a.locator('#cycle2PeriodModal.show').waitFor();
+    const beforeSave = (await snap(a)).periods.length;
+    await a.locator('#cycle2PeriodForm [name="start_date"]').fill(dayOffset(150));
+    await a.locator('#cycle2PeriodForm [name="end_date"]').fill(dayOffset(146));
+    const saveResp = a.waitForResponse(r => r.url().includes('/api/cycle2/period') &&
+      r.request().method() === 'POST');
+    await a.locator('#cycle2PeriodForm button.p-btn.pri').click();
+    const sr = await saveResp;
+    assert.equal(sr.status(), 200, await sr.text());
+    await a.waitForTimeout(600);
+    const afterSave = (await snap(a)).periods.length;
+    assert.equal(afterSave, beforeSave + 1, 'backfill must persist exactly one new period');
+    assert.equal(await a.locator('#cycle2PeriodModal.show').count(), 0, 'modal must close after save');
+
+    // With two intervals the prediction becomes available and the ring is real.
+    await openCycle(a);
+    const p2 = (await snap(a)).prediction;
+    assert.ok(p2.available, 'two intervals should unlock prediction: ' + JSON.stringify(p2));
+    console.log('PASS backfill persists and unlocks prediction');
 
     // BBT accepts a plausible value and rejects an implausible one.
     const okTemp = await b.request.post(base + '/api/cycle2/bbt', {
