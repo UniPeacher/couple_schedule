@@ -952,6 +952,13 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
   transition:all .18s ease;display:flex;align-items:center;justify-content:center;gap:4px;
 }
 .seg .opt:hover{background:var(--bg-card-subtle);border-color:var(--line-strong)}
+/* 手账页四分段：单行排布，窄屏兜底横向滚动 */
+.diary-seg{gap:6px;overflow-x:auto;scrollbar-width:none}
+.diary-seg::-webkit-scrollbar{display:none}
+.diary-seg .opt{
+  flex:1 0 auto;padding:8px 4px;font-size:12.5px;gap:3px;
+  white-space:nowrap;
+}
 .seg .opt.on{
   border-color:var(--dog-a);background:var(--dog-a-bg);
   color:var(--dog-a-text);box-shadow:0 2px 8px rgba(234,138,21,0.15);
@@ -2905,7 +2912,7 @@ function tripBar(total, packed, barId){
 
 function diarySegHTML(active){
   var items = [["month", "📔 足迹手账"], ["wishes", "✨ 心愿备忘"], ["trips", "✈️ 旅行清单"], ["summary", "💌 时光胶囊"]];
-  return '<div style="margin-bottom:12px"><div class="seg" style="margin-bottom:0">' +
+  return '<div style="margin-bottom:12px"><div class="seg diary-seg" style="margin-bottom:0">' +
     items.map(function(it){
       return '<div class="opt' + (active === it[0] ? " on" : "") + '" data-act="switch-view" data-v="' + it[0] + '">' + it[1] + '</div>';
     }).join("") + '</div></div>';
