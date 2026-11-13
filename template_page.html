@@ -272,8 +272,8 @@ button,input,select,textarea{font-family:inherit}
 .wish-content{
   flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;
 }
-.wish-title-row{
-  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+.wish-tag-row{
+  display:flex;align-items:center;gap:5px;flex-wrap:wrap;
 }
 .wish-title{
   font-size:14.5px;font-weight:800;color:var(--ink-primary);line-height:1.4;
@@ -952,10 +952,10 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
   transition:all .18s ease;display:flex;align-items:center;justify-content:center;gap:4px;
 }
 .seg .opt:hover{background:var(--bg-card-subtle);border-color:var(--line-strong)}
-/* 手账页四分段：单行排布，窄屏兜底横向滚动 */
-.diary-seg{gap:6px;overflow-x:auto;scrollbar-width:none}
-.diary-seg::-webkit-scrollbar{display:none}
-.diary-seg .opt{
+/* 单行滚动分段（手账四分段、心愿分类筛选）：不收缩不折行，窄屏横向滚动 */
+.seg-scroll{gap:6px;overflow-x:auto;scrollbar-width:none}
+.seg-scroll::-webkit-scrollbar{display:none}
+.seg-scroll .opt{
   flex:1 0 auto;padding:8px 4px;font-size:12.5px;gap:3px;
   white-space:nowrap;
 }
@@ -1996,13 +1996,13 @@ function renderWishesPage(){
       '<div class="wish-progress-box" id="wishProgressBox">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:800;color:var(--ink-primary)">' +
           '<span id="wishProgressText">🐶 正在统计俩汪心愿进度...</span>' +
-          '<span id="wishProgressPct" style="color:var(--dog-a-text)">0%</span>' +
+          '<span id="wishProgressPct" style="color:var(--dog-a-text);flex-shrink:0">0%</span>' +
         '</div>' +
         '<div class="wish-progress-bar"><div class="wish-progress-fill" id="wishProgressFill" style="width:0%"></div></div>' +
       '</div>' +
 
       '<div class="page-main-card">' +
-        '<div class="seg" id="wishCatSeg" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px">' +
+        '<div class="seg seg-scroll" id="wishCatSeg" style="margin-bottom:14px;padding-bottom:2px">' +
           '<div class="opt' + (curWishFilter==="all"?" on":"") + '" data-act="wish-filter" data-v="all">全部</div>' +
           '<div class="opt' + (curWishFilter==="travel"?" on":"") + '" data-act="wish-filter" data-v="travel">✈️ 旅行</div>' +
           '<div class="opt' + (curWishFilter==="food"?" on":"") + '" data-act="wish-filter" data-v="food">🍜 美食</div>' +
@@ -2096,11 +2096,11 @@ function renderWishesList(){
         (isDone ? '✓' : '🐾') +
       '</button>' +
       '<div class="wish-content">' +
-        '<div class="wish-title-row">' +
+        '<div class="wish-tag-row">' +
           '<span class="wish-cat-tag">' + catLabel + '</span>' +
           (w.priority ? '<span class="wish-fire-tag">🔥 超级想去</span>' : '') +
-          '<span class="wish-title">' + esc(w.title) + '</span>' +
         '</div>' +
+        '<div class="wish-title">' + esc(w.title) + '</div>' +
         (w.note ? ('<div class="wish-note">📝 ' + esc(w.note) + '</div>') : '') +
         '<div class="wish-meta-row">' +
           '<div style="display:flex;align-items:center;gap:6px">' +
@@ -2912,7 +2912,7 @@ function tripBar(total, packed, barId){
 
 function diarySegHTML(active){
   var items = [["month", "📔 足迹手账"], ["wishes", "✨ 心愿备忘"], ["trips", "✈️ 旅行清单"], ["summary", "💌 时光胶囊"]];
-  return '<div style="margin-bottom:12px"><div class="seg diary-seg" style="margin-bottom:0">' +
+  return '<div style="margin-bottom:12px"><div class="seg seg-scroll" style="margin-bottom:0">' +
     items.map(function(it){
       return '<div class="opt' + (active === it[0] ? " on" : "") + '" data-act="switch-view" data-v="' + it[0] + '">' + it[1] + '</div>';
     }).join("") + '</div></div>';
