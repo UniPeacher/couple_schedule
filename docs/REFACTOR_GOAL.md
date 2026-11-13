@@ -95,7 +95,7 @@
 | M2 API+协作接线 | ✅ 完成 | 2026-11-13 | `cycle2_collaboration.py` + `/api/cycle2/*`；26 项新测 |
 | M3 UI 周期环 | ✅ 完成 | 2026-11-13 | `cycle2.js/css`；11 项浏览器验收全过 |
 | M4 迁移+脱敏 | ✅ 完成 | 2026-11-13 | `migrate_cycle_v2.py`；脱敏已覆盖 `cycle2_*`；生产快照演练通过 |
-| M5 部署 | ⬜ 待人工确认 | | 步骤见下 |
+| M5 部署 | ✅ 完成 | 2026-11-13 | 生产已切换 v2；分支 `feat/cycle-v2` |
 
 **全量测试**：`TMPDIR=/tmp/couple-sched-tmp python3 -m unittest discover -s tests` → Ran 154, OK（local-osaka，2026-11-13）。
 **浏览器验收**：`node tests/cycle2_browser.cjs`（fixture 端口 18799）→ ALL CYCLE2 BROWSER CHECKS PASSED。
