@@ -759,10 +759,15 @@ var Cycle2 = (function () {
     else if (a === 'finish') edit(Object.assign({}, state.active, {end_date: todayISO()}));
     else if (a === 'edit') edit(state.periods.find(function (r) { return r.id === Number(el.dataset.id); }));
     else if (a === 'close-period') { closeAllModals(); if (history.state && history.state.type === 'modal') history.back(); }
-    else if (a === 'delete-period' && confirm('删除这条已确认经期？身体感受另行保留。')) save('period/delete', {id: Number(el.dataset.id)}, el);
+    else if (a === 'delete-period') uiConfirm({icon:'🩸', title:'删除这条经期？', message:'已确认的经期记录会删掉，身体感受另行保留。', danger:true, okText:'删除'}).then(function(ok){ if (ok) save('period/delete', {id: Number(el.dataset.id)}, el); });
     else if (a === 'delete-bbt') save('bbt/delete', {date: recordDate || todayISO()}, el);
-    else if (a === 'delete-all' && confirm('删除全部经期数据？两人共用这一份记录，删除后双方都看不到。') && confirm('不可从 App 撤销，确定删除？')) {
-      save('delete-all', {confirm: 'DELETE_MY_CYCLE_DATA'}, el);
+    else if (a === 'delete-all') {
+      uiConfirm({icon:'⚠️', title:'删除全部经期数据？', message:'两人共用这一份记录，删除后双方都看不到。', danger:true, okText:'继续'}).then(function(ok1){
+        if (!ok1) return;
+        uiConfirm({icon:'🚨', title:'最后确认', message:'删除不可从 App 撤销，确定删除？', danger:true, okText:'删除'}).then(function(ok2){
+          if (ok2) save('delete-all', {confirm: 'DELETE_MY_CYCLE_DATA'}, el);
+        });
+      });
     }
     else if (a === 'export') {
       api('/api/cycle2/export', {cache: 'no-store'}).then(function (data) {
@@ -771,7 +776,7 @@ var Cycle2 = (function () {
         link.href = url; link.download = 'my-cycle-data-v2.json'; link.click();
         setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
         toast('文件包含健康信息，请妥善保管');
-      }).catch(function (err) { toast(err.message); });
+      }).catch(function (err) { toast(err.message, 'err'); });
     }
   }, true);
 
