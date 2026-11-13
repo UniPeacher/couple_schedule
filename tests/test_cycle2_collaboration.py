@@ -74,51 +74,49 @@ class SharingTests(Base):
         self.assertIsNone(self.view('b')['partner'])
         self.assertEqual(self.view('b')['calendar'], [])
 
-    def test_granted_actual_only(self):
-        self.seed()
-        self.let_share(actual=True, prediction=False)
-        self.grant()
-        partner = self.view('b')['partner']
-        self.assertIsNotNone(partner)
-        self.assertEqual(len(partner['periods']), 3)
-        self.assertNotIn('prediction', partner)
-        self.assertNotIn('today', partner)
-
-    def test_prediction_grant_reveals_window_not_statistics(self):
+    def test_grant_shows_the_same_record_to_both(self):
         self.seed()
         self.let_share(actual=True, prediction=True)
-        self.grant()
-        partner = self.view('b')['partner']
-        pred = partner['prediction']
-        self.assertTrue(pred['available'])
-        for leaked in ('basis', 'cycle_length', 'confidence', 'luteal_length'):
-            self.assertNotIn(leaked, pred)
-        self.assertIn('window_start', pred)
+        mine, other = self.view('a'), self.view('b')
+        self.assertEqual(len(other['periods']), len(mine['periods']))
+        self.assertEqual(other['today']['phase'], mine['today']['phase'])
+        self.assertEqual(other['prediction']['estimated_start'],
+                         mine['prediction']['estimated_start'])
 
-    def test_phase_shared_only_with_prediction_grant(self):
+    def test_partner_panel_is_gone(self):
         self.seed()
         self.let_share(actual=True, prediction=True)
-        self.grant()
-        self.assertIn('today', self.view('b')['partner'])
-        # revoke prediction: phase must disappear with it
-        self.let_share(actual=True, prediction=False)
-        self.assertNotIn('today', self.view('b')['partner'])
+        self.assertIsNone(self.view('b')['partner'])
+        self.assertIsNone(self.view('a')['partner'])
 
-    def test_share_since_clips_history(self):
+    def test_other_account_can_write_the_shared_record(self):
         self.seed()
-        self.let_share(since='2026-09-01')
-        shared = self.view('b')['partner']['periods']
-        clipped = [r for r in shared if r['start_clipped']]
-        self.assertTrue(clipped == [] or all(r['start_clipped'] for r in clipped))
-        self.assertTrue(all(r['start_date'] >= '2026-09-01' for r in shared))
+        self.let_share(actual=True, prediction=True)
+        self.write('period', {'start_date': '2026-10-20', 'end_date': '2026-10-24'}, 'b')
+        self.assertIn('2026-10-20', [r['start_date'] for r in self.view('a')['periods']])
+        self.assertIn('2026-10-20', [r['start_date'] for r in self.view('b')['periods']])
 
-    def test_revoke_hides_immediately(self):
+    def test_shared_record_writes_land_on_one_owner(self):
         self.seed()
         self.let_share()
-        self.grant()
-        self.assertIsNotNone(self.view('b')['partner'])
+        self.write('day', {'date': '2026-10-20', 'flow': '中'}, 'b')
+        rows = self.c.execute("SELECT uid FROM cycle2_day_notes WHERE date='2026-10-20'").fetchall()
+        self.assertEqual([r['uid'] for r in rows], ['a'])
+
+    def test_revoke_returns_each_account_to_its_own_record(self):
+        self.seed()
+        self.let_share()
         self.write('settings', {'share_actual': False, 'share_prediction': False}, 'a')
-        self.assertIsNone(self.view('b')['partner'])
+        self.assertEqual(self.view('b')['uid'], 'b')
+        self.assertEqual(self.view('b')['periods'], [])
+        self.assertEqual(len(self.view('a')['periods']), 3)
+
+    def test_proxy_entry_is_gone(self):
+        self.seed()
+        self.let_share()
+        self.grant(allow_proxy=True)
+        with self.assertRaises(cycle2.Error):
+            self.write('proposal', {'start_date': '2026-10-20'}, 'b')
 
     def test_own_view_always_complete(self):
         self.seed()
@@ -129,70 +127,24 @@ class SharingTests(Base):
 
 
 class ProxyTests(Base):
-    def test_proxy_requires_explicit_grant(self):
-        self.seed()
-        self.let_share()   # share dates but not allow_proxy
-        self.grant()
-        with self.assertRaises(cycle.Error) as e:
-            self.write('proposal', period('2026-10-20', '2026-10-24'), 'b')
-        self.assertEqual(e.exception.status, 403)
+    """Proxy entry is gone: both accounts edit the one shared record directly."""
 
-    def test_proxy_flow_confirm(self):
+    def test_proxy_writes_are_refused(self):
         self.seed()
         self.let_share()
         self.grant(allow_proxy=True)
-        r = self.write('proposal', period('2026-10-20', '2026-10-24'), 'b')
-        self.assertTrue(r['ok'])
-        before = len(cycle2.periods(self.c, 'a'))
-        self.assertEqual(len(cycle2.periods(self.c, 'a')), before)  # pending counts nothing
-        self.write('proposal/confirm', {'id': r['id']}, 'a')
-        after = cycle2.periods(self.c, 'a')
-        self.assertEqual(len(after), before + 1)
-        src = self.c.execute('SELECT * FROM cycle2_record_sources WHERE period_id=?',
-                             (after[0]['id'],)).fetchone()
-        self.assertEqual(src['author_uid'], 'b')
-        self.assertEqual(src['confirmed_by'], 'a')
+        for action in ("proposal", "proposal/confirm", "proposal/reject", "proposal/cancel"):
+            with self.assertRaises(cycle.Error) as e:
+                self.write(action, period("2026-10-20", "2026-10-24"), "b")
+            self.assertEqual(e.exception.status, 400)
 
-    def test_proxy_cancel_and_reject(self):
+    def test_either_account_writes_without_approval(self):
         self.seed()
         self.let_share()
-        self.grant(allow_proxy=True)
-        r = self.write('proposal', period('2026-10-20', '2026-10-24'), 'b')
-        self.write('proposal/cancel', {'id': r['id']}, 'b')
-        self.assertEqual(len(cycle2.periods(self.c, 'a')), 3)
-        r2 = self.write('proposal', period('2026-10-21', '2026-10-24'), 'b')
-        self.write('proposal/reject', {'id': r2['id']}, 'a')
-        self.assertEqual(len(cycle2.periods(self.c, 'a')), 3)
-
-    def test_revoking_proxy_revokes_pending(self):
-        self.seed()
-        self.let_share()
-        self.grant(allow_proxy=True)
-        self.write('proposal', period('2026-10-20', '2026-10-24'), 'b')
-        self.grant(allow_proxy=False)
-        row = self.c.execute("SELECT status FROM cycle2_proposals").fetchone()
-        self.assertEqual(row['status'], 'revoked')
-
-    def test_stale_proposal_cannot_overwrite_edited_record(self):
-        self.seed()
-        self.let_share()
-        self.grant(allow_proxy=True)
-        rid = cycle2.periods(self.c, 'a')[0]['id']
-        p = self.write('proposal', {'period_id': rid, 'start_date': '2026-10-03',
-                                    'end_date': '2026-10-06'}, 'b')
-        # Edit through the collaboration layer, which assigns a fresh version stamp.
-        self.write('period', {'id': rid, 'start_date': '2026-10-03',
-                              'end_date': '2026-10-08'}, 'a')
-        with self.assertRaises(cycle.Error) as e:
-            self.write('proposal/confirm', {'id': p['id']}, 'a')
-        self.assertEqual(e.exception.status, 409)
-
-    def test_proposal_outside_share_range_rejected(self):
-        self.seed()
-        self.let_share(since='2026-09-01')
-        self.grant(allow_proxy=True)
-        with self.assertRaises(cycle.Error):
-            self.write('proposal', period('2026-08-20'), 'b')
+        self.write("period", period("2026-10-20", "2026-10-24"), "b")
+        starts = [r["start_date"] for r in cycle2.periods(self.c, "a")]
+        self.assertIn("2026-10-20", starts)
+        self.assertEqual(len(cycle2.periods(self.c, "b")), 0)
 
 
 class NoticeTests(Base):

@@ -226,9 +226,11 @@ def snapshot(conn, uid, month, today=None):
     prediction = engine.predict(own, prefs, today, engine.luteal_from_bbt(own, temps))
     phase = engine.phase_of(today, own, prediction, temps)
     marks = engine.month_phases(first, last, own, prediction, temps)
+    luteal = engine.luteal_from_bbt(own, temps)
     active = next((r for r in own if not r['end_date']
                    and date.fromisoformat(r['start_date']) + timedelta(days=10) >= today), None)
     return dict(ok=True, uid=uid, month=month, today=phase, prediction=prediction, calendar=marks,
+                month_marks=engine.month_marks(first, last, own, prediction, today, luteal),
                 periods=own, notes=notes(conn, uid), bbt=temps,
                 insights=engine.insights(own, prediction, temps),
                 active=active, settings={k: prefs[k] for k in

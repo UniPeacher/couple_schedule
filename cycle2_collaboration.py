@@ -3,6 +3,11 @@
 Reuses v1 `cycle_collab` / `cycle_preferences` (no id references) so a user's
 existing role and privacy switches carry over; everything that points at a period
 or a notice lives in its own cycle2_ table so v1 rows stay untouched.
+
+This is a two-person household, not a multi-tenant app: when either account turns
+on sharing, both accounts read and write the same cycle record. The tables stay
+keyed by `uid` so the data still has an owner, but every session resolves to that
+one owner before touching it (see `owner_for`).
 """
 import json
 import secrets
@@ -13,6 +18,19 @@ import cycle as c
 import cycle2
 import cycle_engine as engine
 from cycle_collaboration import config, put, purge
+
+
+def owner_for(conn, uid):
+    """Which account actually holds the cycle record for this household.
+
+    Whoever has sharing on is the record-holder; if neither does, each keeps their
+    own. Deciding per request means flipping the switch switches the whole
+    household at once, with no data to migrate.
+    """
+    for candidate in (uid, c.other(uid)):
+        if cycle2.settings(conn, candidate)['share_with']:
+            return candidate
+    return uid
 
 SCHEMA_COLLAB2 = """
 CREATE TABLE IF NOT EXISTS cycle2_proposals (
@@ -133,20 +151,25 @@ def purge2(conn, owner=None, recipient=None):
 
 
 def snapshot(conn, uid, month, today=None):
+    """The household's cycle view, identical for both accounts once either shares."""
     today = today or date.today()
-    s = cycle2.snapshot(conn, uid, month, today)
-    s.update(collaboration=config(conn, uid), preferences=preferences(conn, uid),
-             proposals=proposals(conn, uid, today),
+    owner = owner_for(conn, uid)
+    s = cycle2.snapshot(conn, owner, month, today)
+    s.update(collaboration=config(conn, owner), preferences=preferences(conn, owner),
+             proposals=proposals(conn, owner, today),
              status=state(s['periods'], today))
     sources = {r['period_id']: dict(r) for r in
-               conn.execute('SELECT * FROM cycle2_record_sources WHERE uid=?', (uid,))}
+               conn.execute('SELECT * FROM cycle2_record_sources WHERE uid=?', (owner,))}
     for r in s['periods']:
-        r['source'] = sources.get(r['id'], dict(author_uid=uid, confirmed_by=uid, proposal_id=None))
-    s['partner'] = partner_view(conn, uid, today, s)
+        r['source'] = sources.get(r['id'], dict(author_uid=owner, confirmed_by=owner, proposal_id=None))
+    # Both accounts edit the same record, so there is no separate "partner" panel to draw.
+    s['partner'] = None
+    s['shared'] = owner != uid
+    s['owner_name'] = '共同记录'
     return s
 
 
-def partner_view(conn, uid, today, own_snapshot):
+def partner_view(conn, uid, today, own_snapshot=None):
     """What `uid` may see of the other account; None until an explicit grant exists."""
     owner = c.other(uid)
     p, x = cycle2.settings(conn, owner), config(conn, owner)
@@ -165,6 +188,13 @@ def partner_view(conn, uid, today, own_snapshot):
         partner['editable_periods'] = ([dict(id=r['id'], start_date=r['start_date'], end_date=r['end_date'])
                                         for r in shared if not r['start_clipped']]
                                        if partner['can_proxy'] else [])
+        # Calendar dots for this month, derived from dates the grant already covers.
+        first = today.replace(day=1)
+        last = (first + timedelta(days=31)).replace(day=1) - timedelta(days=1)
+        pred = engine.predict(cycle2.periods(conn, owner), p, today) if p['share_prediction'] else {}
+        partner['month_marks'] = [
+            m for m in engine.month_marks(first, last, cycle2.periods(conn, owner), pred, today)
+            if m['kind'] in ('period', 'predicted') or p['share_prediction']]
     if grant and p['share_prediction']:
         recs, temps = cycle2.periods(conn, owner), cycle2.bbt(conn, owner)
         pred = engine.predict(recs, p, today, engine.luteal_from_bbt(recs, temps))
@@ -196,10 +226,24 @@ def dates(body, today):
 
 
 def mutate(conn, uid, action, body, today=None):
+    """Write against the household's single record; both accounts share one owner.
+
+    `settings` and `sharing` stay on the caller's own uid: they describe that
+    person's preferences, not the shared record.
+    """
     today = today or date.today()
     now = datetime.combine(today, datetime.now().time())
     if not isinstance(body, dict):
         raise c.Error('请求须为 JSON 对象')
+    if action not in ('preferences', 'collaboration', 'settings', 'sharing'):
+        owner = owner_for(conn, uid)
+        if owner != uid:
+            return _mutate_owned(conn, owner, uid, action, body, today, now)
+    return _mutate_owned(conn, uid, uid, action, body, today, now)
+
+
+def _mutate_owned(conn, uid, actor, action, body, today, now):
+    """`uid` owns the row; `actor` is the logged-in account performing the write."""
     if action == 'sharing':
         if not isinstance(body.get('settings'), dict) or not isinstance(body.get('collaboration'), dict):
             raise c.Error('分享设置无效')
@@ -241,59 +285,10 @@ def mutate(conn, uid, action, body, today=None):
                          "WHERE uid=? AND status='pending'", (uid,))
         return dict(ok=True)
     if action == 'proposal':
-        owner = c.other(uid)
-        if not proxy_allowed(conn, owner, uid):
-            raise c.Error('对方尚未授权代记，或授权已撤回', 403)
-        start, end = dates(body, today)
-        p = cycle2.settings(conn, owner)
-        if start < p['share_since']:
-            raise c.Error('代记日期不能早于对方的分享范围')
-        rid = body.get('period_id')
-        version = ''
-        if rid is not None:
-            c.integer(rid, 1, 2**63 - 1, '记录编号')
-            row = conn.execute('SELECT * FROM cycle2_periods WHERE id=? AND uid=? AND start_date>=?',
-                               (rid, owner, p['share_since'])).fetchone()
-            if not row:
-                raise c.Error('记录不存在或不在授权范围', 404)
-            version = row['updated_at']
-        pending = conn.execute("SELECT COUNT(*) FROM cycle2_proposals WHERE uid=? AND status='pending'",
-                               (owner,)).fetchone()[0]
-        if pending >= 20:
-            raise c.Error('待确认记录较多，请先处理已有记录', 409)
-        cur = conn.execute('INSERT INTO cycle2_proposals(uid,author_uid,period_id,base_version,'
-                           'start_date,end_date,status,created_at) VALUES(?,?,?,?,?,?,?,?)',
-                           (owner, uid, rid, version, start, end, 'pending',
-                            now.isoformat(timespec='microseconds')))
-        return dict(ok=True, id=cur.lastrowid)
+        # With one shared record there is no second party to approve a proxy entry.
+        raise c.Error('双方共用同一份记录，可直接编辑，无需代记', 400)
     if action in ('proposal/confirm', 'proposal/reject', 'proposal/cancel'):
-        pid = c.integer(body.get('id'), 1, 2**63 - 1, '代记编号')
-        row = conn.execute("SELECT * FROM cycle2_proposals WHERE id=? AND status='pending'",
-                           (pid,)).fetchone()
-        if not row or (action == 'proposal/cancel' and row['author_uid'] != uid) or \
-                (action != 'proposal/cancel' and row['uid'] != uid):
-            raise c.Error('待确认记录不存在', 404)
-        if not proxy_allowed(conn, row['uid'], row['author_uid']):
-            raise c.Error('代记授权已撤回', 403)
-        if action == 'proposal/confirm':
-            if row['period_id']:
-                current = conn.execute('SELECT * FROM cycle2_periods WHERE id=? AND uid=?',
-                                       (row['period_id'], uid)).fetchone()
-                if not current or current['updated_at'] != row['base_version']:
-                    raise c.Error('原记录已更改，请拒绝旧代记或重新提交', 409)
-            data = dict(start_date=body.get('start_date', row['start_date']),
-                        end_date=body.get('end_date', row['end_date']))
-            if row['period_id']:
-                data['id'] = row['period_id']
-            result = cycle2.mutate(conn, uid, 'period', data, today)
-            put(conn, 'cycle2_record_sources',
-                dict(period_id=result['id'], uid=uid, author_uid=row['author_uid'],
-                     confirmed_by=uid, proposal_id=pid))
-            conn.execute("UPDATE cycle2_proposals SET status='confirmed' WHERE id=?", (pid,))
-            return result
-        conn.execute('UPDATE cycle2_proposals SET status=? WHERE id=?',
-                     ('cancelled' if action.endswith('cancel') else 'rejected', pid))
-        return dict(ok=True)
+        raise c.Error('双方共用同一份记录，没有待确认的代记', 400)
     if action == 'period':
         body = dict(body)
         rid = body.get('id')
@@ -306,9 +301,10 @@ def mutate(conn, uid, action, body, today=None):
                       result['id']))
         if rid is None:
             put(conn, 'cycle2_record_sources',
-                dict(period_id=result['id'], uid=uid, author_uid=uid, confirmed_by=uid, proposal_id=None))
+                dict(period_id=result['id'], uid=uid, author_uid=actor,
+                     confirmed_by=actor, proposal_id=None))
             if body.get('start_date') == today.isoformat():
-                notify(conn, uid, c.other(uid), 'started', str(result['id']),
+                notify(conn, actor, c.other(actor), 'started', str(result['id']),
                        '对方已确认今天经期开始。', now)
         return result
     if action == 'period/delete':
@@ -328,7 +324,7 @@ def mutate(conn, uid, action, body, today=None):
         purge2_event(conn, uid, 'discomfort:' + dt)
         if dt == today.isoformat() and (body.get('pain') in ('中', '重')
                                         or extra['activity'] in ('明显影响', '严重影响')):
-            notify(conn, uid, c.other(uid), 'discomfort', dt,
+            notify(conn, actor, c.other(actor), 'discomfort', dt,
                    '对方今天记录了中度或以上疼痛，或明显影响日常活动。', now)
         return result
     if action in ('day/delete', 'bbt', 'bbt/delete', 'settings'):
@@ -345,9 +341,11 @@ def mutate(conn, uid, action, body, today=None):
             purge2(conn, owner=uid)
         return result
     if action == 'delete-all':
+        # One shared record: clearing it clears the household's data for both accounts.
         result = cycle2.mutate(conn, uid, action, body, today)
         purge2(conn, owner=uid)
         purge2(conn, recipient=uid)
+        purge2(conn, recipient=c.other(uid))
         conn.execute('DELETE FROM cycle2_proposals WHERE uid=? OR author_uid=?', (uid, uid))
         conn.execute('DELETE FROM cycle2_notice_keys WHERE uid=? OR owner_uid=?', (uid, uid))
         return result
@@ -365,12 +363,18 @@ def purge2_event(conn, owner, event_key):
 
 
 def reminder_pass(conn, now):
-    """Upcoming / PMS / pending notices, at most once per recorded cycle, from 09:00."""
+    """Upcoming / PMS / pending notices, at most once per recorded cycle, from 09:00.
+
+    Notices follow the shared record: whoever holds it drives the schedule, and
+    each account's own preferences decide whether it reaches that account.
+    """
     if now.hour < 9:
         return 0
     today = now.date()
     count = 0
     for owner in ('a', 'b'):
+        if owner_for(conn, owner) != owner:
+            continue                     # this account is not the record-holder
         records = cycle2.periods(conn, owner)
         if not records:
             continue

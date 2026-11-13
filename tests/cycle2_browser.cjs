@@ -32,12 +32,21 @@ async function login(p, uid) {
   await p.locator('#loginForm button').click();
   await p.locator('#cycle2Home [data-c2="open"]').waitFor({state: 'visible'});
 }
+function bInnerIncludes(text, marker) { return text.indexOf(marker) >= 0; }
 async function openCycle(p, opts) {
   const before = await p.locator('body').getAttribute('data-cycle2-ready');
   await p.evaluate(() => { CURRENT_VIEW = 'cycle2'; Cycle2.renderPage(); Cycle2.mount(); });
   await p.waitForFunction(v => document.body.getAttribute('data-cycle2-ready') !== v, before);
   await p.locator('#cycle2Content .c2-card').first().waitFor();
-  if (!opts || opts.ring !== false) await p.locator('.c2-ring').first().waitFor({state: 'attached'});
+  if (!opts || opts.ring !== false) await showRing(p);
+}
+/* The month card opens on the calendar; the ring lives behind the view toggle. */
+async function showRing(p) {
+  const ring = p.locator('.c2-ring').first();
+  if (!(await ring.isVisible().catch(() => false))) {
+    await p.locator('[data-c2="toggle-view"]').first().click();
+  }
+  await ring.waitFor({state: 'visible'});
 }
 
 (async () => {
@@ -68,8 +77,17 @@ async function openCycle(p, opts) {
     // No history must render the honest empty ring.
     await openCycle(a);
     const emptyText = await a.locator('.c2-ring').first().textContent();
-    assert.ok(/还没有周期|记录两次/.test(emptyText), 'empty state must be honest, got: ' + emptyText);
+    assert.ok(/还没有周期|记录两次|请记录经期/.test(emptyText), 'empty state must be honest, got: ' + emptyText);
     console.log('PASS empty state is honest');
+
+    // The calendar is the default face of the month card and marks nothing without data.
+    await a.locator('[data-c2="toggle-view"]').first().click();
+    const calCells = await a.locator('.c2-cal-cell').count();
+    assert.ok(calCells >= 28, 'calendar must fill a month, got ' + calCells);
+    assert.equal(await a.locator('.c2-cal-cell .m.period').count(), 0,
+      'no period dots before any record');
+    console.log('PASS empty calendar has no marks');
+    await a.locator('[data-c2="toggle-view"]').first().click();
 
     const shot0 = path.join(out, 'cycle2-empty.png');
     await a.screenshot({path: shot0, fullPage: true});
@@ -127,31 +145,32 @@ async function openCycle(p, opts) {
     console.log('PASS month calendar phase marks: ' + marksAfter + ' (' + phases.join(',') + ')');
     await a.screenshot({path: path.join(out, 'cycle2-month.png'), fullPage: false});
 
-    // Recorder grants sharing; partner sees phase but never statistics.
+    // Turning sharing on puts both accounts on the same record and the same page.
     await post(a, 'settings', {share_actual: true, share_prediction: true, share_since: dayOffset(200)});
-    await post(a, 'collaboration', {allow_notifications: true});
-    await post(b, 'preferences', {role: 'supporter', enabled: true, upcoming: true, pms: true});
     await openCycle(b);
-    const partnerText = await b.locator('.c2-card').first().innerText();
-    const partnerJson = await snap(b);
-    assert.ok(partnerJson.partner, 'partner snapshot must exist: ' + JSON.stringify(partnerJson).slice(0, 200));
-    assert.ok(partnerJson.partner.today, 'partner must receive the shared phase');
-    assert.ok(/第 \d+ 天|黄体期|卵泡期|行经期|排卵期/.test(partnerText),
-      'partner must see the phase, got: ' + partnerText);
-    for (const leaked of ['basis', 'cycle_length', 'confidence', 'luteal_length']) {
-      assert.ok(!(leaked in partnerJson.partner.prediction),
-        'partner must not receive ' + leaked);
+    const bSnap = await snap(b);
+    assert.ok(bSnap.today, 'the other account must resolve a phase once shared: ' +
+      JSON.stringify(bSnap).slice(0, 200));
+    assert.equal(bSnap.uid, (await snap(a)).uid, 'both accounts must read one owner');
+    const bText = await b.locator('#cycle2Content').innerText();
+    await openCycle(a);
+    const aInner = await a.locator('#cycle2Content').innerText();
+    for (const marker of ['生理周期', '行经期', '下次预计']) {
+      assert.ok(bInnerIncludes(bText, marker), 'other account page missing ' + marker + ': ' + bText.slice(0, 300));
+      assert.ok(bInnerIncludes(aInner, marker), 'owner page missing ' + marker);
     }
-    console.log('PASS partner sees phase, not statistics');
+    assert.ok(!/User|Admin/.test(bText.replace(/[^\u4e00-\u9fa5]/g, '')),
+      'no per-person framing left in the shared page');
+    console.log('PASS both accounts render the same page');
 
-    await b.screenshot({path: path.join(out, 'cycle2-partner.png'), fullPage: true});
+    await b.screenshot({path: path.join(out, 'cycle2-shared.png'), fullPage: true});
 
-    // Revoking prediction removes the phase immediately.
-    await post(a, 'settings', {share_actual: true, share_prediction: false});
-    await openCycle(b, {ring: false});
-    const after = await b.locator('.c2-card').first().innerText();
-    assert.ok(!/黄体期|卵泡期|排卵期/.test(after), 'revoked phase must disappear: ' + after);
-    console.log('PASS revoking prediction hides phase');
+    // A write from the other account lands in the shared record.
+    await post(b, 'period', {start_date: dayOffset(9), end_date: dayOffset(5)});
+    const seenByA = (await snap(a)).periods.map(r => r.start_date);
+    assert.ok(seenByA.includes(dayOffset(9)),
+      'owner must see the other account\'s write: ' + JSON.stringify(seenByA));
+    console.log('PASS writes are shared both ways');
 
     // Backfill through the modal must actually persist (v1's /^cycle/ handler used
     // to swallow cycle2 forms, so this is the regression guard).
@@ -190,19 +209,61 @@ async function openCycle(p, opts) {
     assert.equal(badTemp.status(), 400);
     console.log('PASS BBT validation');
 
-    // Day note round-trips and stays private from the partner.
-    await post(a, 'day', {date: dayOffset(1), flow: '中', pain: '轻', symptoms: ['疲惫'],
-      note: 'private-note-should-not-leak', note_shared: false});
-    const leakText = JSON.stringify(await snap(b));
-    assert.ok(!leakText.includes('private-note-should-not-leak'),
-      'private note leaked to partner');
-    console.log('PASS private note not leaked');
+    // Day notes live in the shared record, so both accounts read the same row.
+    await post(a, 'day', {date: dayOffset(1), flow: '中', pain: '轻', symptoms: ['疲劳'],
+      note: 'shared-note', note_shared: false});
+    const noteOnB = (await snap(b)).notes.find(n => n.date === dayOffset(1));
+    assert.ok(noteOnB, 'the other account must see the shared day note');
+    assert.equal(noteOnB.note, 'shared-note');
+    console.log('PASS day notes are shared');
 
-    // Dark mode must still render the ring legibly.
-    await a.emulateMedia({colorScheme: 'dark'});
+    // Saving one record tab must not wipe fields owned by the other tabs.
     await openCycle(a);
-    await a.locator('.c2-ring').first().waitFor();
+    await a.locator('[data-c2="record"][data-tab="symptom"]').first().click();
+    await a.locator('.c2-tabs').waitFor();
+    await a.locator('.c2-opt').filter({hasText: /^多$/}).click();
+    await a.locator('.c2-opt').filter({hasText: /^中$/}).nth(1).click();
+    await a.locator('.c2-opt').filter({hasText: /疲劳$/}).click();
+    let saved = a.waitForResponse(r => r.url().includes('/api/cycle2/day') &&
+      r.request().method() === 'POST');
+    await a.locator('#c2SaveBtn').click();
+    assert.equal((await saved).status(), 200);
+    await a.waitForTimeout(400);
+
+    await a.locator('[data-c2="tab"][data-tab="more"]').click();
+    await a.locator('#cycle2DayForm [name="note"]').waitFor();
+    await a.locator('#cycle2DayForm [name="note"]').fill('tabs must not clobber');
+    saved = a.waitForResponse(r => r.url().includes('/api/cycle2/day') &&
+      r.request().method() === 'POST');
+    await a.locator('#c2SaveBtn').click();
+    assert.equal((await saved).status(), 200);
+    await a.waitForTimeout(400);
+
+    const kept = (await snap(a)).notes.find(n => n.date === dayOffset(0));
+    assert.ok(kept, 'today record must exist');
+    assert.equal(kept.flow, '多', 'flow must survive a note-tab save: ' + JSON.stringify(kept));
+    assert.equal(kept.pain, '中', 'pain must survive: ' + JSON.stringify(kept));
+    assert.deepEqual(kept.symptoms, ['疲劳'], 'symptoms must survive: ' + JSON.stringify(kept));
+    assert.equal(kept.note, 'tabs must not clobber');
+    console.log('PASS record tabs merge instead of overwriting');
+
+    // Dark mode must still render the ring legibly. The app keys off `html.dark`,
+    // set at load time, so the preference must be stored before the page boots.
+    await a.evaluate(() => localStorage.setItem('sched_dark_mode', '1'));
+    await a.reload();
+    await a.waitForFunction(() => document.documentElement.classList.contains('dark'));
+    await a.locator('#cycle2Home [data-c2="open"]').waitFor({state: 'visible'});
+    await openCycle(a);
+    const darkFill = await a.evaluate(() => {
+      const dot = document.querySelector('.c2-ring .c2-dot');
+      const bg = getComputedStyle(document.querySelector('.c2-page')).getPropertyValue('--c2-track');
+      return {dot: dot && dot.getAttribute('class'), track: bg.trim()};
+    });
+    assert.ok(/c2-dot/.test(darkFill.dot), 'ring must render in dark mode: ' + JSON.stringify(darkFill));
+    assert.ok(darkFill.track, 'dark tokens must resolve');
     await a.screenshot({path: path.join(out, 'cycle2-dark.png'), fullPage: true});
+    // Leave the context light again so the capture above is the only dark frame.
+    await a.evaluate(() => localStorage.setItem('sched_dark_mode', '0'));
     console.log('PASS dark mode renders');
 
     assert.deepEqual(errors, [], 'page errors: ' + errors.join(' | '));

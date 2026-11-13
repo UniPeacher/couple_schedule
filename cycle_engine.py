@@ -9,6 +9,7 @@ import statistics
 
 LUTEAL_DEFAULT = 14          # calendar fallback assumption (days from ovulation to next start)
 LUTEAL_MIN, LUTEAL_MAX = 10, 16   # sanity band for BBT-derived individual luteal length
+FERTILE_LEAD = 5             # calendar convention: window opens five days before the estimated day
 PHASES = ('menstrual', 'follicular', 'ovulation', 'luteal')
 PHASE_LABELS = {'menstrual': '行经期', 'follicular': '卵泡期',
                 'ovulation': '排卵期', 'luteal': '黄体期'}
@@ -94,6 +95,8 @@ def predict(records, prefs, today, luteal_length=None):
                 window_end=(target + timedelta(days=margin)).isoformat(),
                 estimated_duration=duration,
                 ovulation_date=ovulation.isoformat(),
+                fertile_start=(ovulation - timedelta(days=FERTILE_LEAD)).isoformat(),
+                fertile_end=(ovulation + timedelta(days=1)).isoformat(),
                 luteal_length=luteal, luteal_calibrated=bool(luteal_length),
                 generated_on=today.isoformat(), disclaimer=DISCLAIMER)
 
@@ -204,6 +207,70 @@ def month_phases(month_first, month_last, records, prediction, bbt=None):
                               label=p['label'], cycle_day=p['cycle_day']))
         day += timedelta(days=1)
     return marks
+
+
+def _recorded_days(records, month_first, month_last):
+    days = set()
+    for r in records:
+        start = _d(r['start_date'])
+        stop = _d(r['end_date']) if r.get('end_date') else start
+        day = max(start, _d(month_first))
+        last = min(stop, _d(month_last))
+        while day <= last:
+            days.add(day.isoformat())
+            day += timedelta(days=1)
+    return days
+
+
+def _completed_cycles(records, today):
+    """Every finished cycle as (start, next_start), oldest first.
+
+    A cycle is only bounded when the following period start is already known, so
+    the ovulation estimate never touches the still-open or still-predicted part.
+    """
+    starts = sorted(_d(r['start_date']) for r in records)
+    return [(a, b) for a, b in zip(starts, starts[1:]) if b <= _d(today)]
+
+
+def month_marks(month_first, month_last, records, prediction, today=None, luteal=None):
+    """Compact calendar marks for one month, for a dot per day rather than a phase bar.
+
+    Recorded days win over anything derived. Inside finished cycles the ovulation
+    estimate is drawn from the known next start (start minus luteal length); in the
+    open cycle the prediction's confidence window outranks the fertile estimate
+    because whether the period already arrived is still unknown there.
+    """
+    today = _d(today) if today else date.today()
+    luteal_days = luteal or LUTEAL_DEFAULT
+    marks = {d: 'period' for d in _recorded_days(records, month_first, month_last)}
+    first, end = _d(month_first), _d(month_last)
+
+    def put(day, kind):
+        key = day.isoformat()
+        if key not in marks and first <= day <= end:
+            marks[key] = kind
+
+    for cycle_start, next_start in _completed_cycles(records, today):
+        ovulation = next_start - timedelta(days=luteal_days)
+        _fill_fertile(put, ovulation)
+
+    if prediction.get('available'):
+        start = _d(prediction['estimated_start'])
+        margin = prediction.get('window', 3)
+        day = first
+        while day <= end:
+            if start - timedelta(days=margin) <= day <= start + timedelta(days=margin):
+                put(day, 'predicted')
+            day += timedelta(days=1)
+        _fill_fertile(put, _d(prediction['ovulation_date']))
+    return [dict(date=k, kind=marks[k]) for k in sorted(marks)]
+
+
+def _fill_fertile(put, ovulation):
+    """Mark the six-day fertile window ending the day after ovulation."""
+    for offset in range(-FERTILE_LEAD, 2):
+        put(ovulation + timedelta(days=offset),
+            'ovulation' if offset == 0 else 'fertile')
 
 
 def insights(records, prediction, bbt=None):

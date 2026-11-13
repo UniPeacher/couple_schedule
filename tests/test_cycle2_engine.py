@@ -195,6 +195,79 @@ class PhaseTests(unittest.TestCase):
         self.assertTrue({'menstrual', 'follicular', 'luteal'} <= kinds)
 
 
+class MonthMarkTests(unittest.TestCase):
+    """The calendar dot map the period screen draws."""
+
+    def setUp(self):
+        self.records = [period('2026-10-01', '2026-10-05'), period('2026-09-01'),
+                        period('2026-08-02')]
+        self.prediction = engine.predict(self.records, {'prediction_enabled': 1}, TODAY)
+
+    def marks(self, first='2026-10-01', last='2026-10-31'):
+        return {m['date']: m['kind'] for m in
+                engine.month_marks(first, last, self.records, self.prediction)}
+
+    def test_recorded_days_are_period(self):
+        m = self.marks()
+        for day in ('2026-10-01', '2026-10-03', '2026-10-05'):
+            self.assertEqual(m[day], 'period', day)
+        self.assertNotIn('2026-10-06', m)
+
+    def test_open_period_marks_only_its_start(self):
+        recs = [period('2026-10-20')] + self.records[1:]
+        pred = engine.predict(recs, {'prediction_enabled': 1}, TODAY)
+        m = {x['date']: x['kind']
+             for x in engine.month_marks('2026-10-01', '2026-10-31', recs, pred)}
+        self.assertEqual(m['2026-10-20'], 'period')
+        self.assertNotIn('2026-10-21', m)
+
+    def test_fertile_window_ends_at_ovulation(self):
+        m = self.marks()
+        fertile = sorted(d for d, k in m.items() if k == 'fertile')
+        self.assertTrue(fertile, 'prediction must expose a fertile window')
+        self.assertEqual(fertile[0], self.prediction['fertile_start'])
+        self.assertEqual(m[self.prediction['ovulation_date']], 'ovulation')
+
+    def test_prediction_window_outranks_fertile(self):
+        pred_days = [d for d, k in self.marks().items() if k == 'predicted']
+        self.assertTrue(pred_days, 'predicted days must exist')
+        start = date.fromisoformat(self.prediction['estimated_start'])
+        for day in pred_days:
+            self.assertLessEqual(abs((date.fromisoformat(day) - start).days),
+                                 self.prediction['window'])
+
+    def test_no_prediction_marks_only_real_days(self):
+        m = {x['date']: x['kind'] for x in engine.month_marks(
+            '2026-10-01', '2026-10-31', self.records,
+            {'available': False, 'reason': '已关闭预估'})}
+        self.assertEqual(set(m.values()), {'period'})
+
+    def test_fertile_dates_bracket_ovulation(self):
+        ovu = date.fromisoformat(self.prediction['ovulation_date'])
+        self.assertEqual((ovu - date.fromisoformat(self.prediction['fertile_start'])).days,
+                         engine.FERTILE_LEAD)
+        self.assertEqual((date.fromisoformat(self.prediction['fertile_end']) - ovu).days, 1)
+
+    def test_finished_cycle_gets_ovulation_from_next_start(self):
+        """A completed cycle is bounded by two real starts, so its ovulation is derivable."""
+        m = {x['date']: x['kind'] for x in engine.month_marks(
+            '2026-08-01', '2026-08-31', self.records, {'available': False}, TODAY)}
+        # 08-02 start, next start 09-01, default luteal 14 -> ovulation 08-18.
+        self.assertEqual(m['2026-08-18'], 'ovulation')
+        self.assertEqual(m['2026-08-02'], 'period')
+
+    def test_ovulation_never_drawn_inside_open_cycle(self):
+        m = {x['date']: x['kind'] for x in engine.month_marks(
+            '2026-10-01', '2026-10-31', self.records, {'available': False}, TODAY)}
+        self.assertNotIn('ovulation', set(m.values()), 'open cycle must not claim ovulation')
+        self.assertNotIn('fertile', set(m.values()))
+
+    def test_calibrated_luteal_shifts_historical_ovulation(self):
+        m = {x['date']: x['kind'] for x in engine.month_marks(
+            '2026-08-01', '2026-08-31', self.records, {'available': False}, TODAY, luteal=11)}
+        self.assertEqual(m['2026-08-21'], 'ovulation')
+
+
 class InsightTests(unittest.TestCase):
     def test_regularity_levels(self):
         steady = [period(('2026-10-01'))]
