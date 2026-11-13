@@ -2226,7 +2226,7 @@ function renderMonthApp(){
     var diaryPreview = "";
     if (dayDiaries.length > 0){
       var firstD = dayDiaries[0];
-      var thumb = firstD.cover_photo ? ('/photos/' + firstD.cover_photo) : '/img/dog-add.png';
+      var thumb = firstD.cover_photo ? ('/photos/tb_' + firstD.cover_photo) : '/img/dog-add.png';
       diaryPreview = '<div class="mday-polaroid">' +
         '<img src="' + thumb + '" class="mday-thumb" alt="">' +
         '<div class="mday-info">' + esc(firstD.title) + '</div>' +
@@ -2837,6 +2837,8 @@ function shiftMonth(ym, delta){
 }
 
 function loadSummary(month, force){
+  clearTimeout(loadSummary._t);
+  if (month !== curSummaryMonth || force) loadSummary._polls = 0;
   if (month) curSummaryMonth = month;
   var box = $("#summaryContentBox");
   if (box) box.innerHTML = '<div style="text-align:center;padding:34px 0;color:var(--ink-muted);font-weight:700">🐶 正在翻这个月的日程和手账...<br><span style="font-size:11px;font-weight:normal;opacity:0.8">（若已配置AI模型，会按这些材料写一篇回顾）</span></div>';
@@ -2848,6 +2850,18 @@ function loadSummary(month, force){
     curSummaryMonth = res.month;
     curSummaryData = res;
     renderSummaryBox();
+    if (res.generating){
+      // AI 版本后台生成中：先看数字版，隔几秒静默换正式版
+      loadSummary._polls = (loadSummary._polls || 0) + 1;
+      if (loadSummary._polls <= 30){
+        clearTimeout(loadSummary._t);
+        loadSummary._t = setTimeout(function(){
+          if (CURRENT_VIEW === "summary") loadSummary(curSummaryMonth);
+        }, 4000);
+      }
+    } else {
+      loadSummary._polls = 0;
+    }
   }).catch(function(e){
     if (e.message === "unauth") return;
     if (box) box.innerHTML = '<div style="color:red;padding:20px 0">加载失败：' + esc(e.message) + '</div>';
@@ -2873,7 +2887,9 @@ function renderSummaryBox(){
     nextBtn.style.opacity = d.has_next ? "1" : "0.35";
   }
 
-  var aiTag = d.is_ai ? '<span style="font-size:10px;background:var(--dog-a-bg);color:var(--ink-muted);border:1px solid var(--dog-a-bd);padding:1px 6px;border-radius:8px;margin-left:auto;font-weight:700">AI 代笔</span>' : '';
+  var aiTag = d.generating
+    ? '<span style="font-size:10px;background:var(--bg-card);color:var(--ink-muted);border:1px solid var(--line-strong);padding:1px 6px;border-radius:8px;margin-left:auto;font-weight:700">✍️ AI 正在写…</span>'
+    : (d.is_ai ? '<span style="font-size:10px;background:var(--dog-a-bg);color:var(--ink-muted);border:1px solid var(--dog-a-bd);padding:1px 6px;border-radius:8px;margin-left:auto;font-weight:700">AI 代笔</span>' : '');
   var html = '<div style="background:var(--bg-card-subtle);border:1.5px solid var(--line-strong);border-radius:16px;padding:14px;box-shadow:var(--shadow-sm)">' +
     '<div style="font-size:15px;font-weight:800;color:var(--ink-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px">' +
       '<span>' + esc(d.title) + '</span>' + aiTag +
@@ -3233,7 +3249,7 @@ function openDayDiaries(dtStr){
               var liveBadge = p.live_video ? '<span class="polaroid-live-badge"><span class="polaroid-live-dot"></span>LIVE</span>' : '';
               return '<div class="polaroid-card">' +
                 liveBadge +
-                '<img src="/photos/' + p.file_name + '" class="polaroid-img" alt="" data-act="preview-photo" data-idx="' + pIdx + '" data-list="' + pListJson + '">' +
+                '<img src="/photos/tb_' + p.file_name + '" class="polaroid-img" alt="" data-act="preview-photo" data-idx="' + pIdx + '" data-list="' + pListJson + '">' +
               '</div>';
             }).join("") +
           '</div>';
@@ -3586,7 +3602,7 @@ document.addEventListener("click", function(e){
         prev.innerHTML = (d.photos || []).map(function(p){
           var liveTag = p.live_video ? '<span style="position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,0.65);color:#fbbf24;font-size:8px;font-weight:800;padding:0 3px;border-radius:4px;pointer-events:none">LIVE</span>' : '';
           return '<div class="edit-photo-thumb" data-file="' + p.file_name + '" style="position:relative;display:inline-block">' +
-            '<img src="/photos/' + p.file_name + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ddd">' +
+            '<img src="/photos/tb_' + p.file_name + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ddd">' +
             liveTag +
             '<span class="del-photo-btn" data-act="remove-edit-photo" data-file="' + p.file_name + '" style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold">×</span>' +
           '</div>';
@@ -4759,22 +4775,29 @@ if (ME && DATA) {
 
   function pollMessages() {
     if (!ME) return;
-    api("/api/messages").then(function(res){
-      if (res && res.ok) {
-        var prevCount = UNREAD_COUNT;
-        setUnreadCount(res.unread_count);
-        if (CURRENT_VIEW === "messages") {
-          MESSAGES_DATA = res.messages || [];
-          renderMessagesList();
-        } else if (res.unread_count > prevCount && prevCount >= 0) {
-          var diff = res.unread_count - prevCount;
-          var latest = (res.messages && res.messages[0]) ? res.messages[0] : null;
-          if (latest) {
-            toast("🔔 " + latest.title + "\n" + latest.content);
-          } else {
-            toast("🐾 收到 " + diff + " 条新消息提醒！");
+    // 每 15s 只拉轻量的 /api/me 读未读数；完整消息列表仅在信箱页或确有新消息时才拉
+    api("/api/me").then(function(res){
+      if (!res || res.unread_count === undefined) return;
+      var prevCount = UNREAD_COUNT;
+      setUnreadCount(res.unread_count);
+      if (CURRENT_VIEW === "messages") {
+        api("/api/messages").then(function(r2){
+          if (r2 && r2.ok){
+            MESSAGES_DATA = r2.messages || [];
+            renderMessagesList();
           }
-        }
+        }).catch(function(){});
+      } else if (res.unread_count > prevCount && prevCount >= 0) {
+        api("/api/messages").then(function(r2){
+          if (r2 && r2.ok){
+            var latest = (r2.messages && r2.messages[0]) ? r2.messages[0] : null;
+            if (latest) {
+              toast("🔔 " + latest.title + "\n" + latest.content);
+            } else {
+              toast("🐾 收到新消息提醒！");
+            }
+          }
+        }).catch(function(){});
       }
     }).catch(function(){});
   }

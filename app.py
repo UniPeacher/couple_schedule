@@ -249,6 +249,46 @@ def load_secret():
     return s
 
 
+# ---------------------------------------------------------------- 照片缩略图
+
+_THUMB_LOCK = threading.Lock()
+
+def ensure_thumb(src_fp, thumb_fp):
+    """用 ffmpeg 生成 720px 缩略图（best-effort：失败返回 False，调用方回退原图）。
+
+    实况照片是 JPEG 尾部拼 MP4 的 motion photo，强制 -f mjpeg 只解首帧，
+    比默认探测快 4 倍；PNG 等其他格式走自动探测重试。
+    """
+    if os.path.exists(thumb_fp):
+        return True
+    if not os.path.exists(src_fp):
+        return False
+    import subprocess
+    tmp_fp = thumb_fp + ".tmp.jpg"
+    ok = False
+    with _THUMB_LOCK:
+        if os.path.exists(thumb_fp):
+            return True
+        for extra in (["-f", "mjpeg"], []):
+            try:
+                r = subprocess.run(
+                    ["ffmpeg", "-y"] + extra + ["-i", src_fp,
+                     "-vf", "scale=w=min(iw\\,720):h=-2", "-q:v", "7",
+                     "-frames:v", "1", tmp_fp],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+                if r.returncode == 0 and os.path.exists(tmp_fp) and os.path.getsize(tmp_fp) > 500:
+                    os.replace(tmp_fp, thumb_fp)
+                    ok = True
+                    break
+            except Exception as e:
+                sys.stderr.write(f"[thumb error] {src_fp}: {e}\n")
+            finally:
+                if os.path.exists(tmp_fp):
+                    with contextlib.suppress(Exception):
+                        os.remove(tmp_fp)
+    return ok
+
+
 def get_setting(key, default=""):
     with LOCK:
         row = CONN.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
@@ -676,6 +716,33 @@ def _month_nav(ym):
     }
 
 
+_SUMMARY_INFLIGHT = set()          # 正在后台生成 AI 版的月份 cache_key
+_SUMMARY_INFLIGHT_LOCK = threading.Lock()
+
+def _summary_generate_worker(ym, facts, stats):
+    """后台线程：调 LLM 写正式版月度胶囊并写入缓存；失败时落 fallback 版本（同样终止前端轮询）"""
+    cache_key = "month_%s" % ym
+    try:
+        ai_content = call_llm_api(SUMMARY_SYSTEM_PROMPT, build_month_user_prompt(facts))
+        res = {
+            "title": "月度胶囊 · %s" % facts["month_label"],
+            "content": ai_content or build_month_fallback(facts),
+            "stats": stats,
+            "is_ai": bool(ai_content),
+        }
+        with LOCK:
+            CONN.execute(
+                "INSERT INTO summary_cache(cache_key, summary_json, updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(cache_key) DO UPDATE SET summary_json=excluded.summary_json, updated_at=excluded.updated_at",
+                (cache_key, json.dumps(res, ensure_ascii=False),
+                 datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    except Exception as e:
+        sys.stderr.write(f"[Summary worker error] {ym}: {e}\n")
+    finally:
+        with _SUMMARY_INFLIGHT_LOCK:
+            _SUMMARY_INFLIGHT.discard(cache_key)
+
+
 def generate_month_summary(ym=None, force_refresh=False):
     ym = ym or default_summary_month()
     cache_key = "month_%s" % ym
@@ -689,15 +756,21 @@ def generate_month_summary(ym=None, force_refresh=False):
                 res = json.loads(cached["summary_json"])
             except Exception:
                 res = None
+            if res:
+                out = dict(res)
+                out.update(_month_nav(ym))
+                return out
 
-    if res is None:
-        facts = month_facts(ym)
-        stats = [
-            {"k": "共同空闲", "v": "%sh" % facts["free_hours"]},
-            {"k": "两人日程", "v": "%d项" % (facts["event_counts"]["a"] + facts["event_counts"]["b"])},
-            {"k": "手账 / 照片", "v": "%d篇 / %d张" % (len(facts["diaries"]), facts["n_photos"])},
-            {"k": "留言", "v": "%d条" % len(facts["comments"])},
-        ]
+    facts = month_facts(ym)
+    stats = [
+        {"k": "共同空闲", "v": "%sh" % facts["free_hours"]},
+        {"k": "两人日程", "v": "%d项" % (facts["event_counts"]["a"] + facts["event_counts"]["b"])},
+        {"k": "手账 / 照片", "v": "%d篇 / %d张" % (len(facts["diaries"]), facts["n_photos"])},
+        {"k": "留言", "v": "%d条" % len(facts["comments"])},
+    ]
+
+    if force_refresh:
+        # 手动「重新生成」保持同步：等新版写完再返回
         ai_content = call_llm_api(SUMMARY_SYSTEM_PROMPT, build_month_user_prompt(facts))
         res = {
             "title": "月度胶囊 · %s" % facts["month_label"],
@@ -711,14 +784,45 @@ def generate_month_summary(ym=None, force_refresh=False):
                     "INSERT INTO summary_cache(cache_key, summary_json, updated_at) VALUES(?,?,?) "
                     "ON CONFLICT(cache_key) DO UPDATE SET summary_json=excluded.summary_json, updated_at=excluded.updated_at",
                     (cache_key, json.dumps(res, ensure_ascii=False),
-                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                )
+                     datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         except Exception as e:
             sys.stderr.write("[Cache save error]: %s\n" % e)
+        out = dict(res)
+        out.update(_month_nav(ym))
+        return out
 
+    # 缓存未命中：立即返回数字版（fallback），LLM 版本后台写好后前端轮询自动换上
+    with _SUMMARY_INFLIGHT_LOCK:
+        already = cache_key in _SUMMARY_INFLIGHT
+        _SUMMARY_INFLIGHT.add(cache_key)
+    if not already:
+        threading.Thread(target=_summary_generate_worker, args=(ym, facts, stats), daemon=True).start()
+    res = {
+        "title": "月度胶囊 · %s" % facts["month_label"],
+        "content": build_month_fallback(facts),
+        "stats": stats,
+        "is_ai": False,
+        "generating": True,
+    }
     out = dict(res)
     out.update(_month_nav(ym))
     return out
+
+
+def precompute_summaries():
+    """启动时预生成缺失的月度胶囊缓存，首次进入不再等 LLM"""
+    try:
+        with LOCK:
+            rows = CONN.execute("SELECT DISTINCT substr(date,1,7) m FROM diaries").fetchall()
+            have = {r["cache_key"] for r in CONN.execute("SELECT cache_key FROM summary_cache").fetchall()}
+        current = date.today().strftime("%Y-%m")
+        months = sorted({r["m"] for r in rows if r["m"]} | {current})
+        for ym in months:
+            if ym > current or ("month_%s" % ym) in have:
+                continue
+            generate_month_summary(ym)
+    except Exception as e:
+        sys.stderr.write(f"[Summary precompute error]: {e}\n")
 
 
 def push_month_summary(ym=None):
@@ -1400,9 +1504,19 @@ class Handler(BaseHTTPRequestHandler):
             if path in ("/cycle.js", "/cycle.css", "/cycle2.js", "/cycle2.css",
                         "/settings_ui.js", "/settings_ui.css"):
                 mime = "text/javascript" if path.endswith(".js") else "text/css"
-                with open(os.path.join(APP_DIR, path[1:]), "rb") as asset:
+                asset_fp = os.path.join(APP_DIR, path[1:])
+                try:
+                    st = os.stat(asset_fp)
+                    etag = '"%x-%x"' % (st.st_mtime_ns, st.st_size)
+                except OSError:
+                    etag = ""
+                inm = self.headers.get("If-None-Match")
+                if etag and inm and etag in inm:
+                    return self.send_bytes(304, b"", mime + "; charset=utf-8",
+                                           extra=[("ETag", etag), ("Cache-Control", "no-cache")])
+                with open(asset_fp, "rb") as asset:
                     return self.send_bytes(200, asset.read(), mime + "; charset=utf-8",
-                                           extra=[("Cache-Control", "no-cache")])
+                                           extra=[("ETag", etag), ("Cache-Control", "no-cache")])
             if path == "/api/settings":
                 uid = self.authed()
                 if uid is None:
@@ -1522,7 +1636,16 @@ class Handler(BaseHTTPRequestHandler):
                 if self.authed() is None:
                     return
                 fn = os.path.basename(path[8:])
+                thumb_fp = ""
+                if fn.startswith("tb_") and len(fn) > 7:
+                    thumb_fp = os.path.join(PHOTOS_DIR, fn)
+                    fn = fn[3:]
                 fp = os.path.join(PHOTOS_DIR, fn)
+                if thumb_fp and fn.lower().endswith(".jpg"):
+                    if not os.path.exists(thumb_fp):
+                        ensure_thumb(fp, thumb_fp)
+                    if os.path.exists(thumb_fp):
+                        fp = thumb_fp
                 if fp and os.path.exists(fp):
                     mime = "image/jpeg"
                     lfn = fn.lower()
@@ -1531,6 +1654,10 @@ class Handler(BaseHTTPRequestHandler):
                     elif lfn.endswith(".mp4"): mime = "video/mp4"
                     elif lfn.endswith(".mov"): mime = "video/quicktime"
                     elif lfn.endswith(".webm"): mime = "video/webm"
+                    # 缩略图内容永不变化，可长缓存；原图保留 7 天
+                    cache_ctl = ("public, max-age=31536000, immutable"
+                                 if (thumb_fp and fp == thumb_fp)
+                                 else "public, max-age=604800")
                     file_size = os.path.getsize(fp)
                     range_hdr = self.headers.get("Range")
                     if range_hdr and range_hdr.startswith("bytes="):
@@ -1549,14 +1676,14 @@ class Handler(BaseHTTPRequestHandler):
                                     extra=[
                                         ("Content-Range", f"bytes {start}-{end}/{file_size}"),
                                         ("Accept-Ranges", "bytes"),
-                                        ("Cache-Control", "public, max-age=604800"),
+                                        ("Cache-Control", cache_ctl),
                                     ]
                                 )
                         except Exception:
                             pass
                     with open(fp, "rb") as f:
                         return self.send_bytes(200, f.read(), mime,
-                                               extra=[("Cache-Control", "public, max-age=604800"),
+                                               extra=[("Cache-Control", cache_ctl),
                                                       ("Accept-Ranges", "bytes")])
                 return self.send_json({"error": "not found"}, 404)
             if path == "/api/week":
@@ -2442,6 +2569,13 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
 
+                # 新照片落库即生成缩略图，首图不等着看大图
+                if os.path.exists(fpath):
+                    try:
+                        ensure_thumb(fpath, os.path.join(PHOTOS_DIR, "tb_" + os.path.basename(fpath)))
+                    except Exception:
+                        pass
+
                 saved_items.append((fname, v_fname))
             except Exception as e:
                 self.log_error("保存手账媒体失败: %s", e)
@@ -2716,6 +2850,7 @@ def main():
     get_page_html()  # 启动即校验模板存在，缺失直接拒绝启动而非线上 500
     init_db()
     threading.Thread(target=cron_summary_worker, daemon=True).start()
+    threading.Thread(target=precompute_summaries, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print("sched-share listening on 0.0.0.0:%d, data dir %s" % (PORT, DATA_DIR), flush=True)
     srv.serve_forever()
