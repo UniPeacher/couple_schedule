@@ -293,6 +293,13 @@ button,input,select,textarea{font-family:inherit}
   display:flex;align-items:center;justify-content:space-between;margin-top:4px;
   font-size:11px;color:var(--ink-muted);flex-wrap:wrap;gap:6px;
 }
+.wish-del-btn{
+  position:absolute;top:8px;right:8px;z-index:1;
+  border:0;background:transparent;border-radius:8px;
+  font-size:13px;line-height:1;padding:5px;cursor:pointer;
+  color:var(--ink-muted);opacity:0.55;transition:all .15s ease;
+}
+.wish-del-btn:hover{opacity:1;background:var(--bg-card-subtle)}
 .wish-progress-box{
   background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:18px;
   padding:14px 18px;margin-bottom:14px;box-shadow:var(--shadow-sm);
@@ -2092,6 +2099,7 @@ function renderWishesList(){
     var creatorPill = '<span class="school-badge ' + (isA ? "a" : "b") + '" style="font-size:10px;padding:1px 6px">' + (isA ? "🐶 " : "🐾 ") + esc(w.creator_name || (isA ? "小金毛" : "小白狗")) + '</span>';
 
     return '<div class="wish-card' + (w.priority ? ' priority' : '') + (isDone ? ' done' : '') + '">' +
+      '<button type="button" class="wish-del-btn" data-act="del-wish" data-wid="' + w.id + '" title="删除此心愿">🗑️</button>' +
       '<button type="button" class="wish-check-btn" data-act="toggle-wish" data-wid="' + w.id + '" title="' + (isDone ? "重新标记为待完成" : "打勾！实现这个心愿") + '">' +
         (isDone ? '✓' : '🐾') +
       '</button>' +
@@ -2108,10 +2116,7 @@ function renderWishesList(){
             '<span>' + esc(w.created_at || "") + '</span>' +
             (isDone && w.done_at ? ('<span style="color:var(--free-text);font-weight:700"> · 🎉 ' + esc(w.done_at) + ' 达成</span>') : '') +
           '</div>' +
-          '<div style="display:flex;gap:6px">' +
-            (isDone ? ('<button type="button" class="msg-btn-sm" data-act="wish-to-diary" data-title="' + esc(w.title) + '" title="顺手记一篇手账纪念">📸 记手账</button>') : '') +
-            '<button type="button" class="msg-btn-sm del" data-act="del-wish" data-wid="' + w.id + '" title="删除此心愿">🗑️</button>' +
-          '</div>' +
+          (isDone ? ('<div style="display:flex;gap:6px"><button type="button" class="msg-btn-sm" data-act="wish-to-diary" data-title="' + esc(w.title) + '" title="顺手记一篇手账纪念">📸 记手账</button></div>') : '') +
         '</div>' +
       '</div>' +
     '</div>';
