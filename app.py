@@ -24,6 +24,8 @@ import urllib.request
 import contextlib
 import shutil
 import cycle
+import cycle2
+import cycle2_collaboration
 import settings_service
 
 # 纪念日/节日引擎（special_days.py，移植自 our-little-planet 并适配）。
@@ -909,6 +911,8 @@ def init_db():
     with LOCK:
         conn.executescript(SCHEMA)
         conn.executescript(cycle.SCHEMA)
+        conn.executescript(cycle2.SCHEMA_V2)
+        cycle2_collaboration.ensure_schema(conn)
         try:
             CONN.execute("ALTER TABLE comments ADD COLUMN date TEXT DEFAULT ''")
         except Exception:
@@ -1393,7 +1397,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 return self.render_index_html()
-            if path in ("/cycle.js", "/cycle.css", "/settings_ui.js", "/settings_ui.css"):
+            if path in ("/cycle.js", "/cycle.css", "/cycle2.js", "/cycle2.css",
+                        "/settings_ui.js", "/settings_ui.css"):
                 mime = "text/javascript" if path.endswith(".js") else "text/css"
                 with open(os.path.join(APP_DIR, path[1:]), "rb") as asset:
                     return self.send_bytes(200, asset.read(), mime + "; charset=utf-8",
@@ -1405,6 +1410,26 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:
                     payload = settings_service.payload(CONN, uid)
                 return self.send_json(payload, extra=[("Cache-Control", "no-store, private"), ("Vary", "Cookie")])
+            if path == "/api/cycle2" or path.startswith("/api/cycle2/"):
+                uid = self.authed()
+                if uid is None:
+                    return
+                headers = [("Cache-Control", "no-store, private"), ("Vary", "Cookie")]
+                try:
+                    with LOCK:
+                        if path == "/api/cycle2/export":
+                            payload = cycle2.export_data(CONN, uid)
+                            headers.append(("Content-Disposition",
+                                            'attachment; filename="my-cycle-data-v2.json"'))
+                        elif path == "/api/cycle2":
+                            qs = parse_qs(urlparse(self.path).query)
+                            month = qs.get("month", [date.today().strftime("%Y-%m")])[0]
+                            payload = cycle2_collaboration.snapshot(CONN, uid, month)
+                        else:
+                            raise cycle2.Error("接口不存在", 404)
+                    return self.send_json(payload, extra=headers)
+                except cycle2.Error as exc:
+                    return self.send_json({"error": str(exc)}, exc.status, extra=headers)
             if path == "/api/cycle" or path.startswith("/api/cycle/"):
                 uid = self.authed()
                 if uid is None:
@@ -1656,6 +1681,25 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         d = self.body_json()
         try:
+            if path.startswith("/api/cycle2/"):
+                uid = self.authed()
+                if uid is None:
+                    return
+                headers = [("Cache-Control", "no-store, private"), ("Vary", "Cookie")]
+                origin = self.headers.get("Origin")
+                if origin:
+                    parsed_origin = urlparse(origin)
+                    if parsed_origin.netloc != self.headers.get("Host") or parsed_origin.scheme not in ("http", "https"):
+                        return self.send_json({"error": "不允许跨站写入"}, 403, extra=headers)
+                if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
+                    return self.send_json({"error": "须使用 application/json"}, 415, extra=headers)
+                try:
+                    with db_transaction() as conn:
+                        result = cycle2_collaboration.mutate(
+                            conn, uid, path[len("/api/cycle2/"):], d)
+                    return self.send_json(result, extra=headers)
+                except cycle2_collaboration.c.Error as exc:
+                    return self.send_json({"error": str(exc)}, exc.status, extra=headers)
             if path.startswith("/api/cycle/"):
                 uid = self.authed()
                 if uid is None:
@@ -2649,8 +2693,10 @@ def cron_summary_worker():
                     print(f"[Cron] 纪念日提醒推送 {n} 条: {today_str}", flush=True)
 
             # Owner-only generic private reminder; never forwarded to external push services.
+            # Only the v2 engine sends cycle notices: both versions read the same
+            # preference row, so running v1 as well would duplicate every reminder.
             with db_transaction() as conn:
-                cycle.reminder_pass(conn, now)
+                cycle2_collaboration.reminder_pass(conn, now)
 
             # 4. 定期轻量自维护：每 10 分钟回收过期限流字典并执行 SQLite WAL checkpoint，每日凌晨清理回收站
             if now.minute % 10 == 0 and now.second < 30:
