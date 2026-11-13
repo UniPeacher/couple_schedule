@@ -537,22 +537,6 @@ var Cycle2 = (function () {
     });
   }
 
-  function paintHome(s) {
-    var slot = $('#cycle2Home');
-    if (!slot) return;
-    var line;
-    if (s.today) {
-      line = '<strong>' + h(s.today.label) + ' · 第 ' + s.today.day + ' 天</strong>' +
-        '<p class="c2-muted">周期第 ' + s.today.cycle_day + ' 天</p>';
-    } else {
-      line = '<strong>' + (s.periods.length ? '预估待补充记录' : '记录一次经期开始') + '</strong>';
-    }
-    slot.innerHTML = '<div class="c2-card c2-page">' +
-      '<div style="font-size:11px;font-weight:800;color:var(--c2-accent-tx)">🌷 周期</div>' + line +
-      '<div class="c2-actions">' + btn('查看周期 ›', 'open') + '</div>' +
-      '<p class="c2-muted">四相分期 · 预估仅供参考</p></div>';
-  }
-
   /* ---------- data ---------- */
   function request() {
     var version = ++sequence, uid = ME && ME.uid;
@@ -567,11 +551,11 @@ var Cycle2 = (function () {
         selectedDate = null;
       }
       if (CURRENT_VIEW === 'cycle2' || recordTab) paintPage(s);
-      paintHome(s); paintCalendar(s);
+      paintCalendar(s);
       document.body.setAttribute('data-cycle2-ready', String(version));
     }).catch(function (e) {
       if (version !== sequence) return;
-      var target = $('#cycle2Content') || $('#cycle2Home');
+      var target = $('#cycle2Content');
       if (target) target.innerHTML = '<div class="c2-card">' + h(e.message) + ' ' + btn('重新加载', 'retry') + '</div>';
     });
   }
@@ -580,15 +564,8 @@ var Cycle2 = (function () {
     if (!ME) { state = null; owner = null; sequence++; recordTab = null; return; }
     if (owner !== ME.uid) { state = null; recordTab = null; }
     monthAnchor();
-    if (CURRENT_VIEW === 'week' || CURRENT_VIEW === 'month') {
-      var target = CURRENT_VIEW === 'week' ? document.querySelector('main') : document.querySelector('.month-cal-wrap');
-      if (target && !$('#cycle2Home')) {
-        var slot = document.createElement('section');
-        slot.id = 'cycle2Home';
-        target.insertAdjacentElement('afterend', slot);
-      }
-      request();
-    } else if (CURRENT_VIEW === 'cycle2' || recordTab) request();
+    /* 课表与月历不再插周期卡；月历仍取数据为格子做相位着色。 */
+    if (CURRENT_VIEW === 'month' || CURRENT_VIEW === 'cycle2' || recordTab) request();
   }
 
   function save(action, data, el) {
@@ -722,7 +699,6 @@ var Cycle2 = (function () {
     var el = e.target.closest('[data-c2]');
     if (!el) return;
     var a = el.dataset.c2;
-    if (a === 'open') { e.preventDefault(); go(); return; }
     if (a === 'calendar') {
       e.preventDefault();
       selectedDate = el.dataset.date;
@@ -815,8 +791,6 @@ var Cycle2 = (function () {
     state = null;
     recordTab = null;
     document.querySelectorAll('.c2-cell-mark').forEach(function (e) { e.remove(); });
-    var slot = $('#cycle2Home');
-    if (slot) slot.innerHTML = '';
     var box = $('#cycle2Content');
     if (box) box.innerHTML = '<p>私人记录已隐藏，返回后重新加载。</p>';
   }
@@ -824,7 +798,7 @@ var Cycle2 = (function () {
   setInterval(function () {
     if (!ME || document.hidden || !state || recordTab ||
       document.body.hasAttribute('data-cycle2-saving') ||
-      !$('#cycle2Home') && CURRENT_VIEW !== 'cycle2') return;
+      CURRENT_VIEW !== 'cycle2') return;
     var uid = ME.uid, v = sequence;
     api('/api/cycle2?month=' + monthAnchor(), {cache: 'no-store'}).then(function (s) {
       if (!ME || uid !== ME.uid || v !== sequence) return;
@@ -834,7 +808,6 @@ var Cycle2 = (function () {
       state.calendar = s.calendar;
       state.month_marks = s.month_marks;
       state.proposals = s.proposals;
-      paintHome(s);
       paintCalendar(s);
       if (changed && CURRENT_VIEW === 'cycle2' && !document.querySelector('#cycle2PeriodModal.show') &&
         !document.querySelector('#cycle2Content :focus')) paintPage(s);

@@ -1419,18 +1419,15 @@ html.dark .splash-img {
       <div class="skeleton-bnav-item"></div>
       <div class="skeleton-bnav-item"></div>
       <div class="skeleton-bnav-item"></div>
-      <div class="skeleton-bnav-item"></div>
     </div>
   </div>
 </div>
 <script id="__SSR_DATA__">window.__INITIAL_DATA__ = null;</script>
 <div class="toast" id="toast"></div>
-<link rel="stylesheet" href="/cycle.css">
-<script src="/cycle.js"></script>
-<link rel="stylesheet" href="/cycle2.css">
-<script src="/cycle2.js"></script>
-<link rel="stylesheet" href="/settings_ui.css">
-<script src="/settings_ui.js"></script>
+<link rel="stylesheet" href="/cycle2.css?v=20261114">
+<script src="/cycle2.js?v=20261114"></script>
+<link rel="stylesheet" href="/settings_ui.css?v=20261114">
+<script src="/settings_ui.js?v=20261114"></script>
 <script>
 "use strict";
 var splashStart = Date.now();
@@ -1462,7 +1459,7 @@ var ME = null, DATA = null, ANCHOR = null, META = null;
   } catch(e){}
 })();
 
-var CURRENT_VIEW = "week"; // "week" | "month" | "summary" | "messages" | "wishes" | "anniv" | "settings"
+var CURRENT_VIEW = "week"; // "week" | "month" | "summary" | "messages" | "wishes" | "trips" | "anniv" | "settings" | "cycle2"
 var MONTH_ANCHOR = todayISO().slice(0, 7); // YYYY-MM
 var MONTH_DATA = null;
 var UNREAD_COUNT = 0;
@@ -1667,6 +1664,7 @@ function renderTopBar(){
         '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
           (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
         '</button>' +
+        '<button class="p-btn icon-btn" data-act="switch-view" data-v="settings" title="设置">⚙️</button>' +
       '</div>' +
     '</header>' +
   '</div>';
@@ -1681,7 +1679,6 @@ function render(){
     else if (CURRENT_VIEW === "trips") renderTripsPage();
     else if (CURRENT_VIEW === "anniv") renderAnnivPage();
     else if (CURRENT_VIEW === "settings") renderSettingsPage();
-    else if (CURRENT_VIEW === "cycle") Cycle.renderPage();
     else if (CURRENT_VIEW === "cycle2") Cycle2.renderPage();
     else renderApp();
   }
@@ -1848,6 +1845,7 @@ function eventStackHTML(group, uid, date){
 function renderSummaryPage(){
   var html = renderTopBar() +
     '<div class="page-container">' +
+      diarySegHTML("summary") +
       '<div class="page-header-card">' +
         '<div>' +
           '<div class="page-header-title">📔 月度时光胶囊</div>' +
@@ -1956,7 +1954,7 @@ function renderMessagesList(){
     if (m.target_action){
       if (m.target_action.indexOf("event:") === 0) actionHint = '<span class="msg-action-hint">查看相关日程 ➜</span>';
       else if (m.target_action.indexOf("diary:") === 0) actionHint = '<span class="msg-action-hint">查看相关手账 ➜</span>';
-      else if (m.target_action.indexOf("view:summary") === 0) actionHint = '<span class="msg-action-hint">查看时光简报 ➜</span>';
+      else if (m.target_action.indexOf("view:summary") === 0) actionHint = '<span class="msg-action-hint">查看时光胶囊 ➜</span>';
       else if (m.target_action.indexOf("view:settings") === 0) actionHint = '<span class="msg-action-hint">前往设置 ➜</span>';
     }
 
@@ -2253,6 +2251,7 @@ function renderMonthApp(){
         '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
           (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
         '</button>' +
+        '<button class="p-btn icon-btn" data-act="switch-view" data-v="settings" title="设置">⚙️</button>' +
       '</div>' +
     '</header>' +
   '</div>' +
@@ -2404,6 +2403,7 @@ function renderApp(){
         '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
           (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
         '</button>' +
+        '<button class="p-btn icon-btn" data-act="switch-view" data-v="settings" title="设置">⚙️</button>' +
       '</div>' +
     '</header>' +
 
@@ -2447,21 +2447,19 @@ function renderApp(){
 
 function bottomNavHTML(){
   var v = CURRENT_VIEW;
+  var diaryOn = (v === "month" || v === "wishes" || v === "trips" || v === "summary") ? ' on' : '';
   return '<nav class="bottom-nav">' +
     '<div class="b-tab' + (v === "week" ? ' on' : '') + '" data-act="switch-view" data-v="week">' +
       '<span class="b-ico">🗓️</span><span class="b-txt">课表</span>' +
     '</div>' +
-    '<div class="b-tab' + (v === "month" ? ' on' : '') + '" data-act="switch-view" data-v="month">' +
+    '<div class="b-tab' + diaryOn + '" data-act="switch-view" data-v="month">' +
       '<span class="b-ico">📔</span><span class="b-txt">手账</span>' +
     '</div>' +
-    '<div class="b-tab' + (v === "summary" ? ' on' : '') + '" data-act="switch-view" data-v="summary">' +
-      '<span class="b-ico">💌</span><span class="b-txt">时光简报</span>' +
+    '<div class="b-tab' + (v === "cycle2" ? ' on' : '') + '" data-act="switch-view" data-v="cycle2">' +
+      '<span class="b-ico">🌷</span><span class="b-txt">周期</span>' +
     '</div>' +
     '<div class="b-tab' + (v === "messages" ? ' on' : '') + '" data-act="switch-view" data-v="messages">' +
       '<span class="b-ico">💬' + (UNREAD_COUNT > 0 ? ('<span class="b-badge" id="bUnreadBadge">' + (UNREAD_COUNT > 99 ? '99+' : UNREAD_COUNT) + '</span>') : '<span class="b-badge" id="bUnreadBadge" style="display:none"></span>') + '</span><span class="b-txt">消息</span>' +
-    '</div>' +
-    '<div class="b-tab' + (v === "settings" ? ' on' : '') + '" data-act="switch-view" data-v="settings">' +
-      '<span class="b-ico">⚙️</span><span class="b-txt">设置</span>' +
     '</div>' +
   '</nav>';
 }
@@ -2906,7 +2904,7 @@ function tripBar(total, packed, barId){
 }
 
 function diarySegHTML(active){
-  var items = [["month", "📔 足迹手账"], ["wishes", "✨ 心愿备忘"], ["trips", "✈️ 旅行清单"]];
+  var items = [["month", "📔 足迹手账"], ["wishes", "✨ 心愿备忘"], ["trips", "✈️ 旅行清单"], ["summary", "💌 时光胶囊"]];
   return '<div style="margin-bottom:12px"><div class="seg" style="margin-bottom:0">' +
     items.map(function(it){
       return '<div class="opt' + (active === it[0] ? " on" : "") + '" data-act="switch-view" data-v="' + it[0] + '">' + it[1] + '</div>';
