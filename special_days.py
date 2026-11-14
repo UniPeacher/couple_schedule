@@ -30,9 +30,9 @@ from datetime import date, timedelta
 
 __all__ = [
     "DAY_MILESTONES", "SOLAR_FESTIVALS", "LUNAR_FESTIVALS",
-    "parse_ymd", "fmt_ymd", "days_between", "day_number", "cn_num",
+    "parse_ymd", "fmt_ymd", "cn_num",
     "lunar_to_solar", "lunar_new_year", "special_days_in_year",
-    "next_special_day", "next_occurrence", "upcoming", "milestone_dates",
+    "next_occurrence", "upcoming",
 ]
 
 # ---------------------------------------------------------------- 常量配置
@@ -76,23 +76,6 @@ def parse_ymd(s):
 def fmt_ymd(d):
     """date → 'YYYY-MM-DD'"""
     return "%04d-%02d-%02d" % (d.year, d.month, d.day)
-
-
-def days_between(frm, to):
-    """to - frm（天）。任一端无效返回 None。"""
-    a, b = parse_ymd(frm), parse_ymd(to)
-    if a is None or b is None:
-        return None
-    return (b - a).days
-
-
-def day_number(start, today=None):
-    """「在一起第 N 天」：当天 = 第 1 天。start 无效返回 None。"""
-    s = parse_ymd(start)
-    if s is None:
-        return None
-    t = parse_ymd(today) if today is not None else date.today()
-    return (t - s).days + 1
 
 
 def _clamp(y, m, d):
@@ -227,36 +210,6 @@ def lunar_to_solar(lunar_year, lunar_month, lunar_day, is_leap_month=False):
     return ny + timedelta(days=offset + lunar_day - 1)
 
 
-def lunar_month_day_of(solar_day):
-    """公历 date → (农历年, 月, 日, 是否闰月)。给「今天农历几号」这类展示用，可选。"""
-    if not (isinstance(solar_day, date) and _LUNAR_BASE_DAY <= solar_day):
-        return None
-    # 找到所在农历年
-    y = _LUNAR_BASE_YEAR
-    cursor = _LUNAR_BASE_DAY
-    while True:
-        ydays = _lunar_year_days(y)
-        nxt = cursor + timedelta(days=ydays)
-        if solar_day < nxt or y >= _LUNAR_BASE_YEAR + len(_LUNAR) - 1:
-            break
-        cursor = nxt
-        y += 1
-    delta = (solar_day - cursor).days  # 该农历年内第几天（0 起）
-    leap = _leap_month(y)
-    m = 1
-    while True:
-        mdays = _lunar_month_days(y, m)
-        if delta < mdays:
-            return (y, m, delta + 1, False)
-        delta -= mdays
-        if leap == m:
-            ldays = _lunar_month_days(y, 0)
-            if delta < ldays:
-                return (y, m, delta + 1, True)
-            delta -= ldays
-        m += 1
-
-
 # ---------------------------------------------------------------- 节日与纪念日
 
 
@@ -302,19 +255,6 @@ def special_days_in_year(year, start_date):
         out.append({"date": fmt_ymd(d), "label": label, "kind": kind})
     out.sort(key=lambda x: x["date"])
     return out
-
-
-def next_special_day(today, start_date):
-    """距今最近的一个未来日子（含今天）。找不到返回 None。"""
-    t = parse_ymd(today)
-    if t is None:
-        return None
-    y0 = t.year
-    all_days = []
-    for y in range(y0 - 1, y0 + 3):
-        all_days.extend(special_days_in_year(y, start_date))
-    future = sorted((d for d in all_days if d["date"] >= fmt_ymd(t)), key=lambda x: x["date"])
-    return future[0] if future else None
 
 
 # ------------------------------------------------ sched-share 适配：生日循环
@@ -389,12 +329,6 @@ def next_occurrence(anchor, today, kind="solar"):
     return None
 
 
-def anniversary_date(start, n_days):
-    """在一起第 n_days 天的公历日期（当天 = 第 1 天）。"""
-    s = parse_ymd(start)
-    return None if s is None else s + timedelta(days=n_days - 1)
-
-
 def upcoming(items, today, days=30):
     """给通知系统的入口：today 起 days 天内将要发生的日子，按日期升序。
 
@@ -467,10 +401,3 @@ def upcoming(items, today, days=30):
                     "turns": turns, "label": label})
     out.sort(key=lambda x: (x["date"], str(x["title"])))
     return out
-
-
-def milestone_dates(start_date, today, days=7):
-    """相恋天数里程碑的提前提醒（love 专用，30/100/520 这种容易忘）。
-    返回 upcoming() 同构 dict 列表。"""
-    items = [{"id": None, "title": "在一起", "date": start_date, "target_type": "love"}]
-    return [x for x in upcoming(items, today, days=days)]

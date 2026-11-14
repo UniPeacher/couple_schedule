@@ -209,11 +209,17 @@ def month_phases(month_first, month_last, records, prediction, bbt=None):
     return marks
 
 
-def _recorded_days(records, month_first, month_last):
+def _recorded_days(records, month_first, month_last, today=None, est_duration=None):
     days = set()
+    today = _d(today) if today else date.today()
     for r in records:
         start = _d(r['start_date'])
-        stop = _d(r['end_date']) if r.get('end_date') else start
+        if r.get('end_date'):
+            stop = _d(r['end_date'])
+        else:
+            # Unconfirmed end: draw through the estimated duration, capped at today,
+            # so an ongoing period doesn't render as a single lone day.
+            stop = min(start + timedelta(days=(est_duration or 5) - 1), today)
         day = max(start, _d(month_first))
         last = min(stop, _d(month_last))
         while day <= last:
@@ -242,7 +248,8 @@ def month_marks(month_first, month_last, records, prediction, today=None, luteal
     """
     today = _d(today) if today else date.today()
     luteal_days = luteal or LUTEAL_DEFAULT
-    marks = {d: 'period' for d in _recorded_days(records, month_first, month_last)}
+    est_duration = prediction.get('estimated_duration') if prediction.get('available') else None
+    marks = {d: 'period' for d in _recorded_days(records, month_first, month_last, today, est_duration)}
     first, end = _d(month_first), _d(month_last)
 
     def put(day, kind):

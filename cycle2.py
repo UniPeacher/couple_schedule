@@ -175,15 +175,13 @@ def mutate(conn, uid, action, body, today=None):
         if effectiveness and effectiveness not in EFFECTIVENESS:
             raise Error('效果取值无效')
         note_shared = 1 if body.get('note_shared') else 0
-        existing = conn.execute('SELECT note_shared FROM cycle2_day_notes WHERE uid=? AND date=?',
-                                (uid, day.isoformat())).fetchone()
-        shared = note_shared if existing is None else (note_shared or existing['note_shared'])
+        # The switch is the source of truth: unchecking must actually revoke the share.
         conn.execute(
             'INSERT OR REPLACE INTO cycle2_day_notes(uid,date,flow,pain,symptoms,mood,note,'
             'activity,relief,medication,effectiveness,note_shared,updated_at) '
             'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
             (uid, day.isoformat(), flow, pain, json.dumps(symptoms, ensure_ascii=False),
-             mood, note, activity, relief, medication, effectiveness, shared, now))
+             mood, note, activity, relief, medication, effectiveness, note_shared, now))
         return {'ok': True}
     if action == 'day/delete':
         day = iso(body.get('date'), '日期')
@@ -235,7 +233,8 @@ def snapshot(conn, uid, month, today=None):
                 insights=engine.insights(own, prediction, temps),
                 active=active, settings={k: prefs[k] for k in
                                          ('typical_cycle', 'typical_duration',
-                                          'prediction_enabled')},
+                                          'prediction_enabled',
+                                          'share_actual', 'share_prediction', 'share_since')},
                 disclaimer=engine.DISCLAIMER)
 
 

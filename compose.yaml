@@ -28,4 +28,8 @@ services:
       - ./settings_ui.js:/app/settings_ui.js
       - ./settings_ui.css:/app/settings_ui.css
       - ./template_page.html:/app/template_page.html
+      - ./notices.py:/app/notices.py
+      - ./trips.py:/app/trips.py
+      - ./images.py:/app/images.py
       - ./dog-couple.png:/app/dog-couple.png
+      - ./dog-couple.webp:/app/dog-couple.webp

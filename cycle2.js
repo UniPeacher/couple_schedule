@@ -84,12 +84,12 @@ var Cycle2 = (function () {
   }
 
   /* ---------- page chrome ---------- */
-  /* 与其他页面统一的页头卡（汪汪信箱/纪念日等同款 page-header-card）。 */
-  function c2HeaderHTML(title, desc, img) {
-    return '<div class="page-header-card"><div>' +
-      '<div class="page-header-title">' + title + '</div>' +
-      '<div class="page-header-desc">' + desc + '</div></div>' +
-      '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/' + img + '" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+  function navBar(title, desc) {
+    return '<div class="c2-nav">' +
+      '<button type="button" class="c2-nav-btn" data-c2="back" aria-label="返回">‹</button>' +
+      '<div class="c2-nav-title">' + h(title) +
+      (desc ? '<small>' + h(desc) + '</small>' : '') + '</div>' +
+      '<button type="button" class="c2-nav-btn" data-c2="settings" aria-label="设置">⋯</button>' +
       '</div>';
   }
 
@@ -190,9 +190,10 @@ var Cycle2 = (function () {
   function legend(kind) {
     var items = kind === 'ring'
       ? [['period', '行经期'], ['ovulation', '排卵期'], ['follicular', '卵泡期'], ['luteal', '黄体期']]
-      : [['period', '行经期'], ['predicted', '预测经期'], ['ovulation', '排卵日'], ['fertile', '易孕期'], ['note', '有记录']];
+      : [['period', '行经期'], ['predicted pill-dash', '预测经期'], ['fertile pill-fill', '易孕期'],
+         ['ovulation gear', '排卵日'], ['note', '有记录']];
     return '<div class="c2-legend">' + items.map(function (it) {
-      return '<span><i class="' + it[0] + '"></i>' + it[1] + '</span>';
+      return '<span><i class="' + it[0] + '">' + (it[0].indexOf('gear') >= 0 ? '❋' : '') + '</i>' + it[1] + '</span>';
     }).join('') + '</div>';
   }
 
@@ -206,17 +207,35 @@ var Cycle2 = (function () {
     (s.month_marks || []).forEach(function (m) { marks[m.date] = m.kind; });
     (s.notes || []).forEach(function (n) { noted[n.date] = 1; });
     var todayStr = todayISO();
-    var cells = WD.map(function (w) { return '<div class="c2-cal-head">' + w + '</div>'; }).join('');
-    for (var i = 0; i < lead; i++) cells += '<div class="c2-cal-cell" aria-hidden="true"></div>';
+    /* Huawei-style merged capsules: consecutive fertile / predicted days that sit in
+       the same week row share one rounded background instead of per-day dots. */
+    function runOf(kind) {
+      return kind === 'fertile' || kind === 'ovulation' ? 'fertile'
+        : kind === 'predicted' ? 'pred' : '';
+    }
+    var info = [];
     for (var d = 1; d <= days; d++) {
       var iso = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-      var kind = marks[iso];
-      cells += '<button type="button" class="c2-cal-cell' + (iso === todayStr ? ' today' : '') +
-        (noted[iso] ? ' has-note' : '') + '"' +
-        ' data-c2="day" data-date="' + iso + '">' +
-        '<span class="d">' + d + '</span>' +
-        '<span class="m' + (kind ? ' ' + kind : '') + '"></span></button>';
+      info.push({d: d, iso: iso, kind: marks[iso], run: runOf(marks[iso]),
+        row: Math.floor((lead + d - 1) / 7)});
     }
+    info.forEach(function (cur, i) {
+      var prev = info[i - 1], next = info[i + 1];
+      var joinsPrev = prev && cur.run && prev.run === cur.run && prev.row === cur.row;
+      var joinsNext = next && cur.run && next.run === cur.run && next.row === cur.row;
+      cur.pos = joinsPrev && joinsNext ? 'rm' : joinsPrev ? 're' : joinsNext ? 'rs' : '';
+    });
+    var cells = WD.map(function (w) { return '<div class="c2-cal-head">' + w + '</div>'; }).join('');
+    for (var i = 0; i < lead; i++) cells += '<div class="c2-cal-cell" aria-hidden="true"></div>';
+    info.forEach(function (c) {
+      var marker = c.kind === 'ovulation' ? '<span class="m ovu-gear">❋</span>'
+        : c.kind === 'period' ? '<span class="m period"></span>' : '';
+      var runCls = c.run ? ' c2-run c2-run-' + c.run + (c.pos ? ' ' + c.pos : ' single') : '';
+      cells += '<button type="button" class="c2-cal-cell' + (c.iso === todayStr ? ' today' : '') +
+        (noted[c.iso] ? ' has-note' : '') + runCls + '"' +
+        ' data-c2="day" data-date="' + c.iso + '">' +
+        '<span class="d">' + c.d + '</span>' + marker + '</button>';
+    });
     return '<div class="c2-cal">' + cells + '</div>';
   }
 
@@ -430,17 +449,16 @@ var Cycle2 = (function () {
       : recordTab === 'mood' ? moodPanel(d)
       : recordTab === 'more' ? morePanel(s)
       : symptomPanel(d);
-    return '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 14px">' +
-        '<button type="button" class="p-btn icon-btn" data-c2="back" aria-label="返回" title="返回">‹</button>' +
-        '<div style="flex:1;min-width:0">' + c2HeaderHTML('📝 记录今天', '选择今日感受与处理', 'dog-add.png') + '</div>' +
-      '</div>' +
+    return '<div class="page-container c2-page has-savebar">' +
+      navBar('📝 记录', '选择今日感受与处理') +
       tabBar() +
       '<form id="cycle2DayForm" method="post">' +
         '<input type="hidden" name="date" value="' + h(day) + '">' +
         panel +
       '</form>' +
       modalsHTML() +
-      '<div class="c2-savebar"><button type="submit" id="c2SaveBtn" form="cycle2DayForm">完成</button></div>';
+      '<div class="c2-savebar"><button type="submit" id="c2SaveBtn" form="cycle2DayForm">完成</button></div>' +
+      '</div>';
   }
 
   function settingsCard(s) {
@@ -497,13 +515,12 @@ var Cycle2 = (function () {
     if (recordTab) {
       box.innerHTML = recordPage(s);
       fillDay(recordDate || todayISO());
-    } else {
-      /* Both accounts render the same page: they share one cycle record. */
-      box.innerHTML = c2HeaderHTML('🌷 生理周期', '四相分期 · 越记越准', 'dog-couple.png') +
-        own(s) + modalsHTML();
+      bindForms();
+      return;
     }
-    var shell = document.querySelector('.page-container.c2-page');
-    if (shell) shell.classList.toggle('has-savebar', !!recordTab);
+    /* Both accounts render the same page: they share one cycle record. */
+    box.innerHTML = '<div class="page-container c2-page">' +
+      navBar('🌷 生理周期', '四相分期 · 越记越准') + own(s) + modalsHTML() + '</div>';
     bindForms();
   }
 
@@ -539,6 +556,22 @@ var Cycle2 = (function () {
     });
   }
 
+  function paintHome(s) {
+    var slot = $('#cycle2Home');
+    if (!slot) return;
+    var line;
+    if (s.today) {
+      line = '<strong>' + h(s.today.label) + ' · 第 ' + s.today.day + ' 天</strong>' +
+        '<p class="c2-muted">周期第 ' + s.today.cycle_day + ' 天</p>';
+    } else {
+      line = '<strong>' + (s.periods.length ? '预估待补充记录' : '记录一次经期开始') + '</strong>';
+    }
+    slot.innerHTML = '<div class="c2-card c2-page">' +
+      '<div style="font-size:11px;font-weight:800;color:var(--c2-accent-tx)">🌷 周期</div>' + line +
+      '<div class="c2-actions">' + btn('查看周期 ›', 'open') + '</div>' +
+      '<p class="c2-muted">四相分期 · 预估仅供参考</p></div>';
+  }
+
   /* ---------- data ---------- */
   function request() {
     var version = ++sequence, uid = ME && ME.uid;
@@ -553,11 +586,11 @@ var Cycle2 = (function () {
         selectedDate = null;
       }
       if (CURRENT_VIEW === 'cycle2' || recordTab) paintPage(s);
-      paintCalendar(s);
+      paintHome(s); paintCalendar(s);
       document.body.setAttribute('data-cycle2-ready', String(version));
     }).catch(function (e) {
       if (version !== sequence) return;
-      var target = $('#cycle2Content');
+      var target = $('#cycle2Content') || $('#cycle2Home');
       if (target) target.innerHTML = '<div class="c2-card">' + h(e.message) + ' ' + btn('重新加载', 'retry') + '</div>';
     });
   }
@@ -566,8 +599,15 @@ var Cycle2 = (function () {
     if (!ME) { state = null; owner = null; sequence++; recordTab = null; return; }
     if (owner !== ME.uid) { state = null; recordTab = null; }
     monthAnchor();
-    /* 课表与月历不再插周期卡；月历仍取数据为格子做相位着色。 */
-    if (CURRENT_VIEW === 'month' || CURRENT_VIEW === 'cycle2' || recordTab) request();
+    if (CURRENT_VIEW === 'week' || CURRENT_VIEW === 'month') {
+      var target = CURRENT_VIEW === 'week' ? document.querySelector('main') : document.querySelector('.month-cal-wrap');
+      if (target && !$('#cycle2Home')) {
+        var slot = document.createElement('section');
+        slot.id = 'cycle2Home';
+        target.insertAdjacentElement('afterend', slot);
+      }
+      request();
+    } else if (CURRENT_VIEW === 'cycle2' || recordTab) request();
   }
 
   function save(action, data, el) {
@@ -701,6 +741,7 @@ var Cycle2 = (function () {
     var el = e.target.closest('[data-c2]');
     if (!el) return;
     var a = el.dataset.c2;
+    if (a === 'open') { e.preventDefault(); go(); return; }
     if (a === 'calendar') {
       e.preventDefault();
       selectedDate = el.dataset.date;
@@ -715,9 +756,8 @@ var Cycle2 = (function () {
     }
     if (a === 'back') {
       e.preventDefault();
-      recordTab = null; recordDate = null;
-      if (state) paintPage(state);
-      window.scrollTo(0, 0);
+      if (recordTab) { recordTab = null; recordDate = null; if (state) paintPage(state); window.scrollTo(0, 0); }
+      else { CURRENT_VIEW = 'week'; history.pushState({type: 'view', v: 'week'}, ''); load(); }
       return;
     }
     if (a === 'reset-month' || a === 'today-month') {
@@ -741,6 +781,12 @@ var Cycle2 = (function () {
     if (a === 'day') { e.preventDefault(); recordDate = el.dataset.date; openRecord('symptom'); return; }
     if (a === 'tab') { e.preventDefault(); recordTab = el.dataset.tab; if (state) paintPage(state); return; }
     if (a === 'record') { e.preventDefault(); recordDate = todayISO(); openRecord(el.dataset.tab || 'symptom'); return; }
+    if (a === 'settings') {
+      e.preventDefault();
+      var box = document.getElementById('c2Settings');
+      if (box) { box.open = true; box.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+      return;
+    }
     if (a === 'retry') { e.preventDefault(); request(); return; }
     if (a === 'start-toggle') { e.preventDefault(); if (state) edit({}); return; }
     if (a === 'save-bbt') {
@@ -759,15 +805,10 @@ var Cycle2 = (function () {
     else if (a === 'finish') edit(Object.assign({}, state.active, {end_date: todayISO()}));
     else if (a === 'edit') edit(state.periods.find(function (r) { return r.id === Number(el.dataset.id); }));
     else if (a === 'close-period') { closeAllModals(); if (history.state && history.state.type === 'modal') history.back(); }
-    else if (a === 'delete-period') uiConfirm({icon:'🩸', title:'删除这条经期？', message:'已确认的经期记录会删掉，身体感受另行保留。', danger:true, okText:'删除'}).then(function(ok){ if (ok) save('period/delete', {id: Number(el.dataset.id)}, el); });
+    else if (a === 'delete-period' && confirm('删除这条已确认经期？身体感受另行保留。')) save('period/delete', {id: Number(el.dataset.id)}, el);
     else if (a === 'delete-bbt') save('bbt/delete', {date: recordDate || todayISO()}, el);
-    else if (a === 'delete-all') {
-      uiConfirm({icon:'⚠️', title:'删除全部经期数据？', message:'两人共用这一份记录，删除后双方都看不到。', danger:true, okText:'继续'}).then(function(ok1){
-        if (!ok1) return;
-        uiConfirm({icon:'🚨', title:'最后确认', message:'删除不可从 App 撤销，确定删除？', danger:true, okText:'删除'}).then(function(ok2){
-          if (ok2) save('delete-all', {confirm: 'DELETE_MY_CYCLE_DATA'}, el);
-        });
-      });
+    else if (a === 'delete-all' && confirm('删除全部经期数据？两人共用这一份记录，删除后双方都看不到。') && confirm('不可从 App 撤销，确定删除？')) {
+      save('delete-all', {confirm: 'DELETE_MY_CYCLE_DATA'}, el);
     }
     else if (a === 'export') {
       api('/api/cycle2/export', {cache: 'no-store'}).then(function (data) {
@@ -776,7 +817,7 @@ var Cycle2 = (function () {
         link.href = url; link.download = 'my-cycle-data-v2.json'; link.click();
         setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
         toast('文件包含健康信息，请妥善保管');
-      }).catch(function (err) { toast(err.message, 'err'); });
+      }).catch(function (err) { toast(err.message); });
     }
   }, true);
 
@@ -785,9 +826,7 @@ var Cycle2 = (function () {
     recordTab = null;
     recordDate = null;
     selectedDate = null;
-    $('#app').innerHTML = renderTopBar() +
-      '<div class="page-container c2-page"><div id="cycle2Content" aria-live="polite"></div></div>' +
-      bottomNavHTML();
+    $('#app').innerHTML = '<div id="cycle2Content" aria-live="polite">正在安全加载…</div>' + bottomNavHTML();
   }
 
   function scrub() {
@@ -795,6 +834,8 @@ var Cycle2 = (function () {
     state = null;
     recordTab = null;
     document.querySelectorAll('.c2-cell-mark').forEach(function (e) { e.remove(); });
+    var slot = $('#cycle2Home');
+    if (slot) slot.innerHTML = '';
     var box = $('#cycle2Content');
     if (box) box.innerHTML = '<p>私人记录已隐藏，返回后重新加载。</p>';
   }
@@ -802,7 +843,7 @@ var Cycle2 = (function () {
   setInterval(function () {
     if (!ME || document.hidden || !state || recordTab ||
       document.body.hasAttribute('data-cycle2-saving') ||
-      CURRENT_VIEW !== 'cycle2') return;
+      !$('#cycle2Home') && CURRENT_VIEW !== 'cycle2') return;
     var uid = ME.uid, v = sequence;
     api('/api/cycle2?month=' + monthAnchor(), {cache: 'no-store'}).then(function (s) {
       if (!ME || uid !== ME.uid || v !== sequence) return;
@@ -812,6 +853,7 @@ var Cycle2 = (function () {
       state.calendar = s.calendar;
       state.month_marks = s.month_marks;
       state.proposals = s.proposals;
+      paintHome(s);
       paintCalendar(s);
       if (changed && CURRENT_VIEW === 'cycle2' && !document.querySelector('#cycle2PeriodModal.show') &&
         !document.querySelector('#cycle2Content :focus')) paintPage(s);

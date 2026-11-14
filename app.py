@@ -28,6 +28,31 @@ import cycle2
 import cycle2_collaboration
 import settings_service
 
+# notices/trips 在模块内会 import app 取数据库助手。以 `python app.py` 直接启动时
+# 本模块名是 __main__ 而非 app，若不提前注册，import app 会二次加载本文件造成
+# 循环导入与双实例。测试经 `import app` 加载时此行是 no-op。
+sys.modules.setdefault("app", sys.modules[__name__])
+import images
+import notices
+import trips
+
+# 领域模块 re-export：Handler 与测试仍经 app 命名空间访问（app.X 晚绑定约定）
+IMG_FILES = images.IMG_FILES
+get_image_asset = images.get_image_asset
+ensure_thumb = images.ensure_thumb
+synthesize_motion_photo_bytes = images.synthesize_motion_photo_bytes
+send_ntfy_push = notices.send_ntfy_push
+push_system_notice = notices.push_system_notice
+send_wechat_notice = notices.send_wechat_notice
+get_unread_notifications_count = notices.get_unread_notifications_count
+trips_overview = trips.trips_overview
+trip_detail = trips.trip_detail
+TRIP_CATEGORIES = trips.TRIP_CATEGORIES
+TRIP_CATEGORY_KEYS = trips.TRIP_CATEGORY_KEYS
+TRIP_TEMPLATE = trips.TRIP_TEMPLATE
+TRIP_TEMPLATE_BY_NAME = trips.TRIP_TEMPLATE_BY_NAME
+_insert_trip_item = trips._insert_trip_item
+
 # 纪念日/节日引擎（special_days.py，移植自 our-little-planet 并适配）。
 # 导入失败只降级（无提醒功能），绝不允许拖垮整个服务。
 try:
@@ -88,29 +113,6 @@ def db_transaction():
             except Exception:
                 pass
             raise
-IMG_FILES = {"dogs": "dogs.png", "dogheads": "dogheads.png", "dogrest": "dogrest.png",
-             "dog-hero": "dog-hero.png", "dog-add": "dog-add.png", "dog-set": "dog-set.png",
-             "dog-wave": "dog-wave.png", "dog-walk1": "dog-walk1.png", "dog-walk2": "dog-walk2.png",
-             "dog-walk3": "dog-walk3.png", "dog-walk4": "dog-walk4.png", "dog-couple": "dog-couple.png"}
-
-_IMG_CACHE = {}  # {base: (bytes, etag)}
-
-def get_image_asset(base):
-    """内存级图片缓存，避免频繁磁盘 I/O 并计算 ETag 支持 304 极速重用"""
-    if base in _IMG_CACHE:
-        return _IMG_CACHE[base]
-    fn = IMG_FILES.get(base)
-    if not fn:
-        return None, None
-    fp = os.path.join(APP_DIR, fn)
-    if os.path.exists(fp):
-        with open(fp, "rb") as f:
-            data = f.read()
-        etag = f'"{hashlib.md5(data).hexdigest()[:16]}"'
-        _IMG_CACHE[base] = (data, etag)
-        return data, etag
-    return None, None
-
 # ---------------------------------------------------------------- 数据库
 
 SCHEMA = """
@@ -249,45 +251,7 @@ def load_secret():
     return s
 
 
-# ---------------------------------------------------------------- 照片缩略图
-
-_THUMB_LOCK = threading.Lock()
-
-def ensure_thumb(src_fp, thumb_fp):
-    """用 ffmpeg 生成 720px 缩略图（best-effort：失败返回 False，调用方回退原图）。
-
-    实况照片是 JPEG 尾部拼 MP4 的 motion photo，强制 -f mjpeg 只解首帧，
-    比默认探测快 4 倍；PNG 等其他格式走自动探测重试。
-    """
-    if os.path.exists(thumb_fp):
-        return True
-    if not os.path.exists(src_fp):
-        return False
-    import subprocess
-    tmp_fp = thumb_fp + ".tmp.jpg"
-    ok = False
-    with _THUMB_LOCK:
-        if os.path.exists(thumb_fp):
-            return True
-        for extra in (["-f", "mjpeg"], []):
-            try:
-                r = subprocess.run(
-                    ["ffmpeg", "-y"] + extra + ["-i", src_fp,
-                     "-vf", "scale=w=min(iw\\,720):h=-2", "-q:v", "7",
-                     "-frames:v", "1", tmp_fp],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-                if r.returncode == 0 and os.path.exists(tmp_fp) and os.path.getsize(tmp_fp) > 500:
-                    os.replace(tmp_fp, thumb_fp)
-                    ok = True
-                    break
-            except Exception as e:
-                sys.stderr.write(f"[thumb error] {src_fp}: {e}\n")
-            finally:
-                if os.path.exists(tmp_fp):
-                    with contextlib.suppress(Exception):
-                        os.remove(tmp_fp)
-    return ok
-
+# ---------------------------------------------------------------- 设置 / 用户 / LLM 调用
 
 def get_setting(key, default=""):
     with LOCK:
@@ -338,107 +302,6 @@ def call_llm_api(system_prompt, user_prompt):
     except Exception as e:
         sys.stderr.write(f"[LLM API Error]: {e}\n")
     return None
-
-
-# ---------------------------------------------------------------- 旅行清单
-
-TRIP_CATEGORIES = [
-    ("doc", "证件"), ("toilet", "洗漱"), ("skin", "护肤化妆"),
-    ("cloth", "衣物"), ("tech", "电子"), ("med", "药品"), ("other", "其他"),
-]
-TRIP_CATEGORY_KEYS = [k for k, _ in TRIP_CATEGORIES]
-
-# 新建旅行时可选套用的常用清单：(分组, 名称, 他带, 她带)，空字符串表示这一方不用带
-TRIP_TEMPLATE = [
-    ("doc", "身份证", "1", "1"), ("doc", "学生证", "1", "1"),
-    ("doc", "银行卡", "1", "1"), ("doc", "现金", "1", ""),
-    ("toilet", "牙刷牙膏", "1", "1"), ("toilet", "洗发水/护发素", "1", "1"),
-    ("toilet", "沐浴露", "1", "1"), ("toilet", "一次性浴巾", "1", "1"),
-    ("toilet", "洗脸巾", "1", "1"),
-    ("skin", "防晒", "", "1"), ("skin", "水乳", "", "1"),
-    ("skin", "粉底液", "", "1"), ("skin", "口红", "", "1"),
-    ("skin", "面膜", "", "4"),
-    ("cloth", "换洗衣物", "1", "1"), ("cloth", "睡衣", "1", "1"),
-    ("cloth", "外套", "1", "1"), ("cloth", "袜子", "1", "1"),
-    ("tech", "充电器", "1", "1"), ("tech", "充电宝", "1", "1"),
-    ("tech", "耳机", "1", "1"), ("tech", "自拍杆", "1", ""),
-    ("med", "创可贴", "1", ""), ("med", "常用药", "1", ""),
-    ("other", "纸巾", "1", ""), ("other", "雨伞", "1", ""),
-    ("other", "卫生巾", "", "1"),
-]
-TRIP_TEMPLATE_BY_NAME = {name: (a, b) for _, name, a, b in TRIP_TEMPLATE}
-
-
-def _trip_status(start, end, today):
-    if end and end < today:
-        return "done"
-    if start and start > today:
-        return "upcoming"
-    if not start and not end:
-        return "upcoming"
-    return "ongoing"
-
-
-def _trip_item_order(trip_id, category):
-    row = CONN.execute(
-        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM trip_items WHERE trip_id=? AND category=?",
-        (trip_id, category)).fetchone()
-    return row["n"] if row else 1
-
-
-def _insert_trip_item(trip_id, category, name, qty_a="1", qty_b="1"):
-    if category not in TRIP_CATEGORY_KEYS:
-        category = "other"
-    now = time.strftime("%Y-%m-%d %H:%M:%S")
-    CONN.execute(
-        "INSERT INTO trip_items(trip_id, category, name, qty, note, qty_a, qty_b, is_packed, sort_order, updated_at) "
-        "VALUES(?,?,?,'','',?,?,0,?,?)",
-        (trip_id, category, name, qty_a, qty_b, _trip_item_order(trip_id, category), now))
-
-
-def trips_overview():
-    today = date.today().isoformat()
-    users = get_users()
-    with LOCK:
-        rows = CONN.execute(
-            "SELECT t.*, "
-            " (SELECT COUNT(*) FROM trip_items i WHERE i.trip_id=t.id) AS total, "
-            " (SELECT COUNT(*) FROM trip_items i WHERE i.trip_id=t.id AND i.is_packed=1) AS packed "
-            "FROM trips t ORDER BY t.id DESC").fetchall()
-    trips = []
-    for r in rows:
-        item = dict(r)
-        item["status"] = _trip_status(item["start_date"], item["end_date"], today)
-        item["creator_name"] = users.get(item["created_by"], {}).get("name", "")
-        trips.append(item)
-    ongoing = [t for t in trips if t["status"] == "ongoing"]
-    upcoming = sorted([t for t in trips if t["status"] == "upcoming"],
-                      key=lambda t: t["start_date"] or "9999-99-99")
-    done = sorted([t for t in trips if t["status"] == "done"],
-                  key=lambda t: t["start_date"] or "", reverse=True)
-    return ongoing + upcoming + done
-
-
-def trip_detail(trip_id):
-    today = date.today().isoformat()
-    users = get_users()
-    with LOCK:
-        row = CONN.execute("SELECT * FROM trips WHERE id=?", (trip_id,)).fetchone()
-        if not row:
-            return None
-        items = [dict(r) for r in CONN.execute(
-            "SELECT * FROM trip_items WHERE trip_id=? ORDER BY category, sort_order, id",
-            (trip_id,)).fetchall()]
-    trip = dict(row)
-    trip["status"] = _trip_status(trip["start_date"], trip["end_date"], today)
-    trip["creator_name"] = users.get(trip["created_by"], {}).get("name", "")
-    items.sort(key=lambda i: TRIP_CATEGORY_KEYS.index(i["category"])
-               if i["category"] in TRIP_CATEGORY_KEYS else 99)
-    return {
-        "trip": trip,
-        "items": items,
-        "stats": {"total": len(items), "packed": sum(1 for i in items if i["is_packed"] == 1)},
-    }
 
 
 # ---------------------------------------------------------------- 时光简报（仅月度）
@@ -719,23 +582,30 @@ def _month_nav(ym):
 _SUMMARY_INFLIGHT = set()          # 正在后台生成 AI 版的月份 cache_key
 _SUMMARY_INFLIGHT_LOCK = threading.Lock()
 
+def _build_summary_res(facts, stats, ai_content=None):
+    """构造月度胶囊响应体；ai_content 为空时落本地 fallback 文案"""
+    return {
+        "title": "月度胶囊 · %s" % facts["month_label"],
+        "content": ai_content or build_month_fallback(facts),
+        "stats": stats,
+        "is_ai": bool(ai_content),
+    }
+
+def _store_summary_cache(cache_key, res):
+    """把月度胶囊写入 summary_cache（幂等 upsert）"""
+    with LOCK:
+        CONN.execute(
+            "INSERT INTO summary_cache(cache_key, summary_json, updated_at) VALUES(?,?,?) "
+            "ON CONFLICT(cache_key) DO UPDATE SET summary_json=excluded.summary_json, updated_at=excluded.updated_at",
+            (cache_key, json.dumps(res, ensure_ascii=False),
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
 def _summary_generate_worker(ym, facts, stats):
     """后台线程：调 LLM 写正式版月度胶囊并写入缓存；失败时落 fallback 版本（同样终止前端轮询）"""
     cache_key = "month_%s" % ym
     try:
         ai_content = call_llm_api(SUMMARY_SYSTEM_PROMPT, build_month_user_prompt(facts))
-        res = {
-            "title": "月度胶囊 · %s" % facts["month_label"],
-            "content": ai_content or build_month_fallback(facts),
-            "stats": stats,
-            "is_ai": bool(ai_content),
-        }
-        with LOCK:
-            CONN.execute(
-                "INSERT INTO summary_cache(cache_key, summary_json, updated_at) VALUES(?,?,?) "
-                "ON CONFLICT(cache_key) DO UPDATE SET summary_json=excluded.summary_json, updated_at=excluded.updated_at",
-                (cache_key, json.dumps(res, ensure_ascii=False),
-                 datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        _store_summary_cache(cache_key, _build_summary_res(facts, stats, ai_content))
     except Exception as e:
         sys.stderr.write(f"[Summary worker error] {ym}: {e}\n")
     finally:
@@ -772,19 +642,9 @@ def generate_month_summary(ym=None, force_refresh=False):
     if force_refresh:
         # 手动「重新生成」保持同步：等新版写完再返回
         ai_content = call_llm_api(SUMMARY_SYSTEM_PROMPT, build_month_user_prompt(facts))
-        res = {
-            "title": "月度胶囊 · %s" % facts["month_label"],
-            "content": ai_content or build_month_fallback(facts),
-            "stats": stats,
-            "is_ai": bool(ai_content),
-        }
+        res = _build_summary_res(facts, stats, ai_content)
         try:
-            with LOCK:
-                CONN.execute(
-                    "INSERT INTO summary_cache(cache_key, summary_json, updated_at) VALUES(?,?,?) "
-                    "ON CONFLICT(cache_key) DO UPDATE SET summary_json=excluded.summary_json, updated_at=excluded.updated_at",
-                    (cache_key, json.dumps(res, ensure_ascii=False),
-                     datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            _store_summary_cache(cache_key, res)
         except Exception as e:
             sys.stderr.write("[Cache save error]: %s\n" % e)
         out = dict(res)
@@ -797,13 +657,8 @@ def generate_month_summary(ym=None, force_refresh=False):
         _SUMMARY_INFLIGHT.add(cache_key)
     if not already:
         threading.Thread(target=_summary_generate_worker, args=(ym, facts, stats), daemon=True).start()
-    res = {
-        "title": "月度胶囊 · %s" % facts["month_label"],
-        "content": build_month_fallback(facts),
-        "stats": stats,
-        "is_ai": False,
-        "generating": True,
-    }
+    res = _build_summary_res(facts, stats)
+    res["generating"] = True
     out = dict(res)
     out.update(_month_nav(ym))
     return out
@@ -839,108 +694,6 @@ def push_month_summary(ym=None):
             send_wechat_notice(token, title, content)
             sent_count += 1
     return summary, sent_count
-
-
-NTFY_TOPIC_PREFIX = "couple_schedule_uni_"
-NTFY_BASE_URL = os.environ.get("NTFY_BASE_URL", "https://push.unipeacher.email").rstrip("/")
-# ntfy 实时弹窗开关：设为 False 则完全跳过 ntfy 推送（App 内消息中心与微信简报不受影响）
-NTFY_PUSH_ENABLED = os.environ.get("NTFY_PUSH_ENABLED", "0") == "1"
-
-def send_ntfy_push(target_uid, title, content, target_action=""):
-    if not target_uid:
-        return
-    # 实时弹窗已关闭：直接返回，不再发起任何网络请求
-    # 消息本身已由 push_system_notice() 写入 notifications 表，App 内仍可见
-    if not NTFY_PUSH_ENABLED:
-        return
-    def _do_send():
-        try:
-            topic = f"{NTFY_TOPIC_PREFIX}{target_uid}"
-            urls_to_try = [f"{NTFY_BASE_URL}/{topic}"]
-            if "127.0.0.1" not in NTFY_BASE_URL:
-                urls_to_try.append(f"http://127.0.0.1:8075/{topic}")
-
-            headers = {
-                "Title": title.encode("utf-8"),
-                "Priority": "4",
-                "Tags": "dog,heart",
-            }
-            if target_action:
-                headers["X-Click"] = f"schedule://open?action={target_action}"
-                headers["Click"] = f"schedule://open?action={target_action}"
-
-            data_bytes = content.encode("utf-8")
-            for url in urls_to_try:
-                try:
-                    req = urllib.request.Request(url, data=data_bytes, headers=headers, method="POST")
-                    with urllib.request.urlopen(req, timeout=5) as resp:
-                        if resp.status < 400:
-                            break
-                except Exception:
-                    continue
-        except Exception as e:
-            sys.stderr.write(f"ntfy push error: {e}\n")
-    threading.Thread(target=_do_send, daemon=True).start()
-
-
-def push_system_notice(target_uid, title, content, target_action=""):
-    if not target_uid:
-        return
-    try:
-        clean_content = re.sub(r'<[^>]+>', ' ', content).strip()
-        clean_content = re.sub(r'\s+', ' ', clean_content)
-        created = time.strftime("%Y-%m-%d %H:%M:%S")
-        with LOCK:
-            CONN.execute(
-                "INSERT INTO notifications(target_uid, title, content, target_action, is_read, is_pushed, created_at) VALUES(?,?,?,?,0,0,?)",
-                (target_uid, title, clean_content, target_action or "", created)
-            )
-        # 同步向 ntfy 推送服务发送实时 push
-        send_ntfy_push(target_uid, title, clean_content, target_action)
-    except Exception as e:
-        print("[push_system_notice] error:", e)
-
-
-def send_wechat_notice(token, title, content):
-    if not token or not token.strip():
-        return
-    token = token.strip()
-    def _do_send():
-        try:
-            # 1. 优先使用 虾推啥 (xtuis, 纯免费免认证且微信卡片直显标题)
-            # 虾推啥 Token 为 25 位左右的字母数字组合（如 N2gMZytstbsWdeShGQNS9mPC2）
-            if not token.lower().startswith("xz") and not token.lower().startswith("sct") and len(token) >= 20:
-                url = f"https://wx.xtuis.cn/{token}.send"
-                post_data = urllib.parse.urlencode({"text": title, "desp": content}).encode("utf-8")
-                req = urllib.request.Request(
-                    url, data=post_data,
-                    headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0"}
-                )
-                urllib.request.urlopen(req, timeout=8)
-                return
-
-            # 2. 息知 (xizhi)
-            if token.lower().startswith("xz"):
-                actual_key = token
-                if "xizhi.qqoq.net/" in token or "xz.qqoq.net/" in token:
-                    actual_key = token.split("/")[-1].replace(".send", "")
-                url = f"https://xizhi.qqoq.net/{actual_key}.send"
-                payload = json.dumps({"title": title, "content": content}).encode("utf-8")
-                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"})
-                urllib.request.urlopen(req, timeout=8)
-                return
-
-            # 3. Server酱 (以 sct 开头)
-            if token.lower().startswith("sct"):
-                url = f"https://sctapi.ftqq.com/{token}.send"
-                payload = json.dumps({"title": title, "desp": content}).encode("utf-8")
-                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-                urllib.request.urlopen(req, timeout=8)
-                return
-        except Exception as e:
-            sys.stderr.write(f"WeChat push error: {e}\n")
-
-    threading.Thread(target=_do_send, daemon=True).start()
 
 
 def get_all_events():
@@ -1106,40 +859,6 @@ def monday_of(d):
     return d - timedelta(days=d.weekday())
 
 
-def synthesize_motion_photo_bytes(jpg_bytes, mp4_bytes):
-    """将静态 JPEG 与 MP4 视频轨合成为全安卓通用（Google/小米/OPPO/vivo/华为/三星）单文件实况照片 (Motion Photo .jpg)"""
-    if not jpg_bytes or not mp4_bytes or not jpg_bytes.startswith(b"\xff\xd8"):
-        return jpg_bytes
-    # 如果原本就已经是内嵌了 MP4 视频轨与 XMP 头部的原厂实况照片，直接原样返回
-    if (b"MotionPhoto" in jpg_bytes[:65536] or b"MicroVideo" in jpg_bytes[:65536]) and b"ftyp" in jpg_bytes[len(jpg_bytes) // 3:]:
-        return jpg_bytes
-    import struct
-    vlen = len(mp4_bytes)
-    ts_us = 0
-    xmp_str = (
-        '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">'
-        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
-        '<rdf:Description rdf:about="" '
-        'xmlns:GCamera="http://ns.google.com/photos/1.0/camera/" '
-        'xmlns:OpCamera="http://ns.oplus.com/photos/1.0/camera/" '
-        'xmlns:MiCamera="http://ns.xiaomi.com/photos/1.0/camera/" '
-        'xmlns:Container="http://ns.google.com/photos/1.0/container/" '
-        'xmlns:Item="http://ns.google.com/photos/1.0/container/item/" '
-        f'GCamera:MotionPhoto="1" GCamera:MotionPhotoVersion="1" GCamera:MotionPhotoPresentationTimestampUs="{ts_us}" '
-        f'GCamera:MicroVideo="1" GCamera:MicroVideoVersion="1" GCamera:MicroVideoOffset="{vlen}" GCamera:MicroVideoPresentationTimestampUs="{ts_us}" '
-        f'OpCamera:MotionPhotoPrimaryPresentationTimestampUs="{ts_us}" OpCamera:MotionPhotoOwner="oplus" OpCamera:OLivePhotoVersion="2" OpCamera:VideoLength="{vlen}" '
-        f'MiCamera:MicroVideo="1" MiCamera:MicroVideoVersion="1" MiCamera:MicroVideoOffset="{vlen}" MiCamera:MicroVideoPresentationTimestampUs="{ts_us}">'
-        '<Container:Directory><rdf:Seq>'
-        '<rdf:li rdf:parseType="Resource"><Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0" Item:Padding="0"/></rdf:li>'
-        f'<rdf:li rdf:parseType="Resource"><Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="{vlen}" Item:Padding="0"/></rdf:li>'
-        '</rdf:Seq></Container:Directory>'
-        '</rdf:Description></rdf:RDF></x:xmpmeta>'
-    )
-    payload = b"http://ns.adobe.com/xap/1.0/\x00" + xmp_str.encode("utf-8")
-    app1 = b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload
-    return jpg_bytes[:2] + app1 + jpg_bytes[2:] + mp4_bytes
-
-
 def week_num(week1_str, d):
     """该日期处于第几教学周；week1 为空或早于第1周返回 None"""
     if not week1_str:
@@ -1216,17 +935,6 @@ def merge_ivs(ivs):
         else:
             out.append([s, e])
     return out
-
-
-def get_unread_notifications_count(uid):
-    if not uid:
-        return 0
-    try:
-        with LOCK:
-            row = CONN.execute("SELECT COUNT(*) c FROM notifications WHERE target_uid=? AND is_read=0", (uid,)).fetchone()
-            return row["c"] if row else 0
-    except Exception:
-        return 0
 
 
 def week_payload(anchor_iso, uid=None):
@@ -1374,6 +1082,47 @@ def get_page_html():
 
 # ---------------------------------------------------------------- 前端页面
 
+def _validate_event_payload(d):
+    """create/update 日程共用的字段规整与校验。
+    返回 (错误消息, 字段 dict)：校验通过时错误消息为 None，weekday/ev_date 必有值。"""
+    f = {
+        "uid": d.get("uid"),
+        "title": str(d.get("title") or "").strip(),
+        "location": str(d.get("location") or "").strip()[:200],
+        "note": str(d.get("note") or "").strip()[:200],
+        "repeat": d.get("repeat"),
+        "week_spec": str(d.get("week_spec") or "").strip()[:60],
+        "tstart": str(d.get("tstart") or ""),
+        "tend": str(d.get("tend") or ""),
+        "weekday": None,
+        "ev_date": "",
+    }
+    if f["uid"] not in ("a", "b", "both"):
+        return "归属用户无效", f
+    if not f["title"]:
+        return "标题不能为空", f
+    if not TIME_RE.match(f["tstart"]) or not TIME_RE.match(f["tend"]) or t2m(f["tstart"]) >= t2m(f["tend"]):
+        return "时间无效（需 开始 < 结束）", f
+    if f["repeat"] == "weekly":
+        try:
+            f["weekday"] = int(d.get("weekday"))
+        except (TypeError, ValueError):
+            return "缺少星期", f
+        if not 0 <= f["weekday"] <= 6:
+            return "星期无效", f
+    elif f["repeat"] == "once":
+        f["ev_date"] = str(d.get("date") or "")
+        if not DATE_RE.match(f["ev_date"]):
+            return "日期无效", f
+        try:
+            date.fromisoformat(f["ev_date"])
+        except ValueError:
+            return "日期无效", f
+    else:
+        return "类型无效", f
+    if f["week_spec"] and parse_week_spec(f["week_spec"]) is None:
+        return "周次格式无法识别（示例：2-17、2-16双、1-4,9-12）", f
+    return None, f
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1564,16 +1313,21 @@ class Handler(BaseHTTPRequestHandler):
                 except cycle.Error as exc:
                     return self.send_json({"error": str(exc)}, exc.status, extra=headers)
             if path.startswith("/img/"):
-                base = path[5:].split(".")[0]
+                req_name = path[5:]
+                base = req_name.split(".")[0]
+                # 带扩展名且表内有同 名 条目的（如 dog-couple.webp）按原文件出图，其余 URL 语义不变
+                if req_name.endswith(".webp") and req_name in IMG_FILES:
+                    base = req_name
                 data, etag = get_image_asset(base)
                 if data:
+                    ctype = "image/webp" if base.endswith(".webp") else "image/png"
                     inm = self.headers.get("If-None-Match")
                     if inm and (inm == etag or inm.strip() == etag):
-                        return self.send_bytes(304, b"", "image/png",
+                        return self.send_bytes(304, b"", ctype,
                                                extra=[("ETag", etag),
                                                       ("Cache-Control", "public, max-age=2592000, immutable")])
                     return self.send_bytes(
-                        200, data, "image/png",
+                        200, data, ctype,
                         extra=[
                             ("ETag", etag),
                             ("Cache-Control", "public, max-age=2592000, immutable")
@@ -1804,6 +1558,20 @@ class Handler(BaseHTTPRequestHandler):
             self.log_error("GET %s failed: %s", path, sys.exc_info()[1])
             return self.send_json({"error": "服务器内部错误"}, 500)
 
+    def check_write_guard(self, extra=None):
+        """写接口通用守卫：拒绝跨站 Origin（含同站兄弟源）与非 JSON Content-Type。
+        返回 True 表示通过；未通过时已发送 403/415 错误响应。"""
+        origin = self.headers.get("Origin")
+        if origin:
+            parsed_origin = urlparse(origin)
+            if parsed_origin.netloc != self.headers.get("Host") or parsed_origin.scheme not in ("http", "https"):
+                self.send_json({"error": "不允许跨站写入"}, 403, extra=extra)
+                return False
+        if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
+            self.send_json({"error": "须使用 application/json"}, 415, extra=extra)
+            return False
+        return True
+
     def do_POST(self):
         path = urlparse(self.path).path
         d = self.body_json()
@@ -1813,13 +1581,8 @@ class Handler(BaseHTTPRequestHandler):
                 if uid is None:
                     return
                 headers = [("Cache-Control", "no-store, private"), ("Vary", "Cookie")]
-                origin = self.headers.get("Origin")
-                if origin:
-                    parsed_origin = urlparse(origin)
-                    if parsed_origin.netloc != self.headers.get("Host") or parsed_origin.scheme not in ("http", "https"):
-                        return self.send_json({"error": "不允许跨站写入"}, 403, extra=headers)
-                if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
-                    return self.send_json({"error": "须使用 application/json"}, 415, extra=headers)
+                if not self.check_write_guard(extra=headers):
+                    return
                 try:
                     with db_transaction() as conn:
                         result = cycle2_collaboration.mutate(
@@ -1832,14 +1595,8 @@ class Handler(BaseHTTPRequestHandler):
                 if uid is None:
                     return
                 headers = [("Cache-Control", "no-store, private"), ("Vary", "Cookie")]
-                # Reject cross-origin writes, including same-site sibling origins.
-                origin = self.headers.get("Origin")
-                if origin:
-                    parsed_origin = urlparse(origin)
-                    if parsed_origin.netloc != self.headers.get("Host") or parsed_origin.scheme not in ("http", "https"):
-                        return self.send_json({"error": "不允许跨站写入"}, 403, extra=headers)
-                if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
-                    return self.send_json({"error": "须使用 application/json"}, 415, extra=headers)
+                if not self.check_write_guard(extra=headers):
+                    return
                 try:
                     with db_transaction() as conn:
                         result = cycle.mutate(conn, uid, path[len("/api/cycle/"):], d)
@@ -1917,12 +1674,8 @@ class Handler(BaseHTTPRequestHandler):
                 uid = self.authed()
                 if uid is None:
                     return
-                origin = self.headers.get("Origin")
-                if origin and (urlparse(origin).netloc != self.headers.get("Host")
-                               or urlparse(origin).scheme not in ("http", "https")):
-                    return self.send_json({"error": "不允许跨站写入"}, 403)
-                if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
-                    return self.send_json({"error": "须使用 application/json"}, 415)
+                if not self.check_write_guard():
+                    return
                 action = str(d.get("action") or "").strip()
                 now = time.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -2275,41 +2028,12 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- POST 子逻辑 ----
     def create_event(self, d):
-        uid = d.get("uid")
-        title = str(d.get("title") or "").strip()
-        location = str(d.get("location") or "").strip()[:200]
-        note = str(d.get("note") or "").strip()[:200]
-        repeat = d.get("repeat")
-        week_spec = str(d.get("week_spec") or "").strip()[:60]
-        tstart, tend = str(d.get("tstart") or ""), str(d.get("tend") or "")
-
-        if uid not in ("a", "b", "both"):
-            return self.send_json({"error": "归属用户无效"}, 400)
-        if not title:
-            return self.send_json({"error": "标题不能为空"}, 400)
-        if not TIME_RE.match(tstart) or not TIME_RE.match(tend) or t2m(tstart) >= t2m(tend):
-            return self.send_json({"error": "时间无效（需 开始 < 结束）"}, 400)
-        if repeat == "weekly":
-            try:
-                weekday = int(d.get("weekday"))
-            except (TypeError, ValueError):
-                return self.send_json({"error": "缺少星期"}, 400)
-            if not 0 <= weekday <= 6:
-                return self.send_json({"error": "星期无效"}, 400)
-            ev_date = ""
-        elif repeat == "once":
-            weekday = None
-            ev_date = str(d.get("date") or "")
-            if not DATE_RE.match(ev_date):
-                return self.send_json({"error": "日期无效"}, 400)
-            try:
-                date.fromisoformat(ev_date)
-            except ValueError:
-                return self.send_json({"error": "日期无效"}, 400)
-        else:
-            return self.send_json({"error": "类型无效"}, 400)
-        if week_spec and parse_week_spec(week_spec) is None:
-            return self.send_json({"error": "周次格式无法识别（示例：2-17、2-16双、1-4,9-12）"}, 400)
+        err, f = _validate_event_payload(d)
+        if err:
+            return self.send_json({"error": err}, 400)
+        uid, title, location, note = f["uid"], f["title"], f["location"], f["note"]
+        repeat, weekday, ev_date = f["repeat"], f["weekday"], f["ev_date"]
+        tstart, tend, week_spec = f["tstart"], f["tend"], f["week_spec"]
 
         with LOCK:
             cur = CONN.execute(
@@ -2348,41 +2072,12 @@ class Handler(BaseHTTPRequestHandler):
         eid = d.get("id")
         if not isinstance(eid, int):
             return self.send_json({"error": "缺少日程ID"}, 400)
-        uid = d.get("uid")
-        title = str(d.get("title") or "").strip()
-        location = str(d.get("location") or "").strip()[:200]
-        note = str(d.get("note") or "").strip()[:200]
-        repeat = d.get("repeat")
-        week_spec = str(d.get("week_spec") or "").strip()[:60]
-        tstart, tend = str(d.get("tstart") or ""), str(d.get("tend") or "")
-
-        if uid not in ("a", "b", "both"):
-            return self.send_json({"error": "归属用户无效"}, 400)
-        if not title:
-            return self.send_json({"error": "标题不能为空"}, 400)
-        if not TIME_RE.match(tstart) or not TIME_RE.match(tend) or t2m(tstart) >= t2m(tend):
-            return self.send_json({"error": "时间无效（需 开始 < 结束）"}, 400)
-        if repeat == "weekly":
-            try:
-                weekday = int(d.get("weekday"))
-            except (TypeError, ValueError):
-                return self.send_json({"error": "缺少星期"}, 400)
-            if not 0 <= weekday <= 6:
-                return self.send_json({"error": "星期无效"}, 400)
-            ev_date = ""
-        elif repeat == "once":
-            weekday = None
-            ev_date = str(d.get("date") or "")
-            if not DATE_RE.match(ev_date):
-                return self.send_json({"error": "日期无效"}, 400)
-            try:
-                date.fromisoformat(ev_date)
-            except ValueError:
-                return self.send_json({"error": "日期无效"}, 400)
-        else:
-            return self.send_json({"error": "类型无效"}, 400)
-        if week_spec and parse_week_spec(week_spec) is None:
-            return self.send_json({"error": "周次格式无法识别（示例：2-17、2-16双、1-4,9-12）"}, 400)
+        err, f = _validate_event_payload(d)
+        if err:
+            return self.send_json({"error": err}, 400)
+        uid, title, location, note = f["uid"], f["title"], f["location"], f["note"]
+        repeat, weekday, ev_date = f["repeat"], f["weekday"], f["ev_date"]
+        tstart, tend, week_spec = f["tstart"], f["tend"], f["week_spec"]
 
         with LOCK:
             ev_exists = CONN.execute("SELECT id FROM events WHERE id=?", (eid,)).fetchone()
@@ -2397,11 +2092,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def save_settings(self, d):
         uid = self.current_uid()
-        origin = self.headers.get("Origin")
-        if origin and (urlparse(origin).netloc != self.headers.get("Host") or urlparse(origin).scheme not in ("http", "https")):
-            return self.send_json({"error": "不允许跨站写入"}, 403)
-        if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
-            return self.send_json({"error": "须使用 application/json"}, 415)
+        if not self.check_write_guard():
+            return
         try:
             with db_transaction() as conn:
                 result = settings_service.apply(conn, uid, d)

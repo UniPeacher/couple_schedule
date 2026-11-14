@@ -213,13 +213,27 @@ class MonthMarkTests(unittest.TestCase):
             self.assertEqual(m[day], 'period', day)
         self.assertNotIn('2026-10-06', m)
 
-    def test_open_period_marks_only_its_start(self):
+    def test_open_period_marks_through_estimated_duration(self):
+        # 未确认结束的进行中经期：画到预估经期末，封顶今天
         recs = [period('2026-10-20')] + self.records[1:]
         pred = engine.predict(recs, {'prediction_enabled': 1}, TODAY)
         m = {x['date']: x['kind']
-             for x in engine.month_marks('2026-10-01', '2026-10-31', recs, pred)}
+             for x in engine.month_marks('2026-10-01', '2026-10-31', recs, pred, TODAY)}
         self.assertEqual(m['2026-10-20'], 'period')
-        self.assertNotIn('2026-10-21', m)
+        self.assertEqual(m['2026-10-24'], 'period')
+        self.assertNotIn('2026-10-25', m)
+
+    def test_open_period_never_marks_future_days(self):
+        # 进行中经期再长也只画到今天为止
+        recs = [period('2026-09-20')] + self.records[1:]
+        pred = engine.predict(recs, {'prediction_enabled': 1}, TODAY)
+        m = {x['date']: x['kind']
+             for x in engine.month_marks('2026-09-01', '2026-09-30', recs, pred, TODAY)}
+        marked = sorted(d for d, k in m.items()
+                        if k == 'period' and d >= '2026-09-20')
+        self.assertTrue(marked)
+        for day in marked:
+            self.assertLessEqual(day, TODAY.isoformat(), day)
 
     def test_fertile_window_ends_at_ovulation(self):
         m = self.marks()

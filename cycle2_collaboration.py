@@ -158,6 +158,12 @@ def snapshot(conn, uid, month, today=None):
     s.update(collaboration=config(conn, owner), preferences=preferences(conn, owner),
              proposals=proposals(conn, owner, today),
              status=state(s['periods'], today))
+    # The share form edits the caller's own grant, so it renders the caller's row,
+    # not the record-holder's (they differ once the partner holds the record).
+    mine = cycle2.settings(conn, uid)
+    s['own_settings'] = {k: mine[k] for k in ('share_actual', 'share_prediction',
+                                              'share_since', 'share_with')}
+    s['own_collaboration'] = config(conn, uid)
     sources = {r['period_id']: dict(r) for r in
                conn.execute('SELECT * FROM cycle2_record_sources WHERE uid=?', (owner,))}
     for r in s['periods']:

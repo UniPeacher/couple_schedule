@@ -1,4 +1,5 @@
-/* Settings are fetched fresh, never persisted in browser storage. */
+/* Settings paint the last cached payload instantly, then refresh silently in the background;
+   an in-progress edit (dirty) is never clobbered by the refresh. */
 var Settings=(function(){
 'use strict';
 var version=0,dirty=false;
@@ -12,8 +13,10 @@ function group(id,title,desc,content,open){return '<details class="st-group" id=
 function form(scope,content){return '<form data-settings-form="'+scope+'" method="post" action="/api/settings">'+content+submit()+'</form>';}
 function link(title,desc,attrs){return '<button type="button" class="st-link" '+attrs+'><span><strong>'+title+'</strong><small>'+desc+'</small></span><span>›</span></button>';}
 function render(){dirty=false;var n=++version,uid=ME.uid;
-$('#app').innerHTML=renderTopBar()+'<div class="page-container st-page"><div class="page-header-card"><div><div class="page-header-title">⚙️ 小窝设置</div><div class="page-header-desc">按用途分组 · 每组单独保存</div></div><img src="/img/dog-set.png" alt="" width="44" height="44"></div><div class="st-account"><span>'+(uid==='a'?'🐶 ':'🐾 ')+h(ME.name)+'</span><span class="st-badge">当前账号</span></div><div id="settingsContent" aria-live="polite">正在加载最新设置…</div></div>'+bottomNavHTML()+modalsHTML();
-api('/api/settings',{cache:'no-store'}).then(function(s){if(n!==version||!ME||ME.uid!==uid||CURRENT_VIEW!=='settings')return;paint(s);}).catch(function(e){if(n===version&&$('#settingsContent'))$('#settingsContent').innerHTML=note(h(e.message))+'<button class="p-btn" data-settings="retry">重试</button>';});
+var cached=null;try{cached=JSON.parse(localStorage.getItem('sched_settings_v1')||'null');}catch(e){}
+setAppHTML(renderTopBar()+'<div class="page-container st-page"><div class="page-header-card"><div><div class="page-header-title">⚙️ 小窝设置</div><div class="page-header-desc">按用途分组 · 每组单独保存</div></div><img src="/img/dog-set.png" alt="" width="44" height="44"></div><div class="st-account"><span>'+(uid==='a'?'🐶 ':'🐾 ')+h(ME.name)+'</span><span class="st-badge">当前账号</span></div><div id="settingsContent" aria-live="polite">'+(cached?'':'正在加载最新设置…')+'</div></div>'+bottomNavHTML()+modalsHTML());
+if(cached){try{paint(cached);}catch(e){}}
+api('/api/settings',{cache:'no-store'}).then(function(s){try{localStorage.setItem('sched_settings_v1',JSON.stringify(s));}catch(e){}if(n!==version||!ME||ME.uid!==uid||CURRENT_VIEW!=='settings'||dirty)return;paint(s);}).catch(function(e){if(n===version&&$('#settingsContent')&&!cached)$('#settingsContent').innerHTML=note(h(e.message))+'<button class="p-btn" data-settings="retry">重试</button>';});
 }
 function paint(s){var u=s.users,p=s.settings,dark=document.documentElement.classList.contains('dark'),mine=u[ME.uid];
 var appearance='<div class="seg" id="themeSeg"><button type="button" class="opt'+(!dark?' on':'')+'" data-act="set-theme" data-theme="light">☀️ 浅色</button><button type="button" class="opt'+(dark?' on':'')+'" data-act="set-theme" data-theme="dark">🌙 深色</button></div>'+note('立即生效，仅影响这台设备，无需保存。');

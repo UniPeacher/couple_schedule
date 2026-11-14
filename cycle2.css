@@ -14,12 +14,19 @@
   --c2-teal-bg:#e9f6f3;
   --c2-teal-bd:#c2e5dc;
   --c2-period:#ff5f7e;
-  --c2-ovu:#e8952f;
+  --c2-ovu:#5c6be8;
   --c2-foll:#5db3a5;
   --c2-lute:#b486c4;
   --c2-track:#f0e3d5;
   --c2-band:#f7e8e6;
-  --c2-note:#9a5ce0;
+  --c2-note:#9b6fd0;
+  --c2-fertile-bg:#ddf1ee;
+  --c2-fertile-tx:#0e7270;
+  --c2-pred-bg:transparent;
+  --c2-pred-bd:#d9798f;
+  --c2-pred-tx:#b03353;
+  --c2-today-bg:#1f2430;
+  --c2-today-tx:#ffffff;
   max-width:760px;
 }
 html.dark .c2-page{
@@ -36,13 +43,33 @@ html.dark .c2-page{
   --c2-teal-bg:#17302d;
   --c2-teal-bd:#2e5550;
   --c2-period:#fb7185;
-  --c2-ovu:#fbbf24;
+  --c2-ovu:#7c8cf8;
   --c2-foll:#4fd1c5;
   --c2-lute:#c4a1d6;
   --c2-track:#333c4c;
   --c2-band:#2c3442;
-  --c2-note:#c4b5fd;
+  --c2-note:#c084fc;
+  --c2-fertile-bg:#1b3737;
+  --c2-fertile-tx:#9fe3d9;
+  --c2-pred-bg:#2a1a23;
+  --c2-pred-bd:#a84e66;
+  --c2-pred-tx:#e59aaa;
+  --c2-today-bg:#f2f4f8;
+  --c2-today-tx:#161a22;
 }
+
+/* ---------- page nav (back · title · more) ---------- */
+.c2-nav{display:flex;align-items:center;gap:12px;margin:2px 0 14px}
+.c2-nav-btn{
+  width:38px;height:38px;flex:0 0 38px;border-radius:50%;
+  border:1.5px solid var(--line-strong);background:var(--bg-card);
+  color:var(--ink-secondary);font-size:16px;line-height:1;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  box-shadow:var(--shadow-sm);padding:0;
+}
+.c2-nav-btn:active{transform:scale(.94)}
+.c2-nav-title{flex:1;font-size:19px;font-weight:900;letter-spacing:.4px;color:var(--ink-primary)}
+.c2-nav-title small{font-weight:700;font-size:11px;color:var(--ink-muted);margin-left:8px;letter-spacing:0}
 
 /* ---------- cards ---------- */
 .c2-card{
@@ -93,7 +120,7 @@ html.dark .c2-page{
 .c2-length.empty b{color:var(--ink-light)}
 
 /* ---------- calendar grid ---------- */
-.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin:10px 0 4px}
+.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0;margin:10px 0 4px}
 .c2-cal-head{
   text-align:center;font-size:12px;font-weight:800;color:var(--ink-muted);
   padding:7px 0 5px;letter-spacing:.5px;
@@ -104,6 +131,25 @@ html.dark .c2-page{
   gap:4px;padding:6px 0 9px;min-height:54px;border-radius:14px;
 }
 .c2-cal-cell:active{background:var(--bg-card-subtle)}
+/* merged range capsules: one continuous shape per run of days (Huawei-style) */
+.c2-cal-cell::before{
+  content:'';position:absolute;top:2px;bottom:13px;left:2px;right:2px;
+  border-radius:19px;pointer-events:none;
+}
+.c2-cal-cell.c2-run-fertile::before{background:var(--c2-fertile-bg)}
+.c2-cal-cell.c2-run-pred::before{background:var(--c2-pred-bg);border:0 dashed var(--c2-pred-bd)}
+.c2-cal-cell.single::before{left:2px;right:2px}
+.c2-cal-cell.rs::before{left:2px;right:0;border-radius:19px 0 0 19px}
+.c2-cal-cell.rm::before{left:0;right:0}
+.c2-cal-cell.re::before{left:0;right:2px;border-radius:0 19px 19px 0}
+.c2-cal-cell.single::before{border-radius:19px}
+/* dashed outline only on the outer edges, so adjacent cells read as one capsule */
+.c2-cal-cell.c2-run-pred.single::before{border-width:1.5px}
+.c2-cal-cell.c2-run-pred.rs::before{border-top-width:1.5px;border-bottom-width:1.5px;border-left-width:1.5px}
+.c2-cal-cell.c2-run-pred.rm::before{border-top-width:1.5px;border-bottom-width:1.5px}
+.c2-cal-cell.c2-run-pred.re::before{border-top-width:1.5px;border-bottom-width:1.5px;border-right-width:1.5px}
+.c2-cal-cell.c2-run-fertile .d{color:var(--c2-fertile-tx);font-weight:800}
+.c2-cal-cell.c2-run-pred .d{color:var(--c2-pred-tx);font-weight:800}
 .c2-cal-cell .d{
   position:relative;
   width:34px;height:34px;border-radius:50%;display:inline-flex;
@@ -111,9 +157,8 @@ html.dark .c2-page{
   color:var(--ink-secondary);
 }
 .c2-cal-cell.today .d{
-  border:0;color:#fff;font-weight:900;
-  background:linear-gradient(135deg,var(--c2-accent) 0%,var(--c2-accent-d) 100%);
-  box-shadow:0 4px 12px rgba(255,96,136,.4);
+  border:0;color:var(--c2-today-tx);font-weight:900;
+  background:var(--c2-today-bg);
 }
 /* a tiny dot flags days that already have a note record (Apple-style) */
 .c2-cal-cell.has-note .d::after{
@@ -121,21 +166,27 @@ html.dark .c2-page{
   background:var(--c2-note);box-shadow:0 0 0 2px var(--bg-card);
 }
 .c2-cal-cell .m{width:7px;height:7px;border-radius:50%;background:transparent}
-.c2-cal-cell .m.period{background:var(--c2-period);box-shadow:0 0 6px rgba(255,95,126,.45)}
-.c2-cal-cell .m.predicted{background:transparent;box-shadow:inset 0 0 0 1.6px var(--c2-period)}
-.c2-cal-cell .m.ovulation{background:var(--c2-ovu);box-shadow:0 0 6px rgba(232,149,47,.4)}
-.c2-cal-cell .m.fertile{background:transparent;box-shadow:inset 0 0 0 1.6px var(--c2-ovu)}
-.c2-cal-cell .m.follicular{background:var(--c2-foll)}
-.c2-cal-cell .m.luteal{background:var(--c2-lute)}
+.c2-cal-cell .m.period{background:var(--c2-period);box-shadow:0 0 5px rgba(232,80,110,.3)}
+.c2-cal-cell .m.ovu-gear{
+  width:auto;height:auto;background:transparent;box-shadow:none;
+  font-size:11px;line-height:7px;font-weight:700;color:var(--c2-ovu);
+}
 
 /* ---------- legend ---------- */
 .c2-legend{display:flex;flex-wrap:wrap;gap:4px 13px;justify-content:center;margin:14px 0 2px}
 .c2-legend span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-muted);font-weight:600}
 .c2-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--c2-track)}
 .c2-legend .period{background:var(--c2-period)}
-.c2-legend .predicted{background:transparent;box-shadow:inset 0 0 0 1.6px var(--c2-period)}
+.c2-legend .pill-dash{
+  width:16px;height:11px;border-radius:6px;background:var(--c2-pred-bg);
+  border:1.5px dashed var(--c2-pred-bd);
+}
+.c2-legend .pill-fill{width:16px;height:11px;border-radius:6px;background:var(--c2-fertile-bg)}
 .c2-legend .ovulation{background:var(--c2-ovu)}
-.c2-legend .fertile{background:transparent;box-shadow:inset 0 0 0 1.6px var(--c2-ovu)}
+.c2-legend .gear{
+  width:auto;height:auto;background:transparent;font-size:12px;line-height:1;
+  font-weight:700;color:var(--c2-ovu);
+}
 .c2-legend .follicular{background:var(--c2-foll)}
 .c2-legend .luteal{background:var(--c2-lute)}
 .c2-legend .note{background:var(--c2-note)}
@@ -338,6 +389,7 @@ html.dark .c2-conf.high{color:#6fd394}html.dark .c2-conf.medium{color:#fbbf24}
   .c2-chip-grid{gap:8px}
   .c2-opt{font-size:12.5px;padding:8px 12px;min-height:44px}
   .c2-ring{width:min(252px,72vw);height:min(252px,72vw)}
+  .c2-nav-title{font-size:17px}
   .c2-pred-date{font-size:22px}
 }
 
