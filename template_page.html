@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#faf6f0">
 <script>
 (function(){
@@ -12,6 +12,8 @@
     if (savedDark === "1" || (savedDark === null && prefersDark)){
       document.documentElement.classList.add("dark");
     }
+    var tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.content = document.documentElement.classList.contains("dark") ? "#15181e" : "#faf6f0";
   } catch(e){}
 })();
 </script>
@@ -129,7 +131,7 @@ body{
   background-size:22px 22px;
   color:var(--ink-primary);
   line-height:1.55;
-  padding-bottom:100px;
+  padding-bottom:calc(100px + env(safe-area-inset-bottom));
   -webkit-tap-highlight-color:transparent;
   min-height:100vh;
   overscroll-behavior-y: none;
@@ -154,11 +156,12 @@ button,input,select,textarea{font-family:inherit}
   border-bottom:1.5px solid var(--line-strong);
   box-shadow:var(--shadow-sm);
   contain:layout style paint;
+  padding-top:env(safe-area-inset-top);
 }
 
 /* 底部萌系导航栏 */
 .bottom-nav{
-  position:fixed;bottom:12px;left:50%;transform:translateX(-50%);
+  position:fixed;bottom:calc(12px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
   z-index:45;width:calc(100% - 24px);max-width:440px;
   background:var(--bg-card);border:1.5px solid var(--line-strong);
   border-radius:28px;box-shadow:var(--shadow-lg);
@@ -365,6 +368,7 @@ button,input,select,textarea{font-family:inherit}
 }
 .p-btn.danger{color:#ef4444;border-color:#fca5a5;background:transparent}
 .p-btn.danger:hover{background:rgba(239,68,68,0.15)}
+.p-btn.photo-add{background:var(--dog-a-badge);border-color:var(--dog-a-bd)}
 
 /* 周导航控制器 */
 .weekbar-wrap{
@@ -388,6 +392,13 @@ button,input,select,textarea{font-family:inherit}
 .wl-date{
   font-size:12px;font-weight:800;color:var(--ink-primary);
   letter-spacing:.1px;white-space:nowrap;
+}
+.wl-weeknum{
+  font-size:10.5px;font-weight:800;color:var(--ink-secondary);
+  background:var(--bg-card-subtle, rgba(0,0,0,0.04));
+  border:1px solid var(--line-strong);
+  border-radius:var(--radius-pill);
+  padding:1px 7px;white-space:nowrap;
 }
 .wl-schools{
   display:flex;align-items:center;gap:5px;flex-wrap:wrap;
@@ -424,7 +435,7 @@ button,input,select,textarea{font-family:inherit}
 .anniv-bar::-webkit-scrollbar{display:none}
 .anniv-capsule{
   display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
-  background:#fff;border:1.5px solid var(--line-strong);
+  background:var(--bg-card);border:1.5px solid var(--line-strong);
   border-radius:var(--radius-pill);padding:3px 10px;
   font-size:11.5px;font-weight:700;color:var(--ink-primary);
   box-shadow:var(--shadow-sm);cursor:pointer;user-select:none;
@@ -456,9 +467,9 @@ button,input,select,textarea{font-family:inherit}
   background:var(--bg-card);color:var(--dog-a);box-shadow:0 1px 3px rgba(0,0,0,0.08);
 }
 
-/* 统一主视图页面容器 */
+/* 统一主视图页面容器（底部留白由 body 统一负责，避免两份 100px 叠加） */
 .page-container{
-  max-width:800px;margin:0 auto;padding:12px 14px 100px;
+  max-width:800px;margin:0 auto;padding:12px 14px 0;
 }
 .page-header-card{
   background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:22px;
@@ -691,6 +702,10 @@ main{max-width:1120px;margin:0 auto;padding:6px 12px 16px}
   display:flex;align-items:center;justify-content:center;
   pointer-events:none;box-sizing:border-box;
 }
+/* 桌面端鼠标拖拽浏览课表时防止误选卡片与表头文字 */
+.cal .ev-stack, .cal .fband, .cal .dh, .cal .axh, .cal .sleepy{
+  user-select:none;-webkit-user-select:none;
+}
 .fdur-tag{
   font-size:10px;font-weight:800;color:var(--free-text);
   background:rgba(255,255,255,0.9);padding:2px 7px;
@@ -889,7 +904,7 @@ html.dark .ev-stack.both{
 
 /* FAB 悬浮添加按钮 */
 .fab{
-  position:fixed;right:20px;bottom:78px;
+  position:fixed;right:20px;bottom:calc(78px + env(safe-area-inset-bottom));
   background:linear-gradient(135deg, var(--dog-a) 0%, #ff85a2 100%);
   color:#fff;border:none;border-radius:var(--radius-pill);
   padding:11px 20px;font-size:14px;font-weight:800;
@@ -910,6 +925,7 @@ html.dark .ev-stack.both{
   background:rgba(61, 47, 37, 0.45);
   display:none;align-items:flex-start;justify-content:center;
   z-index:50;padding:26px 12px;overflow-y:auto;
+  overscroll-behavior:contain;
 }
 .overlay.show{display:flex;animation:overlayFade .18s ease}
 @keyframes overlayFade{from{opacity:0}to{opacity:1}}
@@ -1044,7 +1060,7 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
 .crow{display:flex;gap:8px;margin-top:6px}
 .crow input{
   flex:1;border:1.5px solid var(--line-strong);
-  border-radius:12px;padding:9px 12px;font-size:13.5px;
+  border-radius:12px;padding:9px 12px;
 }
 
 /* 登录界面 (线条小狗治愈卡片) */
@@ -1107,7 +1123,7 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
 
 /* 轻提示 Toast */
 .toast{
-  position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+  position:fixed;bottom:calc(76px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
   background:rgba(61, 47, 37, 0.94);backdrop-filter:blur(6px);
   color:#fff;padding:10px 20px;border-radius:var(--radius-pill);
   font-size:13.5px;font-weight:700;opacity:0;
@@ -1136,13 +1152,41 @@ html.dark .wish-fire-tag{background:rgba(239,68,68,0.18);color:#fca5a5;border-co
 
 /* 全局按压反馈：触屏上 hover 不可靠，按下要有回应；manipulation 去掉双击缩放延迟 */
 button,.b-tab,.seg .opt,.view-seg-opt,.phrase-pill,.msg-card,.anniv-capsule,
-.wish-card,.ev,.ev-stack,.login-card,.st-link,.st-group>summary,.cmt .cdel{
+.wish-card,.ev,.ev-stack,.login-card,.st-link,.st-group>summary,.cmt .cdel,
+.month-cell,.polaroid-img,.c2-switch{
   touch-action:manipulation;
 }
 .b-tab:active,.seg .opt:active,.view-seg-opt:active,.msg-card:active,
 .login-card:active,.anniv-capsule:active,.st-link:active,.st-group>summary:active{transform:scale(.97)}
 .phrase-pill:active,.msg-btn-sm:active,.wish-check-btn:active,.wish-del-btn:active,
 .ev-tab:active,.anniv-add-btn:active,.cmt .cdel:active{transform:scale(.9)}
+
+/* 触屏小按钮热区扩大（视觉不变）：::after 外扩不占布局，hover:none 只对触屏生效；
+   相邻可点元素靠得近的（顶栏两行按钮、旅行清单逐行勾选）按不重叠原则只扩到 36px 左右 */
+@media (hover:none){
+  .msg-btn-sm{position:relative}
+  .msg-btn-sm::after{content:"";position:absolute;inset:-8px}
+  .wish-check-btn{position:relative}
+  .wish-check-btn::after,.wish-del-btn::after{content:"";position:absolute;inset:-8px}
+  .cmt .cdel{position:relative}
+  .cmt .cdel::after{content:"";position:absolute;inset:-8px}
+  .trip-check{position:relative}
+  .p-btn.trip-check::after{content:"";position:absolute;inset:-7px}
+  .ev .del::after,.ev-stack-body .del::after{content:"";position:absolute;inset:-8px}
+  .photo-del-x::after{content:"";position:absolute;inset:-12px}
+  .pv-close::after{content:"";position:absolute;inset:-4px}
+}
+@media (hover:none) and (max-width:640px){
+  .p-btn{position:relative}
+  .p-btn::after{content:"";position:absolute;inset:-6px 0}
+  .header-box .p-btn::after{inset:-4px 0}
+  #ovPhotoSheet .p-btn::after{content:none}
+}
+
+/* 触屏上输入统一 16px，防 iOS Safari 聚焦自动放大；桌面保持原有字号 */
+@media (pointer:coarse){
+  input,select,textarea,.field input,.field select,.field textarea{font-size:16px}
+}
 
 /* Toast 分型：成功绿 / 出错红，默认保持墨色 */
 .toast.ok{background:rgba(13,110,78,0.95)}
@@ -1200,7 +1244,7 @@ button,.b-tab,.seg .opt,.view-seg-opt,.phrase-pill,.msg-card,.anniv-capsule,
   .school-badge{font-size:10px;padding:1px 5px}
   .legend-card{font-size:10.5px;gap:6px}
   .modal{padding:18px 16px}
-  .fab{right:16px;bottom:76px;padding:9px 16px;font-size:13px}
+  .fab{right:16px;bottom:calc(76px + env(safe-area-inset-bottom));padding:9px 16px;font-size:13px}
   .anniv-bar{padding:0 6px;margin:2px auto 4px}
   .anniv-capsule{font-size:11px;padding:2px 8px}
 }
@@ -1502,10 +1546,10 @@ html.dark .splash-img {
   </div>
 </div>
 <script id="__SSR_DATA__">window.__INITIAL_DATA__ = null;</script>
-<div class="toast" id="toast"></div>
-<link rel="stylesheet" href="/cycle2.css?v=20261114b">
-<script src="/cycle2.js?v=20261114c"></script>
-<link rel="stylesheet" href="/settings_ui.css?v=20261114">
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<link rel="stylesheet" href="/cycle2.css?v=20261114e">
+<script src="/cycle2.js?v=20261114e"></script>
+<link rel="stylesheet" href="/settings_ui.css?v=20261114d">
 <script src="/settings_ui.js?v=20261114c"></script>
 <script>
 "use strict";
@@ -1527,16 +1571,6 @@ setTimeout(dismissSplash, 2500);
 
 var WD = ["周一","周二","周三","周四","周五","周六","周日"];
 var ME = null, DATA = null, ANCHOR = null, META = null;
-// 恢复深色模式偏好设置
-(function(){
-  try {
-    var savedDark = localStorage.getItem("sched_dark_mode");
-    var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (savedDark === "1" || (savedDark === null && prefersDark)){
-      document.documentElement.classList.add("dark");
-    }
-  } catch(e){}
-})();
 
 var CURRENT_VIEW = "week"; // "week" | "month" | "summary" | "messages" | "wishes" | "trips" | "anniv" | "settings" | "cycle2"
 var MONTH_ANCHOR = todayISO().slice(0, 7); // YYYY-MM
@@ -1556,7 +1590,9 @@ var activeDiaryDate = "";
 var addUid = "a", addRep = "weekly", loginUid = "a", annivType = "love";
 
 function setUnreadCount(count){
-  UNREAD_COUNT = Math.max(0, parseInt(count) || 0);
+  var n = Math.max(0, parseInt(count) || 0);
+  if (n === UNREAD_COUNT) return; /* 未变化不写 DOM：轮询每 15s 一次，写入会触发确认弹窗的"重渲染即取消"监听 */
+  UNREAD_COUNT = n;
   document.querySelectorAll("#bUnreadBadge, .b-badge").forEach(function(badge){
     if (UNREAD_COUNT > 0){
       badge.textContent = UNREAD_COUNT > 99 ? "99+" : UNREAD_COUNT;
@@ -1577,6 +1613,20 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 function pad(n){ return n<10 ? "0"+n : ""+n; }
 function todayISO(){ var d=new Date(); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+function fmtDateCN(dtStr){
+  var p = String(dtStr || "").split("-");
+  if (p.length !== 3) return dtStr;
+  var d = new Date(+p[0], +p[1] - 1, +p[2]);
+  var s = (+p[1]) + "月" + (+p[2]) + "日 · " + WD[(d.getDay() + 6) % 7];
+  if (+p[0] !== new Date().getFullYear()) s = p[0] + "年" + s;
+  return s;
+}
+function fmtRecordTime(created, dtStr){
+  var parts = String(created || "").split(" ");
+  var hm = (parts[1] || "").slice(0, 5);
+  if (!hm) return created;
+  return (parts[0] === dtStr) ? hm : fmtDateCN(parts[0]) + " " + hm;
+}
 function shiftISO(iso, days){ var p=iso.split("-"), t=new Date(+p[0], +p[1]-1, +p[2]);
   t.setDate(t.getDate()+days); return t.getFullYear()+"-"+pad(t.getMonth()+1)+"-"+pad(t.getDate()); }
 function t2m(t){ var p=t.split(":"); return (+p[0])*60 + (+p[1]); }
@@ -1620,6 +1670,12 @@ function calcAnniv(item, todayStr){
 function toast(msg, type){ var t=$("#toast"); t.textContent=msg; t.classList.remove("ok","err"); if(type) t.classList.add(type); t.classList.add("show");
   clearTimeout(t._h); t._h=setTimeout(function(){ t.classList.remove("show"); }, 2600); }
 
+/* 状态栏着色跟随深浅色（head 里的 IIFE 首次同步，这里在切换时更新） */
+function syncThemeColor(){
+  var tc = document.querySelector('meta[name="theme-color"]');
+  if (tc) tc.content = document.documentElement.classList.contains("dark") ? "#15181e" : "#faf6f0";
+}
+
 /* 萌系确认弹窗：替代原生 confirm。resolve(true)=确认，resolve(false)=取消。
    物理返回键经全局 popstate 关闭；视图重渲染时自动消失。 */
 function uiConfirm(opts){
@@ -1642,6 +1698,7 @@ function uiConfirm(opts){
       document.removeEventListener("keydown", onKey);
       if (mo) mo.disconnect();
       ov.classList.remove("show");
+      if (!document.querySelector(".overlay.show")) document.body.style.overflow = "";
       setTimeout(function(){ if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }, 220);
       resolve(val);
     }
@@ -1654,9 +1711,11 @@ function uiConfirm(opts){
     });
     document.addEventListener("keydown", onKey);
     ov._dismiss = function(){ finish(false); };
-    // 视图重渲染即视为取消，避免确认弹窗残留在新视图上
+    // 视图重渲染即视为取消，避免确认弹窗残留在新视图上。
+    // 只监听 #app 直接子节点变化（整页重绘才会触发）；
+    // subtree 会把未读徽标等小更新误判成重渲染，导致确认框自己消失。
     mo = new MutationObserver(function(){ finish(false); });
-    mo.observe(document.getElementById("app"), {childList:true, subtree:true});
+    mo.observe(document.getElementById("app"), {childList:true});
     document.body.appendChild(ov);
     ov.classList.add("show");
     try { (opts.danger ? ov.querySelector(".confirm-btn.cancel") : ov.querySelector(".confirm-btn.ok")).focus(); } catch(e){}
@@ -1671,6 +1730,16 @@ function markInputErr(el){
   setTimeout(function(){ el.classList.remove("input-err"); }, 700);
 }
 
+function clearDataCaches(){
+  try {
+    localStorage.removeItem("sched_wishes");
+    localStorage.removeItem("sched_messages");
+    localStorage.removeItem("sched_settings_v1");
+  } catch(e){}
+  WISHES_DATA = null;
+  MESSAGES_DATA = null;
+}
+
 function api(path, opts){
   opts = opts || {};
   opts.headers = Object.assign({"Content-Type":"application/json"}, opts.headers||{});
@@ -1683,6 +1752,7 @@ function api(path, opts){
             localStorage.removeItem("sched_me");
             localStorage.removeItem("sched_week_" + ANCHOR);
           } catch(e){}
+          clearDataCaches();
           ME = null; DATA = null; render();
         }
         throw new Error(j.error || ("请求失败 " + r.status));
@@ -1757,11 +1827,12 @@ function load(opts){
   }
 }
 
-/* 模态框打开与关闭（支持原生历史记录与物理/手势返回键） */
+/* 模态框打开与关闭（支持原生历史记录与物理/手势返回键）；打开期间锁住 body 滚动防穿透 */
 function openModal(modalId){
   var el = $(modalId);
   if (!el) return;
   el.classList.add("show");
+  document.body.style.overflow = "hidden";
   history.pushState({type:"modal", id:modalId}, "");
 }
 
@@ -1778,13 +1849,28 @@ function closeAllModals(fromPop){
     pv.classList.remove("show");
     showed = true;
   }
+  document.body.style.overflow = "";
   return showed;
 }
-function renderTopBar(){
+
+/* 照片大图关闭：与打开时压入的 history 条目配对，关闭按钮/Esc 都走返回，
+   隐藏动作统一由 popstate 里的 closeAllModals 完成，避免两条路径双触发 */
+function closePhotoViewer(){
+  var pv = $("#ovPhotoViewer");
+  if (!pv || pv.style.display === "none") return;
+  if (history.state && history.state.modal === "photo"){
+    history.back();
+    return;
+  }
+  stopPvLiveVideo();
+  pv.style.display = "none";
+  pv.classList.remove("show");
+  document.body.style.overflow = "";
+}
+function renderTopbarHTML(){
   var myIsA = ME.uid === "a";
   var myPill = '<span class="user-pill ' + ME.uid + '">' + (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) + '</span>';
-  return '<div class="header-box" id="headerBox">' +
-    '<header class="topbar">' +
+  return '<header class="topbar">' +
       '<div class="brand" data-act="switch-view" data-v="week">' +
         '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
         '<span class="brand-title">两人日程 🐾</span>' +
@@ -1796,11 +1882,37 @@ function renderTopBar(){
         '</button>' +
         '<button class="p-btn icon-btn" data-act="switch-view" data-v="settings" title="设置">⚙️</button>' +
       '</div>' +
-    '</header>' +
-  '</div>';
+    '</header>';
+}
+function renderTopBar(){
+  return '<div class="header-box" id="headerBox">' + renderTopbarHTML() + '</div>';
+}
+
+function setAppHTML(html){
+  var app = $("#app");
+  var tpl = document.createElement("div");
+  tpl.innerHTML = html;
+  // 顶栏在视图间内容不变：整树重建会让 brand 图标/标题在重绘瞬间闪动，改为复用旧节点。
+  // 周视图的 headerBox 里还有吸顶的周导航条，先试整块复用，不一致时退回复用 .topbar 节点。
+  var newBox = tpl.querySelector("#headerBox");
+  var curBox = app.querySelector("#headerBox");
+  if (newBox && curBox){
+    if (newBox.innerHTML === curBox.innerHTML){
+      tpl.replaceChild(curBox, newBox);
+    } else {
+      var newBar = newBox.querySelector(".topbar");
+      var curBar = curBox.querySelector(".topbar");
+      if (newBar && curBar && newBar.innerHTML === curBar.innerHTML){
+        newBar.parentNode.replaceChild(curBar, newBar);
+      }
+    }
+  }
+  app.innerHTML = "";
+  while (tpl.firstChild) app.appendChild(tpl.firstChild);
 }
 
 function render(){
+  var detailWasOpen = !!(curDetail && document.querySelector("#ovDetail.show"));
   if (!ME){ renderLogin(); } else {
     if (CURRENT_VIEW === "month") renderMonthApp();
     else if (CURRENT_VIEW === "summary") renderSummaryPage();
@@ -1812,6 +1924,7 @@ function render(){
     else if (CURRENT_VIEW === "cycle2") Cycle2.renderPage();
     else renderApp();
   }
+  if (detailWasOpen && curDetail && $("#ovDetail")) openDetail(curDetail.id, curDetail.date, false);
   Cycle2.mount();
   dismissSplash();
 }
@@ -1822,7 +1935,7 @@ function renderLogin(){
   '<div class="login-wrap">' +
     '<form class="login" id="loginForm">' +
       '<div class="login-wave-corner"><img src="/img/dog-wave.png" alt=""></div>' +
-      '<div class="login-hero"><img src="/img/dog-couple.png" alt="线条小狗贴贴"></div>' +
+      '<div class="login-hero"><img src="/img/dog-couple.webp" alt="线条小狗贴贴"></div>' +
       '<h2>线条小狗 · 两人日程 🐾</h2>' +
       '<div class="sub">汪！选好狗狗身份，输入密码进入小窝~</div>' +
       '<div class="login-cards" id="loginSeg">' +
@@ -2002,7 +2115,7 @@ function renderSummaryPage(){
 
   html += bottomNavHTML();
   html += modalsHTML();
-  $("#app").innerHTML = html;
+  setAppHTML(html);
   loadSummary(curSummaryMonth);
 }
 
@@ -2035,18 +2148,32 @@ function renderMessagesPage(){
 
   html += bottomNavHTML();
   html += modalsHTML();
-  $("#app").innerHTML = html;
+  setAppHTML(html);
   loadMessages();
 }
 
 function loadMessages(){
   var box = $("#messagesListContainer");
-  if (box && (!MESSAGES_DATA || MESSAGES_DATA.length === 0)){
-    box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted);font-weight:700">🐶 正在拉取信箱通知...</div>';
+  if (!MESSAGES_DATA){
+    try { MESSAGES_DATA = JSON.parse(localStorage.getItem("sched_messages") || "null"); } catch(e){}
   }
+  if (MESSAGES_DATA){
+    // 缓存秒出，后台静默对账；未读数以最新一次拉取为准，不用缓存旧值刷新角标
+    renderMessagesList();
+    api("/api/messages").then(function(res){
+      if (!(res && res.ok)) return;
+      MESSAGES_DATA = res.messages || [];
+      try { localStorage.setItem("sched_messages", JSON.stringify(MESSAGES_DATA)); } catch(e){}
+      setUnreadCount(res.unread_count);
+      if (CURRENT_VIEW === "messages") renderMessagesList();
+    }).catch(function(){});
+    return;
+  }
+  if (box) box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted);font-weight:700">🐶 正在拉取信箱通知...</div>';
   api("/api/messages").then(function(res){
     if (res && res.ok){
       MESSAGES_DATA = res.messages || [];
+      try { localStorage.setItem("sched_messages", JSON.stringify(MESSAGES_DATA)); } catch(e){}
       setUnreadCount(res.unread_count);
       renderMessagesList();
     }
@@ -2141,18 +2268,44 @@ function renderWishesPage(){
 
   html += bottomNavHTML();
   html += modalsHTML();
-  $("#app").innerHTML = html;
+  setAppHTML(html);
   loadWishes();
 }
 
+function wishLocalStats(list){
+  var total = list.length, done = 0;
+  for (var i = 0; i < total; i++){ if (list[i].is_done == 1) done++; }
+  return {"total": total, "done": done, "pending": total - done};
+}
+function storeWishes(list){
+  WISHES_DATA = list;
+  try { localStorage.setItem("sched_wishes", JSON.stringify(list)); } catch(e){}
+}
 function loadWishes(){
   var box = $("#wishesListContainer");
-  if (box && (!WISHES_DATA || WISHES_DATA.length === 0)){
-    box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted);font-weight:700">🐶 正在翻开俩汪心愿清单...</div>';
+  if (!WISHES_DATA){
+    try { WISHES_DATA = JSON.parse(localStorage.getItem("sched_wishes") || "null"); } catch(e){}
   }
+  if (WISHES_DATA){
+    // 缓存秒出，后台静默对账；数据有变化才重画，避免列表跳动
+    updateWishStats(wishLocalStats(WISHES_DATA));
+    renderWishesList();
+    api("/api/wishes").then(function(res){
+      if (!(res && res.ok)) return;
+      var changed = JSON.stringify(res.wishes || []) !== JSON.stringify(WISHES_DATA);
+      storeWishes(res.wishes || []);
+      if (!changed) return;
+      if (CURRENT_VIEW === "wishes"){
+        updateWishStats(res.stats);
+        renderWishesList();
+      }
+    }).catch(function(){});
+    return;
+  }
+  if (box) box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted);font-weight:700">🐶 正在翻开俩汪心愿清单...</div>';
   api("/api/wishes").then(function(res){
     if (res && res.ok){
-      WISHES_DATA = res.wishes || [];
+      storeWishes(res.wishes || []);
       updateWishStats(res.stats);
       renderWishesList();
     }
@@ -2247,7 +2400,7 @@ function renderAnnivPage(){
           '<div class="page-header-title">💖 纪念日与倒计时</div>' +
           '<div class="page-header-desc">🐾 记录每一个相恋心动的日子与生日</div>' +
         '</div>' +
-        '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-couple.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+        '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-couple.webp" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
       '</div>' +
 
       '<div class="page-main-card">' +
@@ -2276,7 +2429,7 @@ function renderAnnivPage(){
 
   html += bottomNavHTML();
   html += modalsHTML();
-  $("#app").innerHTML = html;
+  setAppHTML(html);
   renderAnnivList();
 }
 
@@ -2287,8 +2440,6 @@ function renderMonthApp(){
   var parts = ym.split("-");
   var year = +parts[0], month = +parts[1];
   var u = (META && META.users) || [{uid:"a",name:"小金毛"},{uid:"b",name:"小白狗"}];
-  var myIsA = ME.uid === "a";
-  var myPill = '<span class="user-pill ' + ME.uid + '">' + (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) + '</span>';
 
   // 计算本月日历格子 (周一到周日)
   var firstDay = new Date(year, month - 1, 1);
@@ -2338,6 +2489,9 @@ function renderMonthApp(){
         }
       }
     });
+    if (dayDiaries.length > 1){
+      dayBadges.push('<span class="mday-badge" title="这一天有 ' + dayDiaries.length + ' 篇手账">📔' + dayDiaries.length + '</span>');
+    }
 
     var diaryPreview = "";
     if (dayDiaries.length > 0){
@@ -2368,21 +2522,7 @@ function renderMonthApp(){
   var count = (MONTH_DATA && MONTH_DATA.total_count) || 0;
 
   var html =
-  '<div class="header-box" id="headerBox">' +
-    '<header class="topbar">' +
-      '<div class="brand">' +
-        '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
-        '<span class="brand-title">两人日程 🐾</span>' +
-      '</div>' +
-      '<div class="top-actions">' +
-        myPill +
-        '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
-          (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
-        '</button>' +
-        '<button class="p-btn icon-btn" data-act="switch-view" data-v="settings" title="设置">⚙️</button>' +
-      '</div>' +
-    '</header>' +
-  '</div>' +
+  renderTopBar() +
 
   '<div class="page-container">' +
     diarySegHTML("month") +
@@ -2410,7 +2550,7 @@ function renderMonthApp(){
   html += bottomNavHTML();
   html += modalsHTML();
 
-  $("#app").innerHTML = html;
+  setAppHTML(html);
 }
 
 function renderApp(){
@@ -2419,6 +2559,20 @@ function renderApp(){
   WSTART = t2m(st0.window_start); WEND = t2m(st0.window_end);
   var CALH = Math.round((WEND - WSTART) * PXH / 60);
   var weekLabel = DATA.week_start + ' ~ ' + DATA.week_end.slice(5);
+
+  /* 教学周次角标：随周次切换显示"第 N 周 · 单/双周"，帮助对上单双周课表 */
+  function weekNumTag(n, ico){
+    if (n == null) return "";
+    return ico + "第" + n + "周·" + (n % 2 === 1 ? "单" : "双");
+  }
+  var weekNumHTML = "";
+  if (wn.a != null || wn.b != null){
+    if (wn.a != null && wn.a === wn.b){
+      weekNumHTML = '<span class="wl-weeknum">第 ' + wn.a + ' 周 · ' + (wn.a % 2 === 1 ? "单周" : "双周") + '</span>';
+    } else {
+      weekNumHTML = '<span class="wl-weeknum">' + weekNumTag(wn.a, "🐶") + " " + weekNumTag(wn.b, "🐾") + '</span>';
+    }
+  }
 
   var head = '<div class="corner">时间</div>';
   var body = '<div class="axcol" style="height:' + CALH + 'px">';
@@ -2490,11 +2644,6 @@ function renderApp(){
     body += '</div>';
   });
 
-  var myIsA = ME.uid === 'a';
-  var myPill = '<span class="user-pill ' + ME.uid + '">' +
-    (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) +
-  '</span>';
-
   var annivList = DATA.anniversaries || [];
   var todayStr = todayISO();
   var annivHtml = "";
@@ -2516,24 +2665,9 @@ function renderApp(){
     '</div>';
   }
 
-  var myIsA = ME.uid === "a";
-  var myPill = '<span class="user-pill ' + ME.uid + '">' + (myIsA ? '🐶 ' : '🐾 ') + esc(ME.name) + '</span>';
-
   var html =
   '<div class="header-box" id="headerBox">' +
-    '<header class="topbar">' +
-      '<div class="brand">' +
-        '<img src="/img/dogheads.png" alt="线条小狗" class="brand-img">' +
-        '<span class="brand-title">两人日程 🐾</span>' +
-      '</div>' +
-      '<div class="top-actions">' +
-        myPill +
-        '<button class="p-btn icon-btn" data-act="toggle-dark" id="darkToggleBtn" title="切换深色/浅色模式">' +
-          (document.documentElement.classList.contains("dark") ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>') +
-        '</button>' +
-        '<button class="p-btn icon-btn" data-act="switch-view" data-v="settings" title="设置">⚙️</button>' +
-      '</div>' +
-    '</header>' +
+    renderTopbarHTML() +
 
     '<div class="weekbar-wrap">' +
       '<div class="weekbar-card">' +
@@ -2544,6 +2678,7 @@ function renderApp(){
         '</div>' +
         '<div class="week-info">' +
           '<span class="wl-date">🗓️ ' + weekLabel + '</span>' +
+          weekNumHTML +
         '</div>' +
       '</div>' +
     '</div>' +
@@ -2570,7 +2705,17 @@ function renderApp(){
   html += bottomNavHTML();
   html += modalsHTML();
 
-  $("#app").innerHTML = html;
+  /* 重渲染保留课表滚动位置（新增/编辑/留言都会触发整页重绘，不保留会跳回最左列） */
+  var prevGridScroll = null;
+  var cwOld = document.querySelector(".calwrap");
+  if (cwOld) prevGridScroll = { left: cwOld.scrollLeft, top: cwOld.scrollTop };
+
+  setAppHTML(html);
+
+  if (prevGridScroll){
+    var cwNew = document.querySelector(".calwrap");
+    if (cwNew){ cwNew.scrollLeft = prevGridScroll.left; cwNew.scrollTop = prevGridScroll.top; }
+  }
 }
 
 function bottomNavHTML(){
@@ -2623,7 +2768,7 @@ function modalsHTML(){
       '<div class="field"><label>事项名称</label><input id="f_title" required maxlength="120" placeholder="如：组会 / 跑步 / 一起吃火锅 🍲"></div>' +
       '<div class="field"><label>地点（可选）</label><input id="f_loc" maxlength="200" placeholder="如：教学楼A101 / 图书馆"></div>' +
       '<div class="field"><label>备注（可选）</label><input id="f_note" maxlength="200" placeholder="给 TA 留个小提醒~"></div>' +
-      '<div class="field"><label>周次范围（可选：2-17 / 2-16双 / 1-4,9-12；留空=每周）</label><input id="f_ws" maxlength="60" placeholder="留空代表全学期每周"></div>' +
+      '<div class="field" id="fldWs"><label>周次范围（可选：2-17 / 2-16双 / 1-4,9-12；留空=每周）</label><input id="f_ws" maxlength="60" placeholder="留空代表全学期每周"></div>' +
       '<div class="foot">' +
         '<button type="button" class="p-btn" data-act="close">取消</button>' +
         '<button class="p-btn pri" id="addModalSubmitBtn">🐾 记在小本本上！</button>' +
@@ -2680,10 +2825,10 @@ function modalsHTML(){
         '<video id="pvVideo" playsinline webkit-playsinline preload="metadata" style="position:absolute;max-width:94vw;max-height:86vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.6);object-fit:contain;display:none;user-select:none;-webkit-user-select:none"></video>' +
         '<div id="pvIndicator" style="position:absolute;top:20px;left:50%;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,0.5);padding:4px 12px;border-radius:20px;font-size:13px;font-weight:700">1 / 1</div>' +
         '<button type="button" data-act="pv-play-live" id="pvLiveBtn" style="position:absolute;top:20px;left:18px;display:none;align-items:center;gap:5px;background:rgba(255,255,255,0.22);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.4);color:#fff;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.35)"><span class="polaroid-live-dot"></span><span>LIVE 实况</span></button>' +
-        '<button type="button" data-act="pv-save-photo" id="pvSaveBtn" style="position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.22);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.38);color:#fff;padding:7px 16px;border-radius:999px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4)">💾 保存图片</button>' +
+        '<button type="button" data-act="pv-save-photo" id="pvSaveBtn" style="position:absolute;bottom:calc(28px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.22);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.38);color:#fff;padding:7px 16px;border-radius:999px;font-size:12.5px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4)">💾 保存图片</button>' +
         '<button type="button" data-act="pv-prev" id="pvBtnPrev" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.25);border:none;border-radius:50%;width:42px;height:42px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">‹</button>' +
         '<button type="button" data-act="pv-next" id="pvBtnNext" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.25);border:none;border-radius:50%;width:42px;height:42px;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)">›</button>' +
-        '<button type="button" data-act="close-photo" style="position:absolute;top:18px;right:18px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.5)">✕</button>' +
+        '<button type="button" data-act="close-photo" class="pv-close" style="position:absolute;top:calc(18px + env(safe-area-inset-top));right:18px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.5)">✕</button>' +
       '</div>' +
     '</div>' +
 
@@ -2715,10 +2860,10 @@ function modalsHTML(){
             '<input id="df_mood_custom" maxlength="30" placeholder="输入自定义心情（如：🐱 吸猫满足）" style="display:none;margin-top:4px">' +
           '</div>' +
         '</div>' +
-        '<div class="field"><label>手账碎碎念 / 美好回忆</label><textarea id="df_content" rows="3" placeholder="今天遇到了什么好玩的事，拍了什么照片..." style="width:100%;border:1.5px solid var(--line-strong);border-radius:12px;padding:8px;font-family:inherit;font-size:13px"></textarea></div>' +
+        '<div class="field"><label>手账碎碎念 / 美好回忆</label><textarea id="df_content" rows="3" maxlength="4000" placeholder="今天遇到了什么好玩的事，拍了什么照片..." style="width:100%;border:1.5px solid var(--line-strong);border-radius:12px;padding:8px;font-family:inherit"></textarea></div>' +
         '<div class="field"><label>拍立得照片 & 实况 Live（最多 18 张，支持实况照片/短视频自动合成 📷）</label>' +
           '<div style="margin:4px 0 6px;display:flex;align-items:center;flex-wrap:wrap;gap:6px">' +
-            '<button type="button" class="p-btn" data-act="trigger-upload-photo" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;font-size:12px;background:#fef3c7;border-color:#f59e0b">' +
+            '<button type="button" class="p-btn photo-add" data-act="trigger-upload-photo" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;font-size:12px">' +
               '📷 选照片 / 实况动态' +
             '</button>' +
             '<span id="df_photo_status" style="font-size:11px;color:var(--ink-muted)">支持直接选视频或同名照片+视频合成 LIVE</span>' +
@@ -2855,7 +3000,7 @@ function showPhotoActionSheet(imgUrl, liveUrl){
   if (old) old.remove();
   var sheet = document.createElement("div");
   sheet.id = "ovPhotoSheet";
-  sheet.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10050;display:flex;align-items:flex-end;justify-content:center;padding:16px;animation:fadeIn .15s ease";
+  sheet.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10050;display:flex;align-items:flex-end;justify-content:center;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom));animation:fadeIn .15s ease";
   var saveBtnLabel = liveUrl ? "📸 保存实况照片到相册" : "💾 保存图片到手机相册";
   sheet.innerHTML =
     '<div style="width:100%;max-width:400px;background:var(--bg-card);border-radius:20px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,0.35);display:flex;flex-direction:column;gap:8px">' +
@@ -2952,17 +3097,26 @@ function shiftMonth(ym, delta){
   return ny + "-" + (nm < 10 ? "0" : "") + nm;
 }
 
-function loadSummary(month, force){
+function loadSummary(month, force, silent){
   clearTimeout(loadSummary._t);
   if (month !== curSummaryMonth || force) loadSummary._polls = 0;
   if (month) curSummaryMonth = month;
   var box = $("#summaryContentBox");
-  if (box) box.innerHTML = '<div style="text-align:center;padding:34px 0;color:var(--ink-muted);font-weight:700">🐶 正在翻这个月的日程和手账...<br><span style="font-size:11px;font-weight:normal;opacity:0.8">（若已配置AI模型，会按这些材料写一篇回顾）</span></div>';
+  var cached = (!force && loadSummary._cache && loadSummary._cache.month === curSummaryMonth) ? loadSummary._cache : null;
+  if (cached && !silent){
+    // 上次看过的月份缓存秒出，随后静默对账最新版
+    curSummaryData = cached;
+    renderSummaryBox();
+    silent = true;
+  } else if (box && !cached){
+    box.innerHTML = '<div style="text-align:center;padding:34px 0;color:var(--ink-muted);font-weight:700">🐶 正在翻这个月的日程和手账...<br><span style="font-size:11px;font-weight:normal;opacity:0.8">（若已配置AI模型，会按这些材料写一篇回顾）</span></div>';
+  }
   var q = [];
   if (curSummaryMonth) q.push("month=" + curSummaryMonth);
   if (force) q.push("refresh=1");
   var url = "/api/summary" + (q.length ? "?" + q.join("&") : "");
   api(url).then(function(res){
+    loadSummary._cache = res;
     curSummaryMonth = res.month;
     curSummaryData = res;
     renderSummaryBox();
@@ -2972,7 +3126,7 @@ function loadSummary(month, force){
       if (loadSummary._polls <= 30){
         clearTimeout(loadSummary._t);
         loadSummary._t = setTimeout(function(){
-          if (CURRENT_VIEW === "summary") loadSummary(curSummaryMonth);
+          if (CURRENT_VIEW === "summary") loadSummary(curSummaryMonth, false, true);
         }, 4000);
       }
     } else {
@@ -2980,7 +3134,7 @@ function loadSummary(month, force){
     }
   }).catch(function(e){
     if (e.message === "unauth") return;
-    if (box) box.innerHTML = '<div style="color:red;padding:20px 0">加载失败：' + esc(e.message) + '</div>';
+    if (box && !cached) box.innerHTML = '<div style="color:red;padding:20px 0">加载失败：' + esc(e.message) + '</div>';
   });
 }
 
@@ -3029,7 +3183,7 @@ function renderSummaryBox(){
 /* =========================================================================
    旅行清单：一次旅行一份打包清单，按类别分组，物品 + 数量 + 备注
    ========================================================================= */
-var TRIPS = null, TRIP_DETAIL = null, TRIP_ID = null;
+var TRIPS = null, TRIP_DETAIL = null, TRIP_ID = null, TRIP_DETAILS = {};
 var tripNewOpen = false, tripEditingItem = null, tripFormCat = "doc";
 
 function tripRange(t){
@@ -3059,27 +3213,39 @@ function renderTripsPage(){
   var html = renderTopBar() + '<div class="page-container">' + diarySegHTML("trips");
   html += TRIP_DETAIL ? tripDetailHTML() : tripListHTML();
   html += '</div>' + bottomNavHTML() + modalsHTML();
-  $("#app").innerHTML = html;
+  setAppHTML(html);
   if (!TRIP_DETAIL && !TRIPS) loadTrips();
+  if (!TRIP_DETAIL && TRIPS){
+    // 列表有缓存时静默对账，有变化才重画
+    api("/api/trips").then(function(j){
+      var changed = JSON.stringify(j) !== JSON.stringify(TRIPS);
+      TRIPS = j;
+      if (changed && !TRIP_ID && CURRENT_VIEW === "trips") render();
+    }).catch(function(){});
+  }
   if (TRIP_DETAIL && !TRIP_DETAIL.loaded) loadTrip(TRIP_ID);
 }
 
 function loadTrips(){
   return api("/api/trips").then(function(j){
     if (TRIP_ID) return;              // 已经点进某次旅行，别用列表覆盖详情
+    var changed = !TRIPS || JSON.stringify(j) !== JSON.stringify(TRIPS);
     TRIPS = j;
-    render();
+    if (changed) render();
   }).catch(function(e){ if (e.message !== "unauth") toast(e.message, "err"); });
 }
 
 function loadTrip(id){
   if (!id) return;
   var want = id;
+  var prev = TRIP_DETAILS[id] || null;
   return api("/api/trips/detail?id=" + want).then(function(j){
     if (TRIP_ID !== want) return;      // 返回列表或切到别的旅行后，丢弃过期响应
+    var changed = !prev || JSON.stringify(j) !== JSON.stringify(prev);
     TRIP_DETAIL = j;
+    TRIP_DETAILS[id] = j;
     TRIP_DETAIL.loaded = true;
-    render();
+    if (changed) render();
   }).catch(function(e){
     if (TRIP_ID !== want) return;
     if (e.message !== "unauth") toast(e.message, "err");
@@ -3105,10 +3271,10 @@ function tripListHTML(){
   if (tripNewOpen){
     html += '<div style="margin-top:12px;padding:12px;border:1.5px dashed var(--line-strong);border-radius:14px;background:var(--bg-card-subtle)">' +
       '<div style="display:grid;gap:8px">' +
-        '<input id="trip_dest" placeholder="去哪儿？比如 青岛" maxlength="40" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)">' +
+        '<input id="trip_dest" placeholder="去哪儿？比如 青岛" maxlength="40" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);color:var(--ink-primary)">' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
-          '<input id="trip_start" type="date" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
-          '<input id="trip_end" type="date" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
+          '<input id="trip_start" type="date" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);color:var(--ink-primary)">' +
+          '<input id="trip_end" type="date" style="width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--bg-card);color:var(--ink-primary)">' +
         '</div>' +
         '<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-secondary)">' +
           '<input id="trip_tpl" type="checkbox" checked style="width:15px;height:15px"> 套用常用清单（证件/洗漱/护肤/衣物/电子/药品）' +
@@ -3226,12 +3392,12 @@ function tripItemFormHTML(){
   var defaultB = meIsB ? "1" : "";
   var qa = ed ? (ed.qty_a || "") : defaultA;
   var qb = ed ? (ed.qty_b || "") : defaultB;
-  var inputStyle = 'width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:13px;color:var(--ink-primary)';
+  var inputStyle = 'width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);color:var(--ink-primary)';
   return '<div class="page-main-card" id="tripItemForm" style="margin-top:10px' + (ed ? ';border:2px solid var(--dog-a-bd);box-shadow:0 6px 18px rgba(0,0,0,.08)' : '') + '">' +
     '<div style="font-size:12.5px;font-weight:800;color:var(--ink-primary);margin-bottom:9px">' + (ed ? "改这一项" : "加一样东西") + '</div>' +
     '<div style="display:grid;gap:7px">' +
       '<input id="ti_name" placeholder="物品名称，比如 充电器" maxlength="40" value="' + esc(ed ? ed.name : "") + '" style="' + inputStyle + '">' +
-      '<select id="ti_cat" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);font-size:12.5px;color:var(--ink-primary)">' +
+      '<select id="ti_cat" style="width:100%;padding:8px 10px;border:1.5px solid var(--line-strong);border-radius:11px;background:var(--bg-card);color:var(--ink-primary)">' +
         cats.map(function(c){ return '<option value="' + c[0] + '"' + (c[0] === cat ? " selected" : "") + '>' + esc(c[1]) + '</option>'; }).join("") +
       '</select>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">' +
@@ -3339,12 +3505,10 @@ function renderAnnivList(){
   }).join("");
 }
 
-function openDayDiaries(dtStr){
-  activeDiaryDate = dtStr;
-  api("/api/diaries?date=" + dtStr).then(function(res){
-    var list = res.diaries || [];
-    var html = '<div class="mhead">' +
-      '<div class="mhead-left"><h3>' + dtStr + ' 俩汪足迹 🐾</h3></div>' +
+var DIARY_DAY_CACHE = {};
+function diaryDayHTML(dtStr, list){
+  var html = '<div class="mhead">' +
+      '<div class="mhead-left"><h3>' + fmtDateCN(dtStr) + ' 俩汪足迹 🐾</h3></div>' +
       '<img src="/img/dog-wave.png" alt="" class="mhead-img">' +
     '</div>';
 
@@ -3383,10 +3547,10 @@ function openDayDiaries(dtStr){
               '<button class="p-btn danger" style="padding:2px 8px;font-size:11px" data-act="del-diary" data-id="' + d.id + '">删除</button>' +
             '</div>' +
           '</div>' +
-          (d.location ? ('<div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:6px">📍 ' + esc(d.location) + '</div>') : '') +
-          (d.content ? ('<div style="font-size:13px;line-height:1.5;color:var(--ink-secondary);white-space:pre-wrap;margin-bottom:8px">' + esc(d.content) + '</div>') : '') +
+          (d.location ? ('<div style="font-size:12px;color:var(--dog-a-text);font-weight:700;margin-bottom:6px;word-break:break-word;overflow-wrap:anywhere">📍 ' + esc(d.location) + '</div>') : '') +
+          (d.content ? ('<div style="font-size:13px;line-height:1.5;color:var(--ink-secondary);white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;margin-bottom:8px">' + esc(d.content) + '</div>') : '') +
           photosHtml +
-          '<div style="font-size:11px;color:var(--ink-muted);text-align:right">由 ' + esc(d.author_name) + ' 记录于 ' + esc(d.created_at) + '</div>' +
+          '<div style="font-size:11px;color:var(--ink-muted);text-align:right">由 ' + esc(d.author_name) + ' 记录于 ' + esc(fmtRecordTime(d.created_at, dtStr)) + '</div>' +
         '</div>';
       });
 
@@ -3395,16 +3559,72 @@ function openDayDiaries(dtStr){
       '</div>';
     }
 
-    html += '<div class="foot" style="margin-top:14px"><button type="button" class="p-btn" data-act="close">关闭</button></div>';
-    $("#ovDiaryDayBox").innerHTML = html;
-    openModal("#ovDiaryDay");
+  html += '<div class="foot" style="margin-top:14px"><button type="button" class="p-btn" data-act="close">关闭</button></div>';
+  return html;
+}
+function resetDiaryForm(){
+  if ($("#df_edit_id")) $("#df_edit_id").value = "";
+  if ($("#df_modal_title")) $("#df_modal_title").textContent = "记下今天去哪玩啦 🐾";
+  if ($("#df_submit_btn")) $("#df_submit_btn").textContent = "✨ 贴在手账本上！";
+  if ($("#df_date")) $("#df_date").value = todayISO();
+  if ($("#df_title")) $("#df_title").value = "";
+  if ($("#df_loc")) $("#df_loc").value = "";
+  if ($("#df_mood")) $("#df_mood").value = "🥰 幸福贴贴";
+  if ($("#df_mood_custom")){ $("#df_mood_custom").value = ""; $("#df_mood_custom").style.display = "none"; }
+  if ($("#df_content")) $("#df_content").value = "";
+  if ($("#df_files")) $("#df_files").value = "";
+  diaryPhotosToUpload = [];
+  var prev = $("#df_preview");
+  if (prev) prev.innerHTML = "";
+}
+function paintDiaryDay(dtStr, list){
+  $("#ovDiaryDayBox").innerHTML = diaryDayHTML(dtStr, list);
+  openModal("#ovDiaryDay");
+}
+function openDayDiaries(dtStr, force){
+  activeDiaryDate = dtStr;
+  var cached = DIARY_DAY_CACHE[dtStr];
+  if (cached && !force){
+    // 缓存秒开，后台静默对账；弹窗仍开着且数据有变化才重画
+    paintDiaryDay(dtStr, cached);
+    api("/api/diaries?date=" + dtStr).then(function(res){
+      var list = res.diaries || [];
+      var changed = JSON.stringify(list) !== JSON.stringify(cached);
+      DIARY_DAY_CACHE[dtStr] = list;
+      if (changed && activeDiaryDate === dtStr && $("#ovDiaryDay").classList.contains("show")){
+        $("#ovDiaryDayBox").innerHTML = diaryDayHTML(dtStr, list);
+      }
+    }).catch(function(){});
+    return;
+  }
+  api("/api/diaries?date=" + dtStr).then(function(res){
+    var list = res.diaries || [];
+    DIARY_DAY_CACHE[dtStr] = list;
+    paintDiaryDay(dtStr, list);
   }).catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
 }
 
-function openDetail(id, date){
+var EVENT_DETAIL_CACHE = {};
+function openDetail(id, date, force){
   curDetail = {id: +id, date: date || todayISO()};
   var q = curDetail.date ? ("?date=" + curDetail.date) : "";
+  var key = id + "|" + (curDetail.date || "");
+  var cached = (!force) ? EVENT_DETAIL_CACHE[key] : null;
+  if (cached){
+    // 缓存秒开，后台静默对账；弹窗仍开着且数据有变化才重画
+    $("#ovDetailBox").innerHTML = detailHTML(cached);
+    openModal("#ovDetail");
+    api("/api/event/" + id + q).then(function(j){
+      var changed = JSON.stringify(j) !== JSON.stringify(cached);
+      EVENT_DETAIL_CACHE[key] = j;
+      if (changed && curDetail && curDetail.id === +id && $("#ovDetail").classList.contains("show")){
+        $("#ovDetailBox").innerHTML = detailHTML(j);
+      }
+    }).catch(function(){});
+    return;
+  }
   api("/api/event/" + id + q).then(function(j){
+    EVENT_DETAIL_CACHE[key] = j;
     $("#ovDetailBox").innerHTML = detailHTML(j);
     openModal("#ovDetail");
   }).catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
@@ -3477,7 +3697,7 @@ function detailHTML(j){
 }
 
 function refreshDetail(){
-  if (curDetail) openDetail(curDetail.id, curDetail.date);
+  if (curDetail) openDetail(curDetail.id, curDetail.date, true);
 }
 
 /* ---------------- 交互 ---------------- */
@@ -3504,9 +3724,10 @@ document.addEventListener("click", function(e){
    document.querySelectorAll("#repSeg .opt").forEach(function(o){
      o.classList.toggle("on", o.getAttribute("data-v") === addRep);
    });
-   var fWd = $("#fldWd"), fDt = $("#fldDt");
+   var fWd = $("#fldWd"), fDt = $("#fldDt"), fWs = $("#fldWs");
    if (fWd) fWd.style.display = addRep === "weekly" ? "" : "none";
    if (fDt) fDt.style.display = addRep === "once" ? "" : "none";
+   if (fWs) fWs.style.display = addRep === "weekly" ? "" : "none";
  } else if (act === "quick-cmt"){
     var phrase = el.getAttribute("data-text");
     var inp = $("#cmtText");
@@ -3538,16 +3759,24 @@ document.addEventListener("click", function(e){
     document.querySelectorAll("#repSeg .opt").forEach(function(o){
       o.classList.toggle("on", o.getAttribute("data-v") === "weekly");
     });
-    var fWd = $("#fldWd"), fDt = $("#fldDt");
+    var fWd = $("#fldWd"), fDt = $("#fldDt"), fWs = $("#fldWs");
     if (fWd) fWd.style.display = "";
     if (fDt) fDt.style.display = "none";
+    if (fWs) fWs.style.display = "";
     if ($("#f_title")) $("#f_title").value = "";
     if ($("#f_loc")) $("#f_loc").value = "";
     if ($("#f_note")) $("#f_note").value = "";
     if ($("#f_ws")) $("#f_ws").value = "";
     if ($("#f_ts")) $("#f_ts").value = "19:00";
     if ($("#f_te")) $("#f_te").value = "21:00";
-    if ($("#f_date")) $("#f_date").value = (DATA && DATA.week_start) || todayISO();
+    /* 单次日程默认今天；今天不在当前查看的周里时，默认落到该周的周一 */
+    if ($("#f_date")){
+      var defDate = todayISO();
+      if (DATA && DATA.week_start && (defDate < DATA.week_start || defDate > DATA.week_end)){
+        defDate = DATA.week_start;
+      }
+      $("#f_date").value = defDate;
+    }
     openModal("#ovAdd");
   }
   else if (act === "set-theme"){
@@ -3557,6 +3786,7 @@ document.addEventListener("click", function(e){
     try {
       localStorage.setItem("sched_dark_mode", isDark ? "1" : "0");
     } catch(e){}
+    syncThemeColor();
     document.querySelectorAll("#themeSeg .opt").forEach(function(o){
       o.classList.toggle("on", o.getAttribute("data-theme") === theme);
     });
@@ -3570,6 +3800,7 @@ document.addEventListener("click", function(e){
     try {
       localStorage.setItem("sched_dark_mode", isDark ? "1" : "0");
     } catch(e){}
+    syncThemeColor();
     var btn = $("#darkToggleBtn");
     if (btn){
       btn.innerHTML = isDark ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>';
@@ -3625,20 +3856,9 @@ document.addEventListener("click", function(e){
   }
   else if (act === "open-add-diary"){
     curEditingDiary = null;
-    var dt = el.getAttribute("data-date") || activeDiaryDate || todayISO();
-    if ($("#df_edit_id")) $("#df_edit_id").value = "";
-    if ($("#df_modal_title")) $("#df_modal_title").textContent = "记下今天去哪玩啦 🐾";
-    if ($("#df_submit_btn")) $("#df_submit_btn").textContent = "✨ 贴在手账本上！";
+    var dt = el.getAttribute("data-date") || todayISO();
+    resetDiaryForm();
     if ($("#df_date")) $("#df_date").value = dt;
-    if ($("#df_title")) $("#df_title").value = "";
-    if ($("#df_loc")) $("#df_loc").value = "";
-    if ($("#df_mood")) $("#df_mood").value = "🥰 幸福贴贴";
-    if ($("#df_mood_custom")){ $("#df_mood_custom").value = ""; $("#df_mood_custom").style.display = "none"; }
-    if ($("#df_content")) $("#df_content").value = "";
-    if ($("#df_files")) $("#df_files").value = "";
-    diaryPhotosToUpload = [];
-    var prev = $("#df_preview");
-    if (prev) prev.innerHTML = "";
     openModal("#ovAddDiary");
   }
   else if (act === "preview-photo"){
@@ -3681,12 +3901,7 @@ document.addEventListener("click", function(e){
     savePhotoUrlToDevice(imgUrl);
   }
   else if (act === "close-photo"){
-    var pv = $("#ovPhotoViewer");
-    if (pv){
-      stopPvLiveVideo();
-      pv.style.display = "none";
-      pv.classList.remove("show");
-    }
+    closePhotoViewer();
   }
   else if (act === "trigger-upload-photo"){
     var fi = $("#df_files");
@@ -3720,7 +3935,7 @@ document.addEventListener("click", function(e){
           return '<div class="edit-photo-thumb" data-file="' + p.file_name + '" style="position:relative;display:inline-block">' +
             '<img src="/photos/tb_' + p.file_name + '" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ddd">' +
             liveTag +
-            '<span class="del-photo-btn" data-act="remove-edit-photo" data-file="' + p.file_name + '" style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold">×</span>' +
+            '<span class="del-photo-btn photo-del-x" data-act="remove-edit-photo" data-file="' + p.file_name + '" style="position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold">×</span>' +
           '</div>';
         }).join("");
       }
@@ -3737,8 +3952,9 @@ document.addEventListener("click", function(e){
       api("/api/diaries/delete", {method:"POST", body:{id:+el.getAttribute("data-id")}})
         .then(function(){
           toast("已删除 🐾");
-          load();
-          if (activeDiaryDate) openDayDiaries(activeDiaryDate);
+          load().then(function(){
+            if (activeDiaryDate) openDayDiaries(activeDiaryDate, true);
+          });
         })
         .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
     });
@@ -3763,20 +3979,23 @@ document.addEventListener("click", function(e){
   }
   else if (act === "trip-open"){
     TRIP_ID = parseInt(el.getAttribute("data-id"), 10);
-    TRIP_DETAIL = null; tripEditingItem = null; tripNewOpen = false;
+    tripEditingItem = null; tripNewOpen = false;
+    TRIP_DETAIL = TRIP_DETAILS[TRIP_ID] || null;
+    if (TRIP_DETAIL) render();        // 看过的清单秒开，随后静默对账
     loadTrip(TRIP_ID);
   }
   else if (act === "trip-back"){
-    TRIP_ID = null; TRIP_DETAIL = null; tripEditingItem = null; TRIPS = null;
-    loadTrips();
+    TRIP_ID = null; TRIP_DETAIL = null; tripEditingItem = null;
+    render();                          // 列表走缓存，renderTripsPage 会静默对账
   }
   else if (act === "trip-delete"){
     uiConfirm({icon:"✈️", title:"删除整份清单？", message:"清单上的所有物品都会一起删掉。", danger:true, okText:"删除"}).then(function(ok){
       if (!ok) return;
       tripAction("delete", {id: parseInt(el.getAttribute("data-id"), 10)}).then(function(){
-        TRIP_ID = null; TRIP_DETAIL = null; TRIPS = null; toast("已删除");
-        render();
-      }).catch(function(e){ toast("❌ " + e.message, "err"); });
+      delete TRIP_DETAILS[parseInt(el.getAttribute("data-id"), 10)];
+      TRIP_ID = null; TRIP_DETAIL = null; TRIPS = null; toast("已删除");
+      render();
+    }).catch(function(e){ toast("❌ " + e.message, "err"); });
     });
   }
   else if (act === "trip-copy-last"){
@@ -3955,9 +4174,10 @@ document.addEventListener("click", function(e){
         o.classList.toggle("on", o.getAttribute("data-v") === addRep);
       });
 
-      var fWd = $("#fldWd"), fDt = $("#fldDt");
+      var fWd = $("#fldWd"), fDt = $("#fldDt"), fWs = $("#fldWs");
       if (fWd) fWd.style.display = addRep === "weekly" ? "" : "none";
       if (fDt) fDt.style.display = addRep === "once" ? "" : "none";
+      if (fWs) fWs.style.display = addRep === "weekly" ? "" : "none";
 
       if ($("#f_wd")) $("#f_wd").value = ev.weekday != null ? ev.weekday : 0;
       if ($("#f_date")) $("#f_date").value = ev.date || todayISO();
@@ -3979,7 +4199,7 @@ document.addEventListener("click", function(e){
       if (!ok) return;
       api("/api/events/delete", {method:"POST", body:{id:+el.getAttribute("data-id")}})
         .then(function(){
-          document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
+          closeAllModals();
           curDetail = null; toast("已删除日程 🐾"); load();
         })
         .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
@@ -3994,7 +4214,7 @@ document.addEventListener("click", function(e){
   }
   else if (act === "logout"){
     api("/api/logout", {method:"POST"}).catch(function(){}).then(function(){
-      document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
+      closeAllModals();
       try {
         localStorage.removeItem("sched_me");
         localStorage.removeItem("sched_week_" + ANCHOR);
@@ -4133,6 +4353,7 @@ document.addEventListener("click", function(e){
     load().then(function(){
       setTimeout(function(){
         curEditingDiary = null;
+        resetDiaryForm();
         if ($("#df_title")) $("#df_title").value = "实现了心愿: " + wishTitle;
         if ($("#df_content")) $("#df_content").value = "今天和 TA 一起打卡了心愿清单【" + wishTitle + "】！超级开心与满足~ 🥰";
         openModal("#ovAddDiary");
@@ -4168,6 +4389,7 @@ document.addEventListener("submit", function(e){
       .then(function(j){
         ME = {uid:j.uid, name:j.name};
         ANCHOR = todayISO();
+        CURRENT_VIEW = "week";
         try { localStorage.setItem("sched_me", JSON.stringify(ME)); } catch(e){}
         if (window.AndroidApp && window.AndroidApp.saveAuthUid) {
           window.AndroidApp.saveAuthUid(j.uid);
@@ -4207,7 +4429,7 @@ document.addEventListener("submit", function(e){
     }
     api(curEditingEventId ? "/api/events/update" : "/api/events", {method:"POST", body:body})
       .then(function(){
-        document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
+        closeAllModals();
         toast(curEditingEventId ? "已修改日程 🐾" : "已记下啦 🐾");
         curEditingEventId = null;
         load();
@@ -4230,7 +4452,7 @@ document.addEventListener("submit", function(e){
     api("/api/settings", {method:"POST", body:body}).then(function(){
       var p = (pwOld && pwNew) ? api("/api/password", {method:"POST", body:{old:pwOld, new:pwNew}}) : Promise.resolve();
       return p.then(function(){
-        document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
+        closeAllModals();
         toast("设置已保存 🐾");
         return api("/api/me").then(function(j){ ME = j; load(); });
       });
@@ -4306,13 +4528,16 @@ document.addEventListener("submit", function(e){
       body.keep_photos = keepPhotos;
       url = "/api/diaries/update";
     }
+    var savedDate = body.date;
+    var dayWasOpen = $("#ovDiaryDay") && $("#ovDiaryDay").classList.contains("show");
     api(url, {method:"POST", body:body})
       .then(function(){
-        document.querySelectorAll(".overlay").forEach(function(o){ o.classList.remove("show"); });
+        closeAllModals();
         toast(editId ? "手账修改已保存 🐾" : "手账已贴在小窝啦 🐾");
         diaryPhotosToUpload = [];
-        load();
-        if (activeDiaryDate) openDayDiaries(activeDiaryDate);
+        load().then(function(){
+          if (dayWasOpen && savedDate) openDayDiaries(savedDate, true);
+        });
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); })
       .finally(function(){
@@ -4349,6 +4574,10 @@ document.addEventListener("change", function(e){
     }
 
     function appendPreviewItem(mediaObj){
+      if (diaryPhotosToUpload.length >= 18){
+        toast("手账最多贴 18 张照片哦，多余的没有选上 🐾", "err");
+        return;
+      }
       diaryPhotosToUpload.push(mediaObj);
       var pWrap = document.createElement("div");
       pWrap.style.position = "relative";
@@ -4368,6 +4597,7 @@ document.addEventListener("change", function(e){
 
       var delX = document.createElement("span");
       delX.textContent = "×";
+      delX.className = "photo-del-x";
       delX.style.cssText = "position:absolute;top:-5px;right:-5px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font-size:11px;cursor:pointer;font-weight:bold";
       delX.onclick = function(){
         var idx = diaryPhotosToUpload.indexOf(mediaObj);
@@ -4438,7 +4668,13 @@ document.addEventListener("change", function(e){
           canvas.getContext("2d").drawImage(img, 0, 0, w, h);
           cb(canvas.toDataURL("image/jpeg", 0.82));
         };
+        img.onerror = function(){
+          toast("这张图片读取失败了，可能格式不支持，换个图试试吧 🐾", "err");
+        };
         img.src = evt.target.result;
+      };
+      reader.onerror = function(){
+        toast("这张图片读取失败了，请重选一次 🐾", "err");
       };
       reader.readAsDataURL(file);
     }
@@ -4532,6 +4768,8 @@ document.addEventListener("change", function(e){
       readVideoFileAndPoster(vFile, true, function(posterB64, vB64){
         if (posterB64){
           appendPreviewItem({ image: posterB64, live_video: vB64 });
+        } else {
+          toast("这个视频读取失败了，试试换一张照片或更小的视频 🐾", "err");
         }
       });
     });
@@ -4543,9 +4781,7 @@ document.addEventListener("keydown", function(e){
   var isOpen = pv && pv.style.display !== "none";
   if (e.key === "Escape"){
     if (isOpen){
-      stopPvLiveVideo();
-      pv.style.display = "none";
-      pv.classList.remove("show");
+      closePhotoViewer();
       return;
     }
   }
@@ -4788,6 +5024,8 @@ window.addEventListener("popstate", function(e){
   if (e.state && e.state.v){
     CURRENT_VIEW = e.state.v;
     render();
+  } else if (e.state && e.state.type === "modal"){
+    // 残留的弹窗历史条目：只关弹窗，视图保持不动，不再退回课表
   } else if (!e.state || !e.state.v){
     // 默认回到最核心的课表主页
     if (CURRENT_VIEW !== "week"){
@@ -4915,6 +5153,7 @@ if (ME && DATA) {
 
   function pollMessages() {
     if (!ME) return;
+    if (document.hidden) return; // 后台标签页不发包；setInterval 自会排下一轮，节奏不变
     // 每 15s 只拉轻量的 /api/me 读未读数；完整消息列表仅在信箱页或确有新消息时才拉
     api("/api/me").then(function(res){
       if (!res || res.unread_count === undefined) return;
