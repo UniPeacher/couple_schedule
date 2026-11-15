@@ -369,7 +369,9 @@ button,a,[data-act],[data-c2],[data-mp],[data-settings],.opt,.c2-opt,.b-tab,.p-b
   border:1px solid var(--line-strong);
   border-radius:var(--radius-pill);
   padding:1px 7px;white-space:nowrap;
+  font-family:inherit;cursor:pointer;
 }
+.wl-weeknum:active{transform:scale(.94)}
 .wl-schools{
   display:flex;align-items:center;gap:5px;flex-wrap:wrap;
 }
@@ -999,6 +1001,43 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
   color:var(--dog-a-text);box-shadow:0 2px 8px rgba(234,138,21,0.15);
 }
 .mp-foot{display:flex;justify-content:center;margin-top:14px}
+
+/* 周次跳转面板 */
+.wp-field{
+  display:flex;align-items:center;gap:8px;margin:10px 0;
+  padding:10px 12px;border:1.5px solid var(--line-strong);
+  border-radius:14px;background:var(--bg-card-subtle);
+}
+.wp-label{
+  font-size:12px;font-weight:800;color:var(--ink-secondary);
+  flex:none;
+}
+.wp-num-input{
+  width:64px;flex:none;border:1.5px solid var(--input-border);
+  border-radius:11px;padding:8px 10px;font-size:15px;font-weight:800;
+  font-family:inherit;background:var(--input-bg);color:var(--ink-primary);
+  -moz-appearance:textfield;appearance:textfield;text-align:center;
+}
+.wp-num-input::-webkit-outer-spin-button,.wp-num-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.wp-num-input:focus{outline:none;border-color:var(--dog-a);box-shadow:0 0 0 3px rgba(255,96,136,0.15)}
+.wp-zhou{font-size:12.5px;font-weight:800;color:var(--ink-secondary);flex:none;margin-left:-2px}
+.wp-field select{
+  flex:1;min-width:0;border:1.5px solid var(--input-border);
+  border-radius:11px;padding:8px 8px;font-size:12.5px;font-weight:700;
+  font-family:inherit;background:var(--input-bg);color:var(--ink-primary);
+}
+.wp-field select:focus{outline:none;border-color:var(--dog-a)}
+.wp-date-input{
+  flex:1;min-width:0;border:1.5px solid var(--input-border);
+  border-radius:11px;padding:8px 10px;font-size:14px;
+  font-family:inherit;background:var(--input-bg);color:var(--ink-primary);
+}
+.wp-date-input:focus{outline:none;border-color:var(--dog-a);box-shadow:0 0 0 3px rgba(255,96,136,0.15)}
+.wp-field .p-btn{flex:none}
+.wp-dates-hint{
+  font-size:11.5px;font-weight:700;color:var(--ink-muted);
+  text-align:center;margin-top:2px;min-height:1.4em;
+}
 
 /* 日程详情与评论展示 */
 .d-meta{

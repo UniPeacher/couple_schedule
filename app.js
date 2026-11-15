@@ -1036,14 +1036,14 @@ function renderApp(){
     if (n == null) return "";
     return ico + "第" + n + "周·" + (n % 2 === 1 ? "单" : "双");
   }
-  /* 教学周次角标拆两半：周次靠左、单双周靠右，周导航按钮居中 */
+  /* 教学周次角标拆两半：周次靠左、单双周靠右，周导航按钮居中；点周次弹周跳转面板 */
   var weekLeftHTML = "", weekRightHTML = "";
   if (wn.a != null || wn.b != null){
     if (wn.a != null && wn.a === wn.b){
-      weekLeftHTML = '<span class="wl-weeknum">第 ' + wn.a + ' 周</span>';
-      weekRightHTML = '<span class="wl-weeknum wl-right">' + (wn.a % 2 === 1 ? "单周" : "双周") + '</span>';
+      weekLeftHTML = '<button type="button" class="wl-weeknum" data-act="week-pick" title="点按跳转到任意一周">第 ' + wn.a + ' 周</button>';
+      weekRightHTML = '<button type="button" class="wl-weeknum wl-right">' + (wn.a % 2 === 1 ? "单周" : "双周") + '</button>';
     } else {
-      weekRightHTML = '<span class="wl-weeknum wl-right">' + weekNumTag(wn.a, "🐶") + " " + weekNumTag(wn.b, "🐾") + '</span>';
+      weekRightHTML = '<button type="button" class="wl-weeknum wl-right" data-act="week-pick" title="点按跳转到任意一周">' + weekNumTag(wn.a, "🐶") + " " + weekNumTag(wn.b, "🐾") + '</button>';
     }
   }
 
@@ -1059,7 +1059,7 @@ function renderApp(){
 
   DATA.days.forEach(function(d){
     var isToday = d.date === todayISO();
-    head += '<div class="dh' + (isToday ? ' today' : '') + '"' + (isToday ? ' id="colTodayHeader"' : '') + '>' +
+    head += '<div class="dh' + (isToday ? ' today' : '') + '"' + (isToday ? ' id="colTodayHeader"' : ' id="dayhead-' + d.date + '"') + '>' +
       '<div class="dh-title">' +
         '<span class="dh-weekday">' + WD[d.weekday] + '</span>' +
         '<span class="dh-date">' + d.date.slice(5) + '</span>' +
@@ -1072,7 +1072,7 @@ function renderApp(){
     '</div>';
 
     var emptyDay = d.users.a.events.length === 0 && d.users.b.events.length === 0;
-    body += '<div class="dcol' + (isToday ? ' today' : '') + '"' + (isToday ? ' id="colToday"' : '') + ' style="height:' + CALH + 'px"><div class="divider"></div>' +
+    body += '<div class="dcol' + (isToday ? ' today' : '') + '"' + (isToday ? ' id="colToday"' : ' id="daycol-' + d.date + '"') + ' style="height:' + CALH + 'px"><div class="divider"></div>' +
       (emptyDay ?
         '<div class="sleepy" title="今天俩汪都没安排，睡大觉~">' +
           '<div class="sleep-box">' +
@@ -1255,6 +1255,137 @@ function openMonthPicker(ym, cb){
   ensureMonthPicker();
   paintMonthPickGrid();
   openModal("#ovMonthPick");
+}
+
+/* 周次跳转面板：点课表顶栏的周次角标打开，列出校历各周的日期区间，
+   点行跳整周，展开可跳到该周任意一天。与月份面板共用弹窗/历史契约。 */
+var wpWeek1 = null, wpEnd = 0, wpViewedWeek = 0;
+
+function isoDiffDays(a, b){
+  var p = function(s){ var q = s.split("-"); return new Date(+q[0], +q[1] - 1, +q[2]).getTime(); };
+  return Math.round((p(a) - p(b)) / 86400000);
+}
+
+function ensureWeekPicker(){
+  var ov = $("#ovWeekPick");
+  if (ov) return ov;
+  ov = document.createElement("div");
+  ov.className = "overlay";
+  ov.id = "ovWeekPick";
+  ov.innerHTML =
+    '<div class="modal">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>跳到哪一周？🗓️</h3></div>' +
+        '<img src="/img/dog-set.png" alt="" class="mhead-img">' +
+      '</div>' +
+      '<div class="wp-field">' +
+        '<span class="wp-label">按周次</span>' +
+        '<input type="number" class="wp-num-input" id="wpNum" min="1" inputmode="numeric" aria-label="输入周次">' +
+        '<span class="wp-zhou">周</span>' +
+        '<select id="wpSel" aria-label="选择周次"></select>' +
+      '</div>' +
+      '<div class="wp-field">' +
+        '<span class="wp-label">按日期</span>' +
+        '<input type="date" class="wp-date-input" id="wpDate" aria-label="选择日期">' +
+        '<button type="button" class="p-btn pri" data-wp="go-date">跳转</button>' +
+      '</div>' +
+      '<div class="wp-dates-hint" id="wpHint"></div>' +
+      '<div class="mp-foot"><button type="button" class="p-btn" data-wp="back-now">🐾 回到本周</button></div>' +
+    '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener("click", function(e){
+    if (e.target === ov){ closeAllModals(); return; }
+    var b = e.target.closest("[data-wp]");
+    if (!b) return;
+    if (b.dataset.wp === "back-now"){ pickWeekTo(weekNumOfDate(todayISO()), todayISO()); return; }
+    if (b.dataset.wp === "go-date"){
+      var d = $("#wpDate").value;
+      if (!d){ toast("先选一个日期哦 🐾", "err"); return; }
+      var k = weekNumOfDate(d);
+      if (k == null){ toast("这个日期在校历第 1 周之前，跳不过去哦 🐾", "err"); return; }
+      pickWeekTo(k, d);
+    }
+  });
+  /* 下拉选周：change 即跳 */
+  ov.querySelector("#wpSel").addEventListener("change", function(){
+    var k = +this.value;
+    $("#wpNum").value = k;
+    paintWeekHint(k);
+    pickWeekTo(k, null);
+  });
+  /* 数字输入：回车或失焦时校验并跳 */
+  var num = ov.querySelector("#wpNum");
+  var numGo = function(){
+    var k = Math.round(+num.value);
+    if (!k || k < 1 || k > wpEnd){
+      toast("请输入 1 ~ " + wpEnd + " 之间的周次哦 🐾", "err");
+      num.value = wpViewedWeek;
+      return;
+    }
+    $("#wpSel").value = String(k);
+    paintWeekHint(k);
+    pickWeekTo(k, null);
+  };
+  num.addEventListener("change", numGo);
+  num.addEventListener("keydown", function(e){ if (e.key === "Enter") numGo(); });
+  return ov;
+}
+
+function weekNumOfDate(iso){
+  /* 校历第几周；第 1 周周一之前返回 null */
+  var diff = isoDiffDays(iso, wpWeek1);
+  return diff < 0 ? null : Math.floor(diff / 7) + 1;
+}
+
+function wpWeekMonday(k){ return shiftISO(wpWeek1, (k - 1) * 7); }
+
+function paintWeekHint(k){
+  var mon = wpWeekMonday(k), end = shiftISO(mon, 6);
+  $("#wpHint").textContent = "第 " + k + " 周：" + mon.slice(5) + " ~ " + end.slice(5) + "（" + (k % 2 === 1 ? "单" : "双") + "周）";
+}
+
+function paintWeekOptions(){
+  var t = todayISO(), html = "";
+  var todayWeek = weekNumOfDate(t);
+  for (var k = 1; k <= wpEnd; k++){
+    var mon = wpWeekMonday(k), end = shiftISO(mon, 6);
+    var mark = (k === todayWeek) ? " · 本周" : "";
+    html += '<option value="' + k + '">第 ' + k + ' 周（' + mon.slice(5) + ' ~ ' + end.slice(5) + '）' + mark + '</option>';
+  }
+  $("#wpSel").innerHTML = html;
+}
+
+function pickWeekTo(k, dayISO){
+  if (k == null) k = weekNumOfDate(todayISO());
+  if (k == null) return;
+  var mon = wpWeekMonday(k);
+  closeAllModals();
+  ANCHOR = mon;
+  DATA = null;
+  load().then(function(){
+    setTimeout(function(){ scrollToDay(dayISO || mon); }, 60);
+  });
+}
+
+function openWeekPicker(){
+  var wn = (DATA && DATA.weeknums) ? DATA.weeknums[ME.uid] : null;
+  if (wn == null){
+    toast("先在「设置」里填好校历第 1 周，才能按周跳转哦 🐾", "err");
+    return;
+  }
+  /* 校历第 1 周周一 = 当前查看周周一 - (周次-1)*7 */
+  wpWeek1 = shiftISO(DATA.week_start, -(wn - 1) * 7);
+  var todayWeek = weekNumOfDate(todayISO()) || 1;
+  wpViewedWeek = wn;
+  wpEnd = Math.max(wn, todayWeek) + 8;
+  ensureWeekPicker();
+  paintWeekOptions();
+  $("#wpNum").value = wn;
+  $("#wpNum").max = wpEnd;
+  $("#wpSel").value = String(wn);
+  paintWeekHint(wn);
+  $("#wpDate").value = "";
+  openModal("#ovWeekPick");
 }
 
 function bottomNavHTML(){
@@ -1568,9 +1699,12 @@ function showPhotoActionSheet(imgUrl, liveUrl){
   };
 }
 
-function scrollToToday(){
+function scrollToDay(date){
+  /* 水平滚动到指定日期的列；today 列沿用既有的专用 id */
   var wrap = document.querySelector(".calwrap");
-  var target = document.querySelector("#colTodayHeader") || document.querySelector("#colToday");
+  var target = document.getElementById("dayhead-" + date) ||
+    document.getElementById("daycol-" + date) ||
+    document.getElementById("colTodayHeader");
   if (wrap && target){
     var offset = target.offsetLeft - 58; // 扣除左侧时间轴宽度
     if (offset < 0) offset = 0;
@@ -1579,6 +1713,10 @@ function scrollToToday(){
       behavior: "smooth"
     });
   }
+}
+
+function scrollToToday(){
+  scrollToDay(todayISO());
 }
 
 function updatePhotoViewer(){
@@ -2563,6 +2701,9 @@ var CLICK_ACTIONS = {
       MONTH_DATA = null;
       load();
     });
+  },
+  "week-pick": function(el, e) {
+    openWeekPicker();
   },
   "open-day-diary": function(el, e) {
     var act = "open-day-diary";
