@@ -123,11 +123,14 @@ function syncThemeColor(){
 }
 
 /* 萌系确认弹窗：替代原生 confirm。resolve(true)=确认，resolve(false)=取消。
-   物理返回键经全局 popstate 关闭；视图重渲染时自动消失。 */
+   自带一条历史条目：手势返回经 popstate 关闭；按钮/Esc 关闭时消费条目，
+   不留空条目导致下一次返回"失灵"。skipNextPopRender 屏蔽主动回退那次 popstate。 */
+var skipNextPopRender = false;
 function uiConfirm(opts){
   opts = opts || {};
   return new Promise(function(resolve){
     var settled = false;
+    history.pushState({type:"uconfirm"}, "");
     var ov = document.createElement("div");
     ov.className = "overlay uconfirm";
     ov.innerHTML = '<div class="modal confirm-modal">' +
@@ -146,6 +149,11 @@ function uiConfirm(opts){
       ov.classList.remove("show");
       if (!document.querySelector(".overlay.show")) document.body.style.overflow = "";
       setTimeout(function(){ if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }, 220);
+      /* 按钮/Esc 关闭：消费自己压入的历史条目；手势返回已在 popstate 弹掉，无需再退 */
+      if (history.state && history.state.type === "uconfirm"){
+        skipNextPopRender = true;
+        history.back();
+      }
       resolve(val);
     }
     function onKey(e){ if (e.key === "Escape") finish(false); }
@@ -275,13 +283,20 @@ function load(opts){
   }).catch(function(e){ if (e.message !== "unauth") toast(e.message, "err"); });
 }
 
-/* 模态框打开与关闭（支持原生历史记录与物理/手势返回键）；打开期间锁住 body 滚动防穿透 */
+/* 模态框打开与关闭（支持原生历史记录与物理/手势返回键）；打开期间锁住 body 滚动防穿透。
+   每个弹窗与一条历史条目一一配对：首次打开压入；已开着（或条目已在栈顶）只刷新不叠加；
+   在别的弹窗上层打开时顶替下层条目（编辑页顶替详情页），返回不留空条目。 */
 function openModal(modalId){
   var el = $(modalId);
   if (!el) return;
+  var already = el.classList.contains("show") ||
+    (history.state && history.state.type === "modal" && history.state.id === modalId);
+  var nested = !already && !!document.querySelector(".overlay.show:not(.uconfirm)");
   el.classList.add("show");
   document.body.style.overflow = "hidden";
-  history.pushState({type:"modal", id:modalId}, "");
+  if (already) return;
+  if (nested) history.replaceState({type:"modal", id:modalId}, "");
+  else history.pushState({type:"modal", id:modalId}, "");
 }
 
 function closeAllModals(fromPop){
@@ -298,6 +313,9 @@ function closeAllModals(fromPop){
     showed = true;
   }
   document.body.style.overflow = "";
+  /* 主动关闭时消费配对的历史条目，返回键不会停在已关闭的弹窗上；
+     popstate 路径（fromPop）条目已被弹出，不能再退 */
+  if (!fromPop && history.state && history.state.type === "modal") history.back();
   return showed;
 }
 
@@ -1193,7 +1211,6 @@ function ensureMonthPicker(){
   ov.addEventListener("click", function(e){
     if (e.target === ov){
       closeAllModals();
-      if (history.state && history.state.type === "modal") history.back();
       return;
     }
     var b = e.target.closest("[data-mp]");
@@ -1223,10 +1240,8 @@ function paintMonthPickGrid(){
 function pickMonthTo(ym){
   var cb = monthPickCb;
   monthPickCb = null;
-  /* 弹窗是用 openModal 打开的（带 modal 历史条目），交给 popstate 统一关闭最干净：
-     回退触发 popstate → closeAllModals 命中 → 直接 return，不再多渲染一次视图。 */
-  if (history.state && history.state.type === "modal") history.back();
-  else closeAllModals();
+  /* closeAllModals 会配对消费弹窗的历史条目，回退触发 popstate 平滑关闭 */
+  closeAllModals();
   if (cb) cb(ym);
 }
 function openMonthPicker(ym, cb){
@@ -1744,6 +1759,7 @@ function renderTripsPage(){
     }).catch(function(){});
   }
   if (TRIP_DETAIL && !TRIP_DETAIL.loaded) loadTrip(TRIP_ID);
+  else if (TRIP_ID && !TRIP_DETAIL) loadTrip(TRIP_ID);   // 从历史条目恢复详情但缓存未命中
 }
 
 function loadTrips(){
@@ -2099,6 +2115,9 @@ function resetDiaryForm(){
 }
 function paintDiaryDay(dtStr, list){
   $("#ovDiaryDayBox").innerHTML = diaryDayHTML(dtStr, list);
+  var ov = $("#ovDiaryDay");
+  /* 刷新已打开的当日弹窗（删除/保存后对账）不再重复压历史 */
+  if (ov && ov.classList.contains("show")) return;
   openModal("#ovDiaryDay");
 }
 function openDayDiaries(dtStr, force){
@@ -2364,6 +2383,9 @@ var CLICK_ACTIONS = {
       history.pushState({type:"view", v:targetV}, "");
     }
 
+    // 底部导航/页签进入的都是页面顶层，旅行清单回到列表层
+    if (targetV !== "trips"){ TRIP_ID = null; TRIP_DETAIL = null; }
+
     if (targetV === "week"){
       CURRENT_VIEW = "week";
       var curT = todayISO();
@@ -2391,6 +2413,9 @@ var CLICK_ACTIONS = {
     if (targetV !== CURRENT_VIEW){
       history.pushState({type:"view", v:targetV}, "");
     }
+
+    // 底部导航/页签进入的都是页面顶层，旅行清单回到列表层
+    if (targetV !== "trips"){ TRIP_ID = null; TRIP_DETAIL = null; }
 
     if (targetV === "week"){
       CURRENT_VIEW = "week";
@@ -2420,6 +2445,9 @@ var CLICK_ACTIONS = {
       history.pushState({type:"view", v:targetV}, "");
     }
 
+    // 底部导航/页签进入的都是页面顶层，旅行清单回到列表层
+    if (targetV !== "trips"){ TRIP_ID = null; TRIP_DETAIL = null; }
+
     if (targetV === "week"){
       CURRENT_VIEW = "week";
       var curT = todayISO();
@@ -2448,6 +2476,9 @@ var CLICK_ACTIONS = {
       history.pushState({type:"view", v:targetV}, "");
     }
 
+    // 底部导航/页签进入的都是页面顶层，旅行清单回到列表层
+    if (targetV !== "trips"){ TRIP_ID = null; TRIP_DETAIL = null; }
+
     if (targetV === "week"){
       CURRENT_VIEW = "week";
       var curT = todayISO();
@@ -2475,6 +2506,9 @@ var CLICK_ACTIONS = {
     if (targetV !== CURRENT_VIEW){
       history.pushState({type:"view", v:targetV}, "");
     }
+
+    // 底部导航/页签进入的都是页面顶层，旅行清单回到列表层
+    if (targetV !== "trips"){ TRIP_ID = null; TRIP_DETAIL = null; }
 
     if (targetV === "week"){
       CURRENT_VIEW = "week";
@@ -2555,11 +2589,15 @@ var CLICK_ACTIONS = {
     updatePhotoViewer();
     var pv = $("#ovPhotoViewer");
     if (pv){
+      var pvWasOpen = pv.style.display === "flex";
       pv.style.display = "flex";
       pv.classList.add("show");
-      try {
-        history.pushState({modal:"photo"}, "");
-      } catch(e){}
+      /* 已开着的大图只换内容（翻页/换图），历史条目不叠加 */
+      if (!pvWasOpen){
+        try {
+          history.pushState({modal:"photo"}, "");
+        } catch(e){}
+      }
     }
   
   },
@@ -2682,7 +2720,9 @@ var CLICK_ACTIONS = {
     }).then(function(res){
       tripNewOpen = false; TRIPS = null; TRIP_DETAIL = null; TRIP_ID = res.id;
       toast("✈️ 清单建好了");
-      return loadTrip(res.id);
+      loadTrip(res.id);
+      /* 新建后直接进入清单详情，与 trip-open 同样压入层级条目 */
+      history.pushState({type:"view", v:"trips", trip:res.id}, "");
     }).catch(function(e){ toast("❌ " + e.message, "err"); });
   
   },
@@ -2693,12 +2733,16 @@ var CLICK_ACTIONS = {
     TRIP_DETAIL = TRIP_DETAILS[TRIP_ID] || null;
     if (TRIP_DETAIL) render();        // 看过的清单秒开，随后静默对账
     loadTrip(TRIP_ID);
+    /* 下钻一层清单页压入历史，返回手势/键回到列表 */
+    history.pushState({type:"view", v:"trips", trip:TRIP_ID}, "");
   
   },
   "trip-back": function(el, e) {
     var act = "trip-back";
     TRIP_ID = null; TRIP_DETAIL = null; tripEditingItem = null;
-    render();                          // 列表走缓存，renderTripsPage 会静默对账
+    /* 回到列表：消费下钻时压入的条目，popstate 里按条目恢复列表 */
+    if (history.state && history.state.trip) history.back();
+    else render();                     // 无历史条目时（如新建后刷新）直接回列表，走缓存对账
   
   },
   "trip-delete": function(el, e) {
@@ -2708,7 +2752,9 @@ var CLICK_ACTIONS = {
       tripAction("delete", {id: parseInt(el.getAttribute("data-id"), 10)}).then(function(){
       delete TRIP_DETAILS[parseInt(el.getAttribute("data-id"), 10)];
       TRIP_ID = null; TRIP_DETAIL = null; TRIPS = null; toast("已删除");
-      render();
+      /* 从详情层删掉整份清单：消费下钻条目回到列表层 */
+      if (history.state && history.state.trip) history.back();
+      else render();
     }).catch(function(e){ toast("❌ " + e.message, "err"); });
     });
   
@@ -2940,10 +2986,10 @@ var CLICK_ACTIONS = {
       if ($("#f_note")) $("#f_note").value = ev.note || "";
       if ($("#f_ws")) $("#f_ws").value = ev.week_spec || "";
 
-      // 关闭详情弹窗，打开编辑弹窗
+      // 编辑弹窗顶替详情弹窗的历史条目，返回时不留空条目
+      openModal("#ovAdd");
       var ovDetail = $("#ovDetail");
       if (ovDetail) ovDetail.classList.remove("show");
-      openModal("#ovAdd");
     }).catch(function(err){ toast(err.message || "加载失败", "err"); });
   
   },
@@ -2964,12 +3010,7 @@ var CLICK_ACTIONS = {
   /* ---- 弹窗 ---- */
   "close": function(el, e) {
     var act = "close";
-    if (history.state && history.state.type === "modal"){
-      history.back();
-    } else {
-      closeAllModals();
-    }
-  
+    closeAllModals();
   },
 
   /* ---- 导航与全局 ---- */
@@ -3153,6 +3194,8 @@ var CLICK_ACTIONS = {
   "wish-to-diary": function(el, e) {
     var act = "wish-to-diary";
     var wishTitle = el.getAttribute("data-title") || "";
+    /* 心愿页跳到手账页是一层导航：压入历史，返回手势回到心愿页 */
+    history.pushState({type:"view", v:"month"}, "");
     CURRENT_VIEW = "month";
     load().then(function(){
       setTimeout(function(){
@@ -3835,9 +3878,24 @@ document.addEventListener("keydown", function(e){
 })();
 
 window.addEventListener("popstate", function(e){
+  // 主动关闭弹窗/确认框触发的那次回退，不做任何处理
+  if (skipNextPopRender){ skipNextPopRender = false; return; }
+
   // 0. 确认弹窗在最上层时，物理返回只关闭确认弹窗，不动视图与历史
   var uc = document.querySelector(".overlay.uconfirm.show");
   if (uc && uc._dismiss){ uc._dismiss(); return; }
+
+  // 0.5 设置页有未保存修改时，返回手势先询问（与底部导航的离开守卫同一策略）
+  if (CURRENT_VIEW === "settings" && window.Settings && Settings.isDirty() &&
+      !(e.state && e.state.v === "settings")){
+    history.pushState({type:"view", v:"settings"}, "");
+    uiConfirm({icon:"📝", title:"尚未保存", message:"离开后这些修改会丢失，仍要继续吗？", okText:"离开"}).then(function(ok){
+      if (!ok) return;
+      Settings.clearDirty();
+      history.back();
+    });
+    return;
+  }
 
   // 1. 若当前有弹窗或照片大图打开，物理返回优先平滑关闭弹窗
   var closed = closeAllModals(true);
@@ -3846,9 +3904,16 @@ window.addEventListener("popstate", function(e){
   // 2. 若是从其他页面返回，按状态恢复视图
   if (e.state && e.state.v){
     CURRENT_VIEW = e.state.v;
+    /* 旅行清单的层级跟历史条目走：条目里没带 trip 就是列表层 */
+    if (CURRENT_VIEW === "trips"){
+      TRIP_ID = e.state.trip || null;
+      TRIP_DETAIL = TRIP_ID ? (TRIP_DETAILS[TRIP_ID] || null) : null;
+    }
     render();
   } else if (e.state && e.state.type === "modal"){
-    // 残留的弹窗历史条目：只关弹窗，视图保持不动，不再退回课表
+    // 返回到周期记录页的条目（前进手势）：恢复记录表单
+    if (e.state.id === "cycle2-record" && CURRENT_VIEW === "cycle2" && window.Cycle2) Cycle2.reopenRecord();
+    // 其余弹窗条目：只关弹窗，视图保持不动
   } else if (!e.state || !e.state.v){
     // 默认回到最核心的课表主页
     if (CURRENT_VIEW !== "week"){

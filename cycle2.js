@@ -628,9 +628,15 @@ var Cycle2 = (function () {
     /* 日历上的相位标记会打开当天记录页；缓存先行绘制不消费该标记，
        等网络数据到达再打开，避免拿旧数据开记录页。 */
     if (selectedDate && !fromCache) {
-      recordDate = selectedDate;
-      recordTab = recordTab || 'symptom';
+      var picked = selectedDate;
       selectedDate = null;
+      /* 网络快照到达才打开当天记录页（缓存先行绘制不消费该标记）；
+         只在周期页上消费，避免异步回包时在别的视图压入空条目。 */
+      if (CURRENT_VIEW === 'cycle2') {
+        recordDate = picked;
+        recordTab = recordTab || 'symptom';
+        history.pushState({type: 'modal', id: 'cycle2-record'}, '');
+      }
     }
     if (CURRENT_VIEW === 'cycle2' || recordTab) paintPage(s);
     paintCalendar(s);
@@ -676,8 +682,7 @@ var Cycle2 = (function () {
     return api('/api/cycle2/' + action, {method: 'POST', body: data, cache: 'no-store'}).then(function () {
       toast('已保存');
       dirty = true; dropCache(ME && ME.uid, monthAnchor());
-      if (action === 'period' &&
-        history.state && history.state.type === 'modal') { closeAllModals(); history.back(); }
+      if (action === 'period') closeAllModals();
       return request();
     }).catch(function (e) { toast(e.message); }).finally(function () {
       document.body.removeAttribute('data-cycle2-saving');
@@ -794,7 +799,11 @@ var Cycle2 = (function () {
   function openRecord(tab) {
     recordTab = tab || 'symptom';
     recordDate = recordDate || todayISO();
-    if (state) paintPage(state);
+    if (state) {
+      /* 记录页是周期页内的一层子页：压入历史，返回手势/键回到周期主页 */
+      history.pushState({type: 'modal', id: 'cycle2-record'}, '');
+      paintPage(state);
+    }
     window.scrollTo(0, 0);
   }
 
@@ -804,8 +813,10 @@ var Cycle2 = (function () {
     var a = el.dataset.c2;
     if (a === 'calendar') {
       e.preventDefault();
-      selectedDate = el.dataset.date;
       go();
+      /* go() 的整页重绘会清掉选中标记，放到 go() 之后再挂，
+         等网络快照到达时自动打开当天的记录页 */
+      selectedDate = el.dataset.date;
       return;
     }
     if (a === 'toggle-view') {
@@ -816,6 +827,11 @@ var Cycle2 = (function () {
     }
     if (a === 'back') {
       e.preventDefault();
+      /* 返回按钮与打开时压入的历史条目配对，交给 popstate 恢复周期主页 */
+      if (history.state && history.state.type === 'modal' && history.state.id === 'cycle2-record') {
+        history.back();
+        return;
+      }
       recordTab = null; recordDate = null;
       if (state) paintPage(state);
       window.scrollTo(0, 0);
@@ -858,7 +874,7 @@ var Cycle2 = (function () {
     if (a === 'start' || a === 'add') edit({});
     else if (a === 'finish') edit(Object.assign({}, state.active, {end_date: todayISO()}));
     else if (a === 'edit') edit(state.periods.find(function (r) { return r.id === Number(el.dataset.id); }));
-    else if (a === 'close-period') { closeAllModals(); if (history.state && history.state.type === 'modal') history.back(); }
+    else if (a === 'close-period') closeAllModals();
     else if (a === 'delete-period' && confirm('删除这条已确认经期？身体感受另行保留。')) save('period/delete', {id: Number(el.dataset.id)}, el);
     else if (a === 'delete-bbt') save('bbt/delete', {date: recordDate || todayISO()}, el);
     else if (a === 'delete-all' && confirm('删除全部经期数据？两人共用这一份记录，删除后双方都看不到。') && confirm('不可从 App 撤销，确定删除？')) {
@@ -925,5 +941,11 @@ var Cycle2 = (function () {
     if (document.hidden) scrub(); else if (ME) mount();
   });
 
-  return {mount: mount, renderPage: emptyPage};
+  return {mount: mount, renderPage: emptyPage,
+    /* 前进手势回到记录页的历史条目时，从缓存的周期数据恢复表单 */
+    reopenRecord: function () {
+      recordTab = recordTab || 'symptom';
+      recordDate = recordDate || todayISO();
+      if (state) paintPage(state);
+    }};
 })();

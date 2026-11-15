@@ -58,5 +58,5 @@ var act=target.getAttribute('data-act'),navigation=['switch-view','open-anniv-li
 if(navigation){e.preventDefault();e.stopImmediatePropagation();uiConfirm({icon:'📝',title:'尚未保存',message:'离开后这些修改会丢失，仍要继续吗？',okText:'离开'}).then(function(ok){if(!ok)return;dirty=false;target.click();});}
 },true);
 window.addEventListener('beforeunload',function(e){if(CURRENT_VIEW==='settings'&&dirty){e.preventDefault();e.returnValue='';}});
-return {render:render};
+return {render:render,isDirty:function(){return dirty;},clearDirty:function(){dirty=false;}};
 })();
