@@ -22,12 +22,36 @@ import tempfile
 from cycle import prepare_remote_backup
 import atexit
 
+# piexif 用于剥离原图 GPS 定位信息；缺失时自动降级为按原样备份
+try:
+    import piexif
+except ImportError:
+    piexif = None
+
 BASE_DIR = "/home/uni/sched-share"
 DATA_DIR = os.path.join(BASE_DIR, "data")
 LOCAL_BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 REMOTE_REPO_DIR = "/home/uni/sched-backup-repo"
 DB_PATH = os.path.join(DATA_DIR, "sched.db")
 PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
+
+def _strip_gps_exif(src_file, dst_file):
+    """把照片复制到 dst_file，仅保留方向（Orientation）一个 EXIF 标记。
+    GPS 定位、拍摄设备与时间等其余元数据一律不进异地库。
+    非 JPEG / 处理失败时返回 False，由调用方按原样复制。"""
+    if piexif is None:
+        return False
+    try:
+        exif = piexif.load(src_file)
+        orientation = (exif.get("0th") or {}).get(piexif.ImageIFD.Orientation, 1)
+        piexif.remove(src_file, new_file=dst_file)
+        if orientation and orientation != 1:
+            zeroth = {piexif.ImageIFD.Orientation: orientation}
+            piexif.insert(piexif.dump({"0th": zeroth, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": b""}), dst_file)
+        return True
+    except Exception as e:
+        print(f"  ⚠️ GPS 剥离失败，按原样备份 {os.path.basename(src_file)}: {e}", file=sys.stderr)
+        return False
 
 def run():
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 开始执行日程数据安全增量备份流程...")
@@ -114,8 +138,12 @@ def run():
             src_file = os.path.join(PHOTOS_DIR, fname)
             dst_file = os.path.join(remote_photos_dir, fname)
             if os.path.isfile(src_file):
-                if not os.path.exists(dst_file) or os.path.getsize(src_file) != os.path.getsize(dst_file):
-                    shutil.copy2(src_file, dst_file)
+                if not os.path.exists(dst_file) or os.path.getmtime(src_file) > os.path.getmtime(dst_file):
+                    # JPEG 原图先剥离 GPS 定位信息再入异地库（保留方向等其他 EXIF）；失败时按原样备份
+                    if fname.lower().endswith((".jpg", ".jpeg")) and _strip_gps_exif(src_file, dst_file):
+                        pass
+                    else:
+                        shutil.copy2(src_file, dst_file)
                     new_photo_count += 1
 
     # 6. 生成一份详细的 README 说明当前灾备状态
