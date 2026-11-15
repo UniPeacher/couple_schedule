@@ -1240,6 +1240,7 @@ button,.b-tab,.seg .opt,.view-seg-opt,.phrase-pill,.msg-card,.anniv-capsule,
   .week-nav .p-btn{padding:2.5px 6px;font-size:10.5px}
   .weekbar-wrap{padding:0 6px 3px}
   .weekbar-card{padding:3px 8px;gap:4px}
+  .month-topcard .week-nav{flex:1 1 100%;justify-content:center}
   .school-badge{font-size:10px;padding:1px 5px}
   .legend-card{font-size:10.5px;gap:6px}
   .modal{padding:18px 16px}
