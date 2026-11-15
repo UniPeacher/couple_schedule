@@ -1030,7 +1030,6 @@ function renderApp(){
   var st0 = DATA.settings;
   WSTART = t2m(st0.window_start); WEND = t2m(st0.window_end);
   var CALH = Math.round((WEND - WSTART) * PXH / 60);
-  var weekLabel = DATA.week_start + ' ~ ' + DATA.week_end.slice(5);
 
   /* 教学周次角标：随周次切换显示"第 N 周 · 单/双周"，帮助对上单双周课表 */
   function weekNumTag(n, ico){
@@ -1149,7 +1148,6 @@ function renderApp(){
           '<button class="p-btn" data-act="next">下周 ›</button>' +
         '</div>' +
         '<div class="week-info">' +
-          '<span class="wl-date">🗓️ ' + weekLabel + '</span>' +
           weekNumHTML +
         '</div>' +
       '</div>' +

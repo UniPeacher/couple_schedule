@@ -364,10 +364,6 @@ button,a,[data-act],[data-c2],[data-mp],[data-settings],.opt,.c2-opt,.b-tab,.p-b
   text-align:right;display:flex;align-items:center;gap:4px;flex-shrink:0;
   flex-wrap:wrap;justify-content:flex-end;margin-left:auto;
 }
-.wl-date{
-  font-size:12px;font-weight:800;color:var(--ink-primary);
-  letter-spacing:.1px;white-space:nowrap;
-}
 .wl-weeknum{
   font-size:10.5px;font-weight:800;color:var(--ink-secondary);
   background:var(--bg-card-subtle, rgba(0,0,0,0.04));
@@ -1244,7 +1240,6 @@ button,.b-tab,.seg .opt,.view-seg-opt,.phrase-pill,.msg-card,.anniv-capsule,
   .week-nav .p-btn{padding:2.5px 6px;font-size:10.5px}
   .weekbar-wrap{padding:0 6px 3px}
   .weekbar-card{padding:3px 8px;gap:4px}
-  .wl-date{font-size:11px}
   .school-badge{font-size:10px;padding:1px 5px}
   .legend-card{font-size:10.5px;gap:6px}
   .modal{padding:18px 16px}
