@@ -790,6 +790,11 @@ def init_db():
         conn.executescript(cycle2.SCHEMA_V2)
         cycle2_collaboration.ensure_schema(conn)
         try:
+            # 性行为记录：老库补列（新库由 SCHEMA_V2 直接带出）
+            CONN.execute("ALTER TABLE cycle2_day_notes ADD COLUMN sex TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        try:
             CONN.execute("ALTER TABLE comments ADD COLUMN date TEXT DEFAULT ''")
         except Exception:
             pass

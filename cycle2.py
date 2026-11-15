@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS cycle2_day_notes (
  mood TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
  activity TEXT NOT NULL DEFAULT '', relief TEXT NOT NULL DEFAULT '',
  medication TEXT NOT NULL DEFAULT '', effectiveness TEXT NOT NULL DEFAULT '',
+ sex TEXT NOT NULL DEFAULT '',
  note_shared INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT '',
  PRIMARY KEY(uid,date));
 CREATE TABLE IF NOT EXISTS cycle2_settings (
@@ -40,6 +41,7 @@ FLOW = ('', '极少', '少', '中', '多', '很多')
 PAIN = ('', '无', '轻', '中', '重')
 ACTIVITY = ('', '几乎无影响', '轻度影响', '明显影响', '严重影响')
 EFFECTIVENESS = ('', '有效', '部分有效', '无效')
+SEX = ('无', '保护性行为', '无保护性行为')
 
 
 def iso(value, label='日期', optional=False):
@@ -174,14 +176,17 @@ def mutate(conn, uid, action, body, today=None):
         effectiveness = cycle.text(body.get('effectiveness', ''), 10, '效果')
         if effectiveness and effectiveness not in EFFECTIVENESS:
             raise Error('效果取值无效')
+        sex = cycle.text(body.get('sex', ''), 10, '性行为')
+        if sex and sex not in SEX:
+            raise Error('性行为取值无效')
         note_shared = 1 if body.get('note_shared') else 0
         # The switch is the source of truth: unchecking must actually revoke the share.
         conn.execute(
             'INSERT OR REPLACE INTO cycle2_day_notes(uid,date,flow,pain,symptoms,mood,note,'
-            'activity,relief,medication,effectiveness,note_shared,updated_at) '
-            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            'activity,relief,medication,effectiveness,sex,note_shared,updated_at) '
+            'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             (uid, day.isoformat(), flow, pain, json.dumps(symptoms, ensure_ascii=False),
-             mood, note, activity, relief, medication, effectiveness, note_shared, now))
+             mood, note, activity, relief, medication, effectiveness, sex, note_shared, now))
         return {'ok': True}
     if action == 'day/delete':
         day = iso(body.get('date'), '日期')

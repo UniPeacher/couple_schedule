@@ -18,6 +18,8 @@ var Cycle2 = (function () {
   var SYMPTOM_EMOJI = {疲劳: '😪', 腹胀: '🫧', 头痛: '🤕', 腰酸: '🦴', 乳房胀痛: '😣',
                        恶心: '🤢', 抽筋: '⚡', 浮肿: '💧', 失眠: '🌙', 眩晕: '💫',
                        腹泻: '🚽', 便秘: '🚻'};
+  var SEX_OPTIONS = ['无', '保护性行为', '无保护性行为'];
+  var SEX_EMOJI = {无: '☀️', 保护性行为: '☂️', 无保护性行为: '🌂'};
   function fmtD(iso) {
     if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || '';
     var p = iso.split('-');
@@ -399,6 +401,8 @@ var Cycle2 = (function () {
       '</div>';
     }
     return '<section class="c2-card c2-rows">' + head +
+      '<button type="button" class="c2-row" data-c2="record" data-tab="sex">' +
+        '<span class="ico">💕</span><span class="label">性行为</span><span class="chev">›</span></button>' +
       '<button type="button" class="c2-row" data-c2="record" data-tab="symptom">' +
         '<span class="ico violet">🩹</span><span class="label">身体症状</span><span class="chev">›</span></button>' +
       '<button type="button" class="c2-row" data-c2="record" data-tab="mood">' +
@@ -409,7 +413,7 @@ var Cycle2 = (function () {
   }
 
   /* ---------- record sheet ---------- */
-  var TABS = [['period', '🩸 经期'], ['symptom', '🩹 身体症状'], ['mood', '😊 心情记录'], ['more', '📋 更多记录']];
+  var TABS = [['period', '🩸 经期'], ['sex', '💕 性行为'], ['symptom', '🩹 身体症状'], ['mood', '😊 心情记录'], ['more', '📋 更多记录']];
 
   function tabBar() {
     return '<div class="c2-tabs">' + TABS.map(function (t) {
@@ -471,6 +475,15 @@ var Cycle2 = (function () {
       '</section>';
   }
 
+  function sexPanel(d) {
+    return '<section class="c2-card">' + panelHead('💕', '性行为记录') +
+      '<div class="c2-chip-grid">' + SEX_OPTIONS.map(function (x) {
+        return opt('sex', x, x, SEX_EMOJI[x], d.sex === x);
+      }).join('') + '</div>' +
+      '<p class="c2-muted">按天记录有无与保护方式；两人共用同一份记录。</p>' +
+      '</section>';
+  }
+
   function morePanel(s) {
     var temps = s.bbt || [];
     var last = temps.length ? temps[temps.length - 1] : null;
@@ -498,6 +511,7 @@ var Cycle2 = (function () {
     var day = recordDate || todayISO();
     var d = (s.notes || []).find(function (r) { return r.date === day; }) || {};
     var panel = recordTab === 'period' ? periodPanel(s)
+      : recordTab === 'sex' ? sexPanel(d)
       : recordTab === 'mood' ? moodPanel(d)
       : recordTab === 'more' ? morePanel(s)
       : symptomPanel(d);
@@ -593,6 +607,11 @@ var Cycle2 = (function () {
     if (f.elements.mood_other && MOODS.indexOf(d.mood) < 0) f.elements.mood_other.value = d.mood || '';
     f.querySelectorAll('[name="symptoms"]').forEach(function (x) {
       x.checked = (d.symptoms || []).indexOf(x.value) >= 0;
+      var lab = x.closest('.c2-opt');
+      if (lab) lab.classList.toggle('on', x.checked);
+    });
+    f.querySelectorAll('[name="sex"]').forEach(function (x) {
+      x.checked = x.value === (d.sex || '');
       var lab = x.closest('.c2-opt');
       if (lab) lab.classList.toggle('on', x.checked);
     });
@@ -768,7 +787,7 @@ var Cycle2 = (function () {
       var day = f.elements.date.value;
       var stored = (state && state.notes.find(function (r) { return r.date === day; })) || {};
       var merged = {date: day};
-      ['flow', 'pain', 'activity', 'mood', 'relief', 'medication', 'effectiveness', 'note'].forEach(function (k) {
+      ['flow', 'pain', 'activity', 'mood', 'relief', 'medication', 'effectiveness', 'sex', 'note'].forEach(function (k) {
         if (f.elements[k]) merged[k] = f.elements[k].value;
         else if (stored[k]) merged[k] = stored[k];
       });
