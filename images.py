@@ -11,11 +11,11 @@ import threading
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # /img/<base> 白名单 → 磁盘文件；前端实际引用的资产才在此登记
-IMG_FILES = {"dogheads": "dogheads.png", "dogrest": "dogrest.png",
+IMG_FILES = {"dogheads": "dogheads.png", "dogrest": "dogrest.png", "dogrest.webp": "dogrest.webp",
              "dog-add": "dog-add.png", "dog-set": "dog-set.png",
              "dog-wave": "dog-wave.png", "dog-walk1": "dog-walk1.png", "dog-walk2": "dog-walk2.png",
              "dog-walk3": "dog-walk3.png", "dog-walk4": "dog-walk4.png",
-             "dog-couple": "dog-couple.png", "dog-couple.webp": "dog-couple.webp"}
+             "dog-couple": "dog-couple.png", "dog-couple.webp": "dog-couple.webp", "dog-set.webp": "dog-set.webp", "dog-walk1.webp": "dog-walk1.webp", "dog-walk2.webp": "dog-walk2.webp", "dog-walk3.webp": "dog-walk3.webp", "dog-walk4.webp": "dog-walk4.webp"}
 
 _IMG_CACHE = {}  # {base: (bytes, etag)}
 

@@ -429,7 +429,7 @@ function renderLogin(){
   '<div class="login-wrap">' +
     '<form class="login" id="loginForm">' +
       '<div class="login-wave-corner"><img src="/img/dog-wave.png" alt=""></div>' +
-      '<div class="login-hero"><img src="/img/dog-couple.webp" alt="线条小狗贴贴"></div>' +
+      '<div class="login-hero"><img src="/img/dog-couple.webp?v=20261116a" alt="线条小狗贴贴"></div>' +
       '<h2>线条小狗 · 两人日程 🐾</h2>' +
       '<div class="sub">汪！选好狗狗身份，输入密码进入小窝~</div>' +
       '<div class="login-cards" id="loginSeg">' +
@@ -685,7 +685,7 @@ function renderMessagesList(){
   }
   if (list.length === 0){
     box.innerHTML = '<div style="text-align:center;padding:40px 10px;color:var(--ink-muted)">' +
-      '<div style="width:72px;height:72px;margin:0 auto 10px;opacity:0.85"><img src="/img/dogrest.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+      '<div style="width:72px;height:72px;margin:0 auto 10px;opacity:0.85"><img src="/img/dogrest.webp?v=20261116a" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
       '<div style="font-size:14px;font-weight:800;color:var(--ink-primary);margin-bottom:4px">' + (curMsgFilter==="unread" ? "太棒啦，所有消息都已读完汪~ 🎉" : "信箱空空如也汪~ 📭") + '</div>' +
       '<div style="font-size:12px;opacity:0.8">对方添加新日程、发表留言或更新手账时，都会第一时间在这里提醒你 🐾</div>' +
     '</div>';
@@ -838,7 +838,7 @@ function renderWishesList(){
 
   if (list.length === 0){
     box.innerHTML = '<div style="text-align:center;padding:40px 10px;color:var(--ink-muted)">' +
-      '<div style="width:72px;height:72px;margin:0 auto 10px;opacity:0.85"><img src="/img/dogrest.png" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+      '<div style="width:72px;height:72px;margin:0 auto 10px;opacity:0.85"><img src="/img/dogrest.webp?v=20261116a" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
       '<div style="font-size:14px;font-weight:800;color:var(--ink-primary);margin-bottom:4px">' +
         (curWishFilter === "done" ? "还没有标记实现的心愿汪~ 继续加油！" : "此分类下暂无心愿便签汪~ 🐾") +
       '</div>' +
@@ -894,7 +894,7 @@ function renderAnnivPage(){
           '<div class="page-header-title">💖 纪念日与倒计时</div>' +
           '<div class="page-header-desc">🐾 记录每一个相恋心动的日子与生日</div>' +
         '</div>' +
-        '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-couple.webp" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
+        '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/dog-couple.webp?v=20261116a" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
       '</div>' +
 
       '<div class="page-main-card">' +
@@ -1101,7 +1101,7 @@ function renderApp(){
         '<div class="sleepy" title="今天俩汪都没安排，睡大觉~">' +
           '<div class="sleep-box">' +
             '<div class="sleep-zs">z Z Z 💤</div>' +
-            '<img src="/img/dogrest.png" alt="睡大觉">' +
+            '<img src="/img/dogrest.webp?v=20261116a" alt="睡大觉">' +
             '<div class="sleep-text">今天俩汪都放假<br>窝着睡大觉~ 💤</div>' +
           '</div>' +
         '</div>' : '');
@@ -1189,10 +1189,10 @@ function renderApp(){
       '<span class="heart-pulse">🐾</span>' +
     '</div>' +
     '<div class="dogwalk">' +
-      '<div class="walker step-1"><img src="/img/dog-walk1.png" alt="线条小狗" loading="lazy" decoding="async"></div>' +
-      '<div class="walker step-2"><img src="/img/dog-walk2.png" alt="线条小狗" loading="lazy" decoding="async"></div>' +
-      '<div class="walker step-3"><img src="/img/dog-walk3.png" alt="线条小狗" loading="lazy" decoding="async"></div>' +
-      '<div class="walker step-4"><img src="/img/dog-walk4.png" alt="线条小狗" loading="lazy" decoding="async"></div>' +
+      '<div class="walker step-1"><img src="/img/dog-walk1.webp?v=20261116a" alt="线条小狗" loading="lazy" decoding="async"></div>' +
+      '<div class="walker step-2"><img src="/img/dog-walk2.webp?v=20261116a" alt="线条小狗" loading="lazy" decoding="async"></div>' +
+      '<div class="walker step-3"><img src="/img/dog-walk3.webp?v=20261116a" alt="线条小狗" loading="lazy" decoding="async"></div>' +
+      '<div class="walker step-4"><img src="/img/dog-walk4.webp?v=20261116a" alt="线条小狗" loading="lazy" decoding="async"></div>' +
     '</div>' +
   '</div>' +
   '<button class="fab" data-act="open-add">🐾 记新日程 ＋</button>';
@@ -1225,7 +1225,7 @@ function ensureMonthPicker(){
     '<div class="modal">' +
       '<div class="mhead">' +
         '<div class="mhead-left"><h3>跳到哪个月？🗓️</h3></div>' +
-        '<img src="/img/dog-set.png" alt="" class="mhead-img">' +
+        '<img src="/img/dog-set.webp?v=20261116a" alt="" class="mhead-img">' +
       '</div>' +
       '<div class="mp-yearrow">' +
         '<button type="button" class="p-btn icon-btn" data-mp="year-prev" aria-label="上一年">‹</button>' +
@@ -1300,7 +1300,7 @@ function ensureWeekPicker(){
     '<div class="modal">' +
       '<div class="mhead">' +
         '<div class="mhead-left"><h3>跳到哪一周？🗓️</h3></div>' +
-        '<img src="/img/dog-set.png" alt="" class="mhead-img">' +
+        '<img src="/img/dog-set.webp?v=20261116a" alt="" class="mhead-img">' +
       '</div>' +
       '<div class="wp-field">' +
         '<span class="wp-label">按周次</span>' +
@@ -1410,7 +1410,7 @@ function ensureDatePick(){
     '<div class="modal">' +
       '<div class="mhead">' +
         '<div class="mhead-left"><h3>跳到哪一天？📅</h3></div>' +
-        '<img src="/img/dog-set.png" alt="" class="mhead-img">' +
+        '<img src="/img/dog-set.webp?v=20261116a" alt="" class="mhead-img">' +
       '</div>' +
       '<div class="wp-field">' +
         '<span class="wp-label">按日期</span>' +

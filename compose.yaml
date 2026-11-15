@@ -35,3 +35,9 @@ services:
       - ./images.py:/app/images.py
       - ./dog-couple.png:/app/dog-couple.png
       - ./dog-couple.webp:/app/dog-couple.webp
+      - ./dog-set.webp:/app/dog-set.webp
+      - ./dogrest.webp:/app/dogrest.webp
+      - ./dog-walk1.webp:/app/dog-walk1.webp
+      - ./dog-walk2.webp:/app/dog-walk2.webp
+      - ./dog-walk3.webp:/app/dog-walk3.webp
+      - ./dog-walk4.webp:/app/dog-walk4.webp

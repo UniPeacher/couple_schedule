@@ -8,6 +8,7 @@ COPY cycle.py cycle_collaboration.py cycle_engine.py cycle2.py cycle2_collaborat
 COPY cycle2.js cycle2.css settings_ui.js settings_ui.css /app/
 COPY app.js app.css manifest.webmanifest sw.js /app/
 COPY *.png /app/
+COPY *.webp /app/
 ENV PORT=8795 DATA_DIR=/data
 EXPOSE 8795
 CMD ["python", "app.py"]
