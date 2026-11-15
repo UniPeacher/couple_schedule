@@ -1036,12 +1036,14 @@ function renderApp(){
     if (n == null) return "";
     return ico + "第" + n + "周·" + (n % 2 === 1 ? "单" : "双");
   }
-  var weekNumHTML = "";
+  /* 教学周次角标拆两半：周次靠左、单双周靠右，周导航按钮居中 */
+  var weekLeftHTML = "", weekRightHTML = "";
   if (wn.a != null || wn.b != null){
     if (wn.a != null && wn.a === wn.b){
-      weekNumHTML = '<span class="wl-weeknum">第 ' + wn.a + ' 周 · ' + (wn.a % 2 === 1 ? "单周" : "双周") + '</span>';
+      weekLeftHTML = '<span class="wl-weeknum">第 ' + wn.a + ' 周</span>';
+      weekRightHTML = '<span class="wl-weeknum wl-right">' + (wn.a % 2 === 1 ? "单周" : "双周") + '</span>';
     } else {
-      weekNumHTML = '<span class="wl-weeknum">' + weekNumTag(wn.a, "🐶") + " " + weekNumTag(wn.b, "🐾") + '</span>';
+      weekRightHTML = '<span class="wl-weeknum wl-right">' + weekNumTag(wn.a, "🐶") + " " + weekNumTag(wn.b, "🐾") + '</span>';
     }
   }
 
@@ -1142,14 +1144,13 @@ function renderApp(){
 
     '<div class="weekbar-wrap">' +
       '<div class="weekbar-card">' +
+        weekLeftHTML +
         '<div class="week-nav">' +
           '<button class="p-btn" data-act="prev">‹ 上周</button>' +
           '<button class="p-btn pri" data-act="today">🐾 今天</button>' +
           '<button class="p-btn" data-act="next">下周 ›</button>' +
         '</div>' +
-        '<div class="week-info">' +
-          weekNumHTML +
-        '</div>' +
+        weekRightHTML +
       '</div>' +
     '</div>' +
     annivHtml +
