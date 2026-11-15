@@ -983,7 +983,8 @@ function renderMonthApp(){
         '<button class="p-btn" data-act="month-next">下月 ›</button>' +
       '</div>' +
       '<div style="font-size:15px;font-weight:800;color:var(--ink-primary)">' +
-        '🗓️ ' + year + ' 年 ' + month + ' 月 · 俩汪足迹手账 🐾' +
+        '<button type="button" class="month-jump-btn" data-act="month-pick">🗓️ ' + year + ' 年 ' + month + ' 月 <span class="mp-caret">▾</span></button>' +
+        ' · 俩汪足迹手账 🐾' +
       '</div>' +
       '<div style="font-size:12px;font-weight:700;color:var(--dog-a)">' +
         '✨ 本月已记录 ' + count + ' 篇出游美好回忆' +
@@ -1164,6 +1165,77 @@ function renderApp(){
     var cwNew = document.querySelector(".calwrap");
     if (cwNew){ cwNew.scrollLeft = prevGridScroll.left; cwNew.scrollTop = prevGridScroll.top; }
   }
+}
+
+/* 月份跳转面板：手账月历与周期页共用。点各自的月份标签打开，选年选月直达。 */
+var monthPickCb = null, monthPickCur = null, mpBrowseYear = 0;
+function ensureMonthPicker(){
+  var ov = $("#ovMonthPick");
+  if (ov) return ov;
+  ov = document.createElement("div");
+  ov.className = "overlay";
+  ov.id = "ovMonthPick";
+  ov.innerHTML =
+    '<div class="modal">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>跳到哪个月？🗓️</h3></div>' +
+        '<img src="/img/dog-set.png" alt="" class="mhead-img">' +
+      '</div>' +
+      '<div class="mp-yearrow">' +
+        '<button type="button" class="p-btn icon-btn" data-mp="year-prev" aria-label="上一年">‹</button>' +
+        '<span class="mp-year" id="mpYear"></span>' +
+        '<button type="button" class="p-btn icon-btn" data-mp="year-next" aria-label="下一年">›</button>' +
+      '</div>' +
+      '<div class="mp-grid" id="mpGrid"></div>' +
+      '<div class="mp-foot"><button type="button" class="p-btn" data-mp="back-now">🐾 回到本月</button></div>' +
+    '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener("click", function(e){
+    if (e.target === ov){
+      closeAllModals();
+      if (history.state && history.state.type === "modal") history.back();
+      return;
+    }
+    var b = e.target.closest("[data-mp]");
+    if (!b) return;
+    if (b.dataset.mp === "year-prev" || b.dataset.mp === "year-next"){
+      mpBrowseYear += b.dataset.mp === "year-next" ? 1 : -1;
+      paintMonthPickGrid();
+      return;
+    }
+    if (b.dataset.mp === "back-now"){ pickMonthTo(todayISO().slice(0, 7)); return; }
+    if (b.dataset.mp === "m"){ pickMonthTo(mpBrowseYear + "-" + b.dataset.m); }
+  });
+  return ov;
+}
+function paintMonthPickGrid(){
+  $("#mpYear").textContent = mpBrowseYear + " 年";
+  var nowY = +todayISO().slice(0, 4), nowM = +todayISO().slice(5, 7);
+  var cells = "";
+  for (var m = 1; m <= 12; m++){
+    var mm = pad(m);
+    var on = (mpBrowseYear + "-" + mm) === monthPickCur ? " on" : "";
+    var now = (mpBrowseYear === nowY && m === nowM && !on) ? " now" : "";
+    cells += '<button type="button" class="mp-m' + on + now + '" data-mp="m" data-m="' + mm + '">' + m + ' 月</button>';
+  }
+  $("#mpGrid").innerHTML = cells;
+}
+function pickMonthTo(ym){
+  var cb = monthPickCb;
+  monthPickCb = null;
+  /* 弹窗是用 openModal 打开的（带 modal 历史条目），交给 popstate 统一关闭最干净：
+     回退触发 popstate → closeAllModals 命中 → 直接 return，不再多渲染一次视图。 */
+  if (history.state && history.state.type === "modal") history.back();
+  else closeAllModals();
+  if (cb) cb(ym);
+}
+function openMonthPicker(ym, cb){
+  monthPickCb = cb || null;
+  monthPickCur = ym || todayISO().slice(0, 7);
+  mpBrowseYear = +monthPickCur.slice(0, 4);
+  ensureMonthPicker();
+  paintMonthPickGrid();
+  openModal("#ovMonthPick");
 }
 
 function bottomNavHTML(){
@@ -2445,7 +2517,14 @@ var CLICK_ACTIONS = {
     MONTH_ANCHOR = todayISO().slice(0, 7);
     MONTH_DATA = null;
     load();
-  
+
+  },
+  "month-pick": function(el, e) {
+    openMonthPicker(MONTH_ANCHOR, function(ym){
+      MONTH_ANCHOR = ym;
+      MONTH_DATA = null;
+      load();
+    });
   },
   "open-day-diary": function(el, e) {
     var act = "open-day-diary";

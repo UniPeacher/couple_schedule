@@ -85,12 +85,12 @@ var Cycle2 = (function () {
   }
 
   /* ---------- page chrome ---------- */
-  function navBar(title, desc) {
-    return '<div class="c2-nav">' +
-      '<button type="button" class="c2-nav-btn" data-c2="back" aria-label="返回">‹</button>' +
-      '<div class="c2-nav-title">' + h(title) +
-      (desc ? '<small>' + h(desc) + '</small>' : '') + '</div>' +
-      '<button type="button" class="c2-nav-btn" data-c2="settings" aria-label="设置">⋯</button>' +
+  /* 与其他页面统一的页头卡（汪汪信箱/纪念日等同款 page-header-card），顶栏由 renderTopBar 提供。 */
+  function c2HeaderHTML(title, desc, img) {
+    return '<div class="page-header-card"><div>' +
+      '<div class="page-header-title">' + title + '</div>' +
+      '<div class="page-header-desc">' + desc + '</div></div>' +
+      '<div style="width:44px;height:44px;flex-shrink:0"><img src="/img/' + img + '" alt="" style="width:100%;height:100%;object-fit:contain"></div>' +
       '</div>';
   }
 
@@ -312,7 +312,7 @@ var Cycle2 = (function () {
       '<div class="c2-head">' +
         '<div style="display:flex;align-items:center;gap:0">' +
           '<button type="button" class="c2-month-arrow" data-c2="month-prev" aria-label="上个月">‹</button>' +
-          '<button type="button" class="c2-month" data-c2="today-month">' + monthLabel() + '</button>' +
+          '<button type="button" class="c2-month" data-c2="month-pick">' + monthLabel() + ' <span class="mp-caret">▾</span></button>' +
           '<button type="button" class="c2-month-arrow" data-c2="month-next" aria-label="下个月">›</button>' +
         '</div>' +
         '<button type="button" class="c2-toggle" data-c2="toggle-view">' +
@@ -495,16 +495,17 @@ var Cycle2 = (function () {
       : recordTab === 'mood' ? moodPanel(d)
       : recordTab === 'more' ? morePanel(s)
       : symptomPanel(d);
-    return '<div class="page-container c2-page has-savebar">' +
-      navBar('📝 记录', '选择今日感受与处理') +
+    return '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 14px">' +
+        '<button type="button" class="p-btn icon-btn" data-c2="back" aria-label="返回" title="返回">‹</button>' +
+        '<div style="flex:1;min-width:0">' + c2HeaderHTML('📝 记录今天', '选择今日感受与处理', 'dog-add.png') + '</div>' +
+      '</div>' +
       tabBar() +
       '<form id="cycle2DayForm" method="post">' +
         '<input type="hidden" name="date" value="' + h(day) + '">' +
         panel +
       '</form>' +
       modalsHTML() +
-      '<div class="c2-savebar"><button type="submit" id="c2SaveBtn" form="cycle2DayForm">完成</button></div>' +
-      '</div>';
+      '<div class="c2-savebar"><button type="submit" id="c2SaveBtn" form="cycle2DayForm">完成</button></div>';
   }
 
   function settingsCard(s) {
@@ -558,6 +559,8 @@ var Cycle2 = (function () {
   function paintPage(s) {
     var box = $('#cycle2Content');
     if (!box) return;
+    var shell = document.querySelector('.page-container.c2-page');
+    if (shell) shell.classList.toggle('has-savebar', !!recordTab);
     if (recordTab) {
       box.innerHTML = recordPage(s);
       fillDay(recordDate || todayISO());
@@ -565,8 +568,8 @@ var Cycle2 = (function () {
       return;
     }
     /* Both accounts render the same page: they share one cycle record. */
-    box.innerHTML = '<div class="page-container c2-page">' +
-      navBar('🌷 生理周期', '四相分期 · 越记越准') + own(s) + modalsHTML() + '</div>';
+    box.innerHTML = c2HeaderHTML('🌷 生理周期', '四相分期 · 越记越准', 'dog-couple.png') +
+      own(s) + modalsHTML();
     bindForms();
     drawRunChains();
   }
@@ -837,14 +840,14 @@ var Cycle2 = (function () {
     }
     if (a === 'back') {
       e.preventDefault();
-      if (recordTab) { recordTab = null; recordDate = null; if (state) paintPage(state); window.scrollTo(0, 0); }
-      else { CURRENT_VIEW = 'week'; history.pushState({type: 'view', v: 'week'}, ''); load(); }
+      recordTab = null; recordDate = null;
+      if (state) paintPage(state);
+      window.scrollTo(0, 0);
       return;
     }
-    if (a === 'reset-month' || a === 'today-month') {
+    if (a === 'month-pick') {
       e.preventDefault();
-      anchor = todayISO().slice(0, 7);
-      request();
+      openMonthPicker(monthAnchor(), function (ym) { anchor = ym; request(); });
       return;
     }
     if (a === 'month-prev' || a === 'month-next') {
@@ -862,12 +865,6 @@ var Cycle2 = (function () {
     if (a === 'day') { e.preventDefault(); recordDate = el.dataset.date; openRecord('symptom'); return; }
     if (a === 'tab') { e.preventDefault(); recordTab = el.dataset.tab; if (state) paintPage(state); return; }
     if (a === 'record') { e.preventDefault(); recordDate = todayISO(); openRecord(el.dataset.tab || 'symptom'); return; }
-    if (a === 'settings') {
-      e.preventDefault();
-      var box = document.getElementById('c2Settings');
-      if (box) { box.open = true; box.scrollIntoView({behavior: 'smooth', block: 'start'}); }
-      return;
-    }
     if (a === 'retry') { e.preventDefault(); request(); return; }
     if (a === 'start-toggle') { e.preventDefault(); if (state) edit({}); return; }
     if (a === 'save-bbt') {
@@ -907,7 +904,9 @@ var Cycle2 = (function () {
     recordTab = null;
     recordDate = null;
     selectedDate = null;
-    $('#app').innerHTML = '<div id="cycle2Content" aria-live="polite">正在安全加载…</div>' + bottomNavHTML();
+    setAppHTML(renderTopBar() +
+      '<div class="page-container c2-page"><div id="cycle2Content" aria-live="polite"></div></div>' +
+      bottomNavHTML());
   }
 
   function scrub() {

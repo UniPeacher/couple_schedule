@@ -971,6 +971,35 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
   display:flex;gap:10px;justify-content:flex-end;margin-top:14px;
 }
 
+/* 月份跳转面板（手账月历/周期页共用，点月份标签打开） */
+.month-jump-btn{
+  font:inherit;font-weight:800;color:var(--ink-primary);
+  background:none;border:none;padding:0;cursor:pointer;
+  display:inline-flex;align-items:center;gap:2px;
+}
+.month-jump-btn:active{transform:scale(.97)}
+.mp-caret{font-size:10px;color:var(--ink-muted);font-weight:700}
+.mp-yearrow{
+  display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:12px;
+}
+.mp-year{
+  font-size:16px;font-weight:900;color:var(--ink-primary);
+  letter-spacing:.5px;min-width:74px;text-align:center;
+}
+.mp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.mp-m{
+  border:1.5px solid var(--line-strong);border-radius:14px;background:var(--bg-card);
+  color:var(--ink-secondary);font-size:13.5px;font-weight:700;padding:10px 0;cursor:pointer;
+  transition:all .18s ease;
+}
+.mp-m:active{transform:scale(.95)}
+.mp-m.now{border-style:dashed;color:var(--ink-primary)}
+.mp-m.on{
+  border-color:var(--dog-a);background:var(--dog-a-bg);
+  color:var(--dog-a-text);box-shadow:0 2px 8px rgba(234,138,21,0.15);
+}
+.mp-foot{display:flex;justify-content:center;margin-top:14px}
+
 /* 日程详情与评论展示 */
 .d-meta{
   display:grid;gap:8px;font-size:13.5px;

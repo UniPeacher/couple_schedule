@@ -58,19 +58,6 @@ html.dark .c2-page{
   --c2-today-ring:#f2f4f8;
 }
 
-/* ---------- page nav (back · title · more) ---------- */
-.c2-nav{display:flex;align-items:center;gap:12px;margin:2px 0 14px}
-.c2-nav-btn{
-  width:38px;height:38px;flex:0 0 38px;border-radius:50%;
-  border:1.5px solid var(--line-strong);background:var(--bg-card);
-  color:var(--ink-secondary);font-size:16px;line-height:1;cursor:pointer;
-  display:inline-flex;align-items:center;justify-content:center;
-  box-shadow:var(--shadow-sm);padding:0;
-}
-.c2-nav-btn:active{transform:scale(.94)}
-.c2-nav-title{flex:1;font-size:19px;font-weight:900;letter-spacing:.4px;color:var(--ink-primary)}
-.c2-nav-title small{font-weight:700;font-size:11px;color:var(--ink-muted);margin-left:8px;letter-spacing:0}
-
 /* ---------- cards ---------- */
 .c2-card{
   background:var(--bg-card);border:1.5px solid var(--line-strong);border-radius:24px;
@@ -382,7 +369,6 @@ html.dark .c2-conf.high{color:#6fd394}html.dark .c2-conf.medium{color:#fbbf24}
   .c2-chip-grid{gap:8px}
   .c2-opt{font-size:12.5px;padding:8px 12px;min-height:44px}
   .c2-ring{width:min(252px,72vw);height:min(252px,72vw)}
-  .c2-nav-title{font-size:17px}
   .c2-pred-date{font-size:22px}
 }
 
