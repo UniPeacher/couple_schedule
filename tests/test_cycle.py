@@ -280,53 +280,10 @@ class HttpTests(unittest.TestCase):
             payload = body.decode()
         return status, response_headers, payload
 
-    def test_http_auth_cache_and_export(self):
-        self.assertEqual(self.req('/api/cycle', uid=None)[0], 401)
-        code, headers, payload = self.req('/api/cycle')
-        self.assertEqual(code, 200)
-        self.assertIn('no-store', headers['Cache-Control'])
-        self.assertEqual(payload['uid'], 'a')
-        code, headers, payload = self.req('/api/cycle/export')
-        self.assertEqual(code, 200)
-        self.assertIn('attachment', headers['Content-Disposition'])
-
-    def test_http_crud_authorization_and_readback(self):
-        today = date.today().isoformat()
-        code, _, r = self.req('/api/cycle/period', data={'start_date': today})
-        self.assertEqual(code, 200)
-        rid = r['id']
-        self.assertTrue(any(p['id'] == rid for p in self.req('/api/cycle')[2]['periods']))
-        self.assertEqual(self.req('/api/cycle/period/delete', 'b', {'id': rid})[0], 404)
-        self.assertEqual(self.req('/api/cycle/period/delete', data={'id': rid})[0], 200)
-        self.assertFalse(any(p['id'] == rid for p in self.req('/api/cycle')[2]['periods']))
-
-    def test_http_cross_origin_content_type_and_errors(self):
-        self.assertEqual(self.req('/api/cycle/settings', data={}, headers={'Origin': 'https://evil.example'})[0], 403)
-        self.assertEqual(self.req('/api/cycle/settings', data={}, headers={'Content-Type': 'text/plain'})[0], 415)
-        self.assertEqual(self.req('/api/cycle/settings', data=[])[0], 400)
-        self.assertEqual(self.req('/api/cycle?month=bad')[0], 400)
-        self.assertEqual(self.req('/api/cycle/unknown')[0], 404)
-
-    def test_http_collaboration_atomic_rollback(self):
-        before = self.req('/api/cycle', 'b')[2]['settings']
-        status, _, _ = self.req('/api/cycle/sharing', 'b', dict(settings=dict(share_actual=True), collaboration=dict(allow_proxy='yes')))
-        self.assertEqual(status, 400)
-        after = self.req('/api/cycle', 'b')[2]['settings']
-        self.assertEqual(before, after)
-
-    def test_http_proxy_roundtrip_and_owner_confirmation(self):
-        self.assertEqual(self.req('/api/cycle/sharing', 'b', dict(settings=dict(share_actual=True, share_prediction=True, share_since='2026-01-01'), collaboration=dict(allow_proxy=True, share_details=True)))[0], 200)
-        today = date.today().isoformat()
-        status, _, proposal = self.req('/api/cycle/proposal', 'a', dict(start_date=today))
-        self.assertEqual(status, 200)
-        self.assertEqual(self.req('/api/cycle', 'b')[2]['periods'], [])
-        self.assertEqual(self.req('/api/cycle/proposal/confirm', 'a', dict(id=proposal['id']))[0], 404)
-        self.assertEqual(self.req('/api/cycle/proposal/confirm', 'b', dict(id=proposal['id']))[0], 200)
-        own = self.req('/api/cycle', 'b')[2]
-        self.assertEqual(own['periods'][0]['source']['author_uid'], 'a')
-        self.assertEqual(own['periods'][0]['source']['confirmed_by'], 'b')
-        self.assertEqual(self.req('/api/cycle/delete-all', 'b', dict(confirm='DELETE_MY_CYCLE_DATA'))[0], 200)
-        self.assertIsNone(self.req('/api/cycle', 'a')[2]['partner'])
+    def test_http_request_validation(self):
+        self.assertEqual(self.req('/api/cycle2/settings', data={}, headers={'Content-Type': 'text/plain'})[0], 415)
+        self.assertEqual(self.req('/api/cycle2/settings', data=[])[0], 400)
+        self.assertEqual(self.req('/api/cycle2/unknown')[0], 404)
 
     def test_notification_payloads_not_cached(self):
         for route in ('/api/messages', '/api/notifications', '/api/notifications/poll'):
@@ -335,7 +292,7 @@ class HttpTests(unittest.TestCase):
             self.assertIn('no-store', headers['Cache-Control'])
 
     def test_frontend_assets_and_existing_routes(self):
-        for path in ('/', '/cycle.js', '/cycle.css', '/api/health', '/api/week', '/api/month?month=2026-10'):
+        for path in ('/', '/app.js', '/app.css', '/api/health', '/api/week', '/api/month?month=2026-10'):
             with self.subTest(path=path):
                 code, _, data = self.req(path)
                 self.assertEqual(code, 200)

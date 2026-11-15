@@ -19,14 +19,14 @@
   --c2-lute:#b486c4;
   --c2-track:#f0e3d5;
   --c2-band:#f7e8e6;
-  --c2-note:#9b6fd0;
-  --c2-fertile-bg:#ddf1ee;
-  --c2-fertile-tx:#0e7270;
-  --c2-pred-bg:transparent;
+  --c2-note:#f2566d;
+  --c2-fertile-bg:#d8eafb;
+  --c2-fertile-tx:#3a7ad4;
+  --c2-period-bg:#ffd9e3;
+  --c2-period-tx:#c93a5f;
   --c2-pred-bd:#d9798f;
-  --c2-pred-tx:#b03353;
-  --c2-today-bg:#1f2430;
-  --c2-today-tx:#ffffff;
+  --c2-pred-tx:#c2506c;
+  --c2-today-ring:#222631;
   max-width:760px;
 }
 html.dark .c2-page{
@@ -48,14 +48,14 @@ html.dark .c2-page{
   --c2-lute:#c4a1d6;
   --c2-track:#333c4c;
   --c2-band:#2c3442;
-  --c2-note:#c084fc;
-  --c2-fertile-bg:#1b3737;
-  --c2-fertile-tx:#9fe3d9;
-  --c2-pred-bg:#2a1a23;
+  --c2-note:#f4758c;
+  --c2-fertile-bg:#20344f;
+  --c2-fertile-tx:#8ab9f2;
+  --c2-period-bg:#42212f;
+  --c2-period-tx:#f4a6bc;
   --c2-pred-bd:#a84e66;
   --c2-pred-tx:#e59aaa;
-  --c2-today-bg:#f2f4f8;
-  --c2-today-tx:#161a22;
+  --c2-today-ring:#f2f4f8;
 }
 
 /* ---------- page nav (back · title · more) ---------- */
@@ -120,7 +120,7 @@ html.dark .c2-page{
 .c2-length.empty b{color:var(--ink-light)}
 
 /* ---------- calendar grid ---------- */
-.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0;margin:10px 0 4px}
+.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0;position:relative;margin:10px 0 4px}
 .c2-cal-head{
   text-align:center;font-size:12px;font-weight:800;color:var(--ink-muted);
   padding:7px 0 5px;letter-spacing:.5px;
@@ -131,45 +131,38 @@ html.dark .c2-page{
   gap:4px;padding:6px 0 9px;min-height:54px;border-radius:14px;
 }
 .c2-cal-cell:active{background:var(--bg-card-subtle)}
-/* merged range capsules: one continuous shape per run of days (Huawei-style) */
-.c2-cal-cell::before{
-  content:'';position:absolute;top:2px;bottom:13px;left:2px;right:2px;
-  border-radius:19px;pointer-events:none;
+/* scalloped day chains live in one SVG under the cells, drawn by drawRunChains() */
+.c2-cal-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.c2-run-shape.fertile{fill:var(--c2-fertile-bg)}
+.c2-run-shape.period{fill:var(--c2-period-bg)}
+.c2-run-shape.pred{
+  fill:none;stroke:var(--c2-pred-bd);stroke-width:1.8;
+  stroke-linecap:round;stroke-dasharray:.1 4.8;
 }
-.c2-cal-cell.c2-run-fertile::before{background:var(--c2-fertile-bg)}
-.c2-cal-cell.c2-run-pred::before{background:var(--c2-pred-bg);border:0 dashed var(--c2-pred-bd)}
-.c2-cal-cell.single::before{left:2px;right:2px}
-.c2-cal-cell.rs::before{left:2px;right:0;border-radius:19px 0 0 19px}
-.c2-cal-cell.rm::before{left:0;right:0}
-.c2-cal-cell.re::before{left:0;right:2px;border-radius:0 19px 19px 0}
-.c2-cal-cell.single::before{border-radius:19px}
-/* dashed outline only on the outer edges, so adjacent cells read as one capsule */
-.c2-cal-cell.c2-run-pred.single::before{border-width:1.5px}
-.c2-cal-cell.c2-run-pred.rs::before{border-top-width:1.5px;border-bottom-width:1.5px;border-left-width:1.5px}
-.c2-cal-cell.c2-run-pred.rm::before{border-top-width:1.5px;border-bottom-width:1.5px}
-.c2-cal-cell.c2-run-pred.re::before{border-top-width:1.5px;border-bottom-width:1.5px;border-right-width:1.5px}
-.c2-cal-cell.c2-run-fertile .d{color:var(--c2-fertile-tx);font-weight:800}
-.c2-cal-cell.c2-run-pred .d{color:var(--c2-pred-tx);font-weight:800}
 .c2-cal-cell .d{
   position:relative;
   width:34px;height:34px;border-radius:50%;display:inline-flex;
   align-items:center;justify-content:center;font-size:15px;font-weight:700;
   color:var(--ink-secondary);
 }
+.c2-cal-cell.c2-run-fertile .d{color:var(--c2-fertile-tx);font-weight:800}
+.c2-cal-cell.c2-run-pred .d{color:var(--c2-pred-tx);font-weight:800}
+.c2-cal-cell.c2-run-period .d{color:var(--c2-period-tx);font-weight:800}
 .c2-cal-cell.today .d{
-  border:0;color:var(--c2-today-tx);font-weight:900;
-  background:var(--c2-today-bg);
+  border:1.7px solid var(--c2-today-ring);background:transparent;
+  color:var(--ink-primary);font-weight:900;
 }
-/* a tiny dot flags days that already have a note record (Apple-style) */
-.c2-cal-cell.has-note .d::after{
-  content:'';position:absolute;top:-2px;right:-3px;width:6px;height:6px;border-radius:50%;
-  background:var(--c2-note);box-shadow:0 0 0 2px var(--bg-card);
+/* a small red dot under the number flags days that already have a record */
+.c2-cal-cell.has-note::after{
+  content:'';position:absolute;bottom:4px;left:calc(50% - 3px);
+  width:6px;height:6px;border-radius:50%;background:var(--c2-note);
 }
+.c2-cal-cell.ovu-day.has-note::after{left:calc(50% + 8px)}
 .c2-cal-cell .m{width:7px;height:7px;border-radius:50%;background:transparent}
-.c2-cal-cell .m.period{background:var(--c2-period);box-shadow:0 0 5px rgba(232,80,110,.3)}
 .c2-cal-cell .m.ovu-gear{
   width:auto;height:auto;background:transparent;box-shadow:none;
-  font-size:11px;line-height:7px;font-weight:700;color:var(--c2-ovu);
+  position:relative;font-size:11px;line-height:7px;font-weight:700;
+  color:var(--c2-fertile-tx);
 }
 
 /* ---------- legend ---------- */
@@ -178,10 +171,10 @@ html.dark .c2-page{
 .c2-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--c2-track)}
 .c2-legend .period{background:var(--c2-period)}
 .c2-legend .pill-dash{
-  width:16px;height:11px;border-radius:6px;background:var(--c2-pred-bg);
-  border:1.5px dashed var(--c2-pred-bd);
+  width:10px;height:10px;border-radius:50%;background:transparent;
+  border:1.5px dotted var(--c2-pred-bd);
 }
-.c2-legend .pill-fill{width:16px;height:11px;border-radius:6px;background:var(--c2-fertile-bg)}
+.c2-legend .pill-fill{background:var(--c2-fertile-tx)}
 .c2-legend .ovulation{background:var(--c2-ovu)}
 .c2-legend .gear{
   width:auto;height:auto;background:transparent;font-size:12px;line-height:1;

@@ -3,12 +3,13 @@ import json
 import sqlite3
 import unittest
 import app
+import cycle2
 import settings_service as service
 import test_cycle as base_tests
 
 class ScopedSettingsTests(unittest.TestCase):
     def setUp(self):
-        self.c=sqlite3.connect(':memory:');self.c.row_factory=sqlite3.Row;self.c.executescript(app.SCHEMA)
+        self.c=sqlite3.connect(':memory:');self.c.row_factory=sqlite3.Row;self.c.executescript(app.SCHEMA+cycle2.SCHEMA_V2)
         self.c.executemany('INSERT INTO users(uid,name,pw_hash,week1,wx_uid) VALUES(?,?,?,?,?)', [('a','Alpha','hash','2026-08-31','TOKEN_A_SENTINEL'),('b','Beta','hash','2026-09-07','TOKEN_B_SENTINEL')])
         self.c.executemany('INSERT INTO meta(key,value) VALUES(?,?)',[('window_start','08:00'),('window_end','22:00'),('min_gap','20'),('llm_api_key','KEY_SENTINEL'),('llm_api_base','https://example.invalid/v1'),('llm_model','test-model')])
         self.c.execute("INSERT INTO summary_cache VALUES('x','{}','now')");self.c.commit()
@@ -51,6 +52,15 @@ class ScopedSettingsTests(unittest.TestCase):
         for b in bad:
             with self.subTest(body=b),self.assertRaises(service.Error):self.apply('a',b)
         self.assertEqual(self.raw(),before)
+    def test_build_export_has_business_data_and_no_secrets(self):
+        self.c.execute("INSERT INTO events(uid,title,repeat,tstart,tend) VALUES('a','Dinner','once','18:00','19:00')")
+        self.c.execute("INSERT INTO wishes(creator_uid,title,created_at) VALUES('a','Trip','now')")
+        ex=app.build_export(self.c,'a');data=ex['data']
+        self.assertEqual(data['events'][0]['title'],'Dinner');self.assertEqual(data['wishes'][0]['title'],'Trip')
+        self.assertEqual({u['uid'] for u in data['users']},{'a','b'})
+        self.assertEqual(data['settings']['min_gap'],'20');self.assertIn('periods',data['cycle2_mine'])
+        raw=json.dumps(ex)
+        for token in ('pw_hash','wx_uid','TOKEN_A_SENTINEL','TOKEN_B_SENTINEL','KEY_SENTINEL','session_epoch'):self.assertNotIn(token,raw)
 
 class HttpSettingsTests(unittest.TestCase):
     setUpClass=classmethod(base_tests.HttpTests.setUpClass.__func__)
@@ -70,5 +80,12 @@ class HttpSettingsTests(unittest.TestCase):
             self.assertEqual(self.req(p)[0],200)
         for p in ('/api/week','/api/month?month=2026-10'):
             r=self.req(p)[2];self.assertFalse(any('wx_uid' in u for u in r['users'].values()));self.assertNotIn('llm_api_key',r.get('settings',{}))
+    def test_export_download_without_secrets(self):
+        self.assertEqual(self.req('/api/export',uid=None)[0],401)
+        code,headers,payload=self.req('/api/export')
+        self.assertEqual(code,200);self.assertIn('attachment',headers.get('Content-Disposition',''))
+        self.assertIn('events',payload['data'])
+        raw=json.dumps(payload)
+        for token in ('pw_hash','wx_uid','llm_api_key'):self.assertNotIn(token,raw)
 
 if __name__=='__main__':unittest.main()

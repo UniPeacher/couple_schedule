@@ -4,6 +4,7 @@
 var Cycle2 = (function () {
   'use strict';
   var state = null, owner = null, sequence = 0, selectedDate = null;
+  var stateMonth = null, dirty = false, inflight = null, inflightMonth = null;
   var anchor = null, viewMode = 'calendar', recordTab = null, recordDate = null;
   var PHASES = ['menstrual', 'follicular', 'ovulation', 'luteal'];
   var PHASE_LABEL = {menstrual: '行经期', follicular: '卵泡期', ovulation: '排卵期', luteal: '黄体期'};
@@ -190,7 +191,7 @@ var Cycle2 = (function () {
   function legend(kind) {
     var items = kind === 'ring'
       ? [['period', '行经期'], ['ovulation', '排卵期'], ['follicular', '卵泡期'], ['luteal', '黄体期']]
-      : [['period', '行经期'], ['predicted pill-dash', '预测经期'], ['fertile pill-fill', '易孕期'],
+      : [['period', '经期'], ['predicted pill-dash', '预测经期'], ['fertile pill-fill', '排卵期'],
          ['ovulation gear', '排卵日'], ['note', '有记录']];
     return '<div class="c2-legend">' + items.map(function (it) {
       return '<span><i class="' + it[0] + '">' + (it[0].indexOf('gear') >= 0 ? '❋' : '') + '</i>' + it[1] + '</span>';
@@ -207,36 +208,81 @@ var Cycle2 = (function () {
     (s.month_marks || []).forEach(function (m) { marks[m.date] = m.kind; });
     (s.notes || []).forEach(function (n) { noted[n.date] = 1; });
     var todayStr = todayISO();
-    /* Huawei-style merged capsules: consecutive fertile / predicted days that sit in
-       the same week row share one rounded background instead of per-day dots. */
+    /* Huawei-style day chains: consecutive period / predicted / fertile days are
+       joined into one scalloped capsule by drawRunChains(); the cell only tags
+       which run it belongs to. */
     function runOf(kind) {
       return kind === 'fertile' || kind === 'ovulation' ? 'fertile'
+        : kind === 'period' ? 'period'
         : kind === 'predicted' ? 'pred' : '';
     }
-    var info = [];
-    for (var d = 1; d <= days; d++) {
-      var iso = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-      info.push({d: d, iso: iso, kind: marks[iso], run: runOf(marks[iso]),
-        row: Math.floor((lead + d - 1) / 7)});
-    }
-    info.forEach(function (cur, i) {
-      var prev = info[i - 1], next = info[i + 1];
-      var joinsPrev = prev && cur.run && prev.run === cur.run && prev.row === cur.row;
-      var joinsNext = next && cur.run && next.run === cur.run && next.row === cur.row;
-      cur.pos = joinsPrev && joinsNext ? 'rm' : joinsPrev ? 're' : joinsNext ? 'rs' : '';
-    });
     var cells = WD.map(function (w) { return '<div class="c2-cal-head">' + w + '</div>'; }).join('');
     for (var i = 0; i < lead; i++) cells += '<div class="c2-cal-cell" aria-hidden="true"></div>';
-    info.forEach(function (c) {
-      var marker = c.kind === 'ovulation' ? '<span class="m ovu-gear">❋</span>'
-        : c.kind === 'period' ? '<span class="m period"></span>' : '';
-      var runCls = c.run ? ' c2-run c2-run-' + c.run + (c.pos ? ' ' + c.pos : ' single') : '';
-      cells += '<button type="button" class="c2-cal-cell' + (c.iso === todayStr ? ' today' : '') +
-        (noted[c.iso] ? ' has-note' : '') + runCls + '"' +
-        ' data-c2="day" data-date="' + c.iso + '">' +
-        '<span class="d">' + c.d + '</span>' + marker + '</button>';
-    });
+    for (var d = 1; d <= days; d++) {
+      var iso = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      var kind = marks[iso], run = runOf(kind);
+      var marker = kind === 'ovulation' ? '<span class="m ovu-gear">❋</span>' : '';
+      cells += '<button type="button" class="c2-cal-cell' + (iso === todayStr ? ' today' : '') +
+        (noted[iso] ? ' has-note' : '') + (kind === 'ovulation' ? ' ovu-day' : '') +
+        (run ? ' c2-run c2-run-' + run : '') + '"' +
+        (run ? ' data-run="' + run + '"' : '') +
+        ' data-c2="day" data-date="' + iso + '">' +
+        '<span class="d">' + d + '</span>' + marker + '</button>';
+    }
     return '<div class="c2-cal">' + cells + '</div>';
+  }
+
+  /* ---------- scalloped day chains (SVG overlay) ---------- */
+  /* One blob per day with adjacent blobs overlapping: the union reads as a single
+     scalloped capsule. Runs never cross a week row, so each row segment gets its
+     own path; the boundary is a run of ellipse arcs (large=0, sweep=1). */
+  function chainPath(run, xs, cy, pitch) {
+    var rx = pitch / 2 + 3.5, ry = 21;
+    var k = xs.length;
+    function arc(x, y) {
+      return 'A' + rx + ' ' + ry + ' 0 0 1 ' + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+    if (k === 1) {
+      return '<ellipse class="c2-run-shape ' + run + '" cx="' + xs[0].toFixed(1) +
+        '" cy="' + cy.toFixed(1) + '" rx="' + rx.toFixed(1) + '" ry="' + ry + '"/>';
+    }
+    var S = xs[1] - xs[0];
+    var hf = ry * Math.sqrt(Math.max(0, 1 - (S / (2 * rx)) * (S / (2 * rx))));
+    var d = 'M' + (xs[0] - rx).toFixed(1) + ' ' + cy.toFixed(1) + arc(xs[0] + S / 2, cy - hf);
+    for (var i = 1; i < k; i++) d += arc(xs[i] + S / 2, cy - hf);
+    d += arc(xs[k - 1] + rx, cy) + arc(xs[k - 1] - S / 2, cy + hf);
+    for (i = k - 2; i >= 1; i--) d += arc(xs[i] - S / 2, cy + hf);
+    d += arc(xs[0] - rx, cy) + 'Z';
+    return '<path class="c2-run-shape ' + run + '" d="' + d + '"/>';
+  }
+
+  function drawRunChains() {
+    var cal = document.querySelector('.c2-view-cal:not([hidden]) .c2-cal');
+    if (!cal || !cal.clientWidth) return;
+    var svg = cal.querySelector('.c2-cal-svg');
+    if (!svg) {
+      svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'c2-cal-svg');
+      svg.setAttribute('aria-hidden', 'true');
+      cal.insertBefore(svg, cal.firstChild);
+    }
+    svg.setAttribute('viewBox', '0 0 ' + cal.clientWidth + ' ' + cal.clientHeight);
+    var calRect = cal.getBoundingClientRect();
+    var pitch = cal.clientWidth / 7;
+    var cells = cal.querySelectorAll('.c2-cal-cell[data-run]');
+    var html = '', i = 0;
+    while (i < cells.length) {
+      var run = cells[i].dataset.run, row = cells[i].offsetTop, xs = [], cy = 0, j = i;
+      while (j < cells.length && cells[j].dataset.run === run && cells[j].offsetTop === row) {
+        var r = cells[j].querySelector('.d').getBoundingClientRect();
+        xs.push(r.left + r.width / 2 - calRect.left);
+        cy = r.top + r.height / 2 - calRect.top;
+        j++;
+      }
+      html += chainPath(run, xs, cy, pitch);
+      i = j;
+    }
+    svg.innerHTML = html;
   }
 
   function monthLabel() {
@@ -522,6 +568,7 @@ var Cycle2 = (function () {
     box.innerHTML = '<div class="page-container c2-page">' +
       navBar('🌷 生理周期', '四相分期 · 越记越准') + own(s) + modalsHTML() + '</div>';
     bindForms();
+    drawRunChains();
   }
 
   function fillDay(date) {
@@ -573,31 +620,64 @@ var Cycle2 = (function () {
   }
 
   /* ---------- data ---------- */
+  /* 每月快照落 localStorage，挂载即先用缓存绘制（stale-while-revalidate），
+     后台再向网络校准；跨境往返是主要耗时，二次进入与切月不再白等。 */
+  function cacheKey(uid, month) { return 'sched_cycle2_' + uid + '_' + month; }
+  function readCache(uid, month) {
+    try {
+      var s = JSON.parse(localStorage.getItem(cacheKey(uid, month)) || 'null');
+      return s && s.periods ? s : null;
+    } catch (e) { return null; }
+  }
+  function writeCache(uid, month, s) {
+    try { localStorage.setItem(cacheKey(uid, month), JSON.stringify(s)); } catch (e) {}
+  }
+  function dropCache(uid, month) {
+    try { localStorage.removeItem(cacheKey(uid, month)); } catch (e) {}
+  }
+
+  function applySnapshot(s, uid, month, version, fromCache) {
+    state = s; owner = uid; stateMonth = month; dirty = false;
+    /* 日历上的相位标记会打开当天记录页；缓存先行绘制不消费该标记，
+       等网络数据到达再打开，避免拿旧数据开记录页。 */
+    if (selectedDate && !fromCache) {
+      recordDate = selectedDate;
+      recordTab = recordTab || 'symptom';
+      selectedDate = null;
+    }
+    if (CURRENT_VIEW === 'cycle2' || recordTab) paintPage(s);
+    paintHome(s); paintCalendar(s);
+    if (!fromCache) document.body.setAttribute('data-cycle2-ready', String(version));
+  }
+
   function request() {
-    var version = ++sequence, uid = ME && ME.uid;
+    var uid = ME && ME.uid;
     if (!uid) return Promise.resolve();
-    return api('/api/cycle2?month=' + monthAnchor(), {cache: 'no-store'}).then(function (s) {
-      if (version !== sequence || !ME || uid !== ME.uid) return;
-      state = s; owner = uid;
-      /* A phase mark on the schedule calendar opens that date's record sheet. */
-      if (selectedDate) {
-        recordDate = selectedDate;
-        recordTab = recordTab || 'symptom';
-        selectedDate = null;
+    var month = monthAnchor();
+    var cached = (!dirty && state && owner === uid && stateMonth === month)
+      ? state : readCache(uid, month);
+    if (cached) applySnapshot(cached, uid, month, null, true);
+    if (inflight && inflightMonth === month) return inflight;
+    var version = ++sequence;
+    var req = api('/api/cycle2?month=' + month, {cache: 'no-store'}).then(function (s) {
+      if (version === sequence && ME && uid === ME.uid && month === monthAnchor()) {
+        applySnapshot(s, uid, month, version, false);
+        writeCache(uid, month, s);
       }
-      if (CURRENT_VIEW === 'cycle2' || recordTab) paintPage(s);
-      paintHome(s); paintCalendar(s);
-      document.body.setAttribute('data-cycle2-ready', String(version));
     }).catch(function (e) {
-      if (version !== sequence) return;
+      if (version !== sequence || cached) return;
       var target = $('#cycle2Content') || $('#cycle2Home');
       if (target) target.innerHTML = '<div class="c2-card">' + h(e.message) + ' ' + btn('重新加载', 'retry') + '</div>';
     });
+    inflight = req; inflightMonth = month;
+    req.then(function () { if (inflight === req) { inflight = null; inflightMonth = null; } },
+             function () { if (inflight === req) { inflight = null; inflightMonth = null; } });
+    return req;
   }
 
   function mount() {
-    if (!ME) { state = null; owner = null; sequence++; recordTab = null; return; }
-    if (owner !== ME.uid) { state = null; recordTab = null; }
+    if (!ME) { state = null; owner = null; stateMonth = null; dirty = false; sequence++; recordTab = null; inflight = null; inflightMonth = null; return; }
+    if (owner !== ME.uid) { state = null; stateMonth = null; dirty = false; recordTab = null; }
     monthAnchor();
     if (CURRENT_VIEW === 'week' || CURRENT_VIEW === 'month') {
       var target = CURRENT_VIEW === 'week' ? document.querySelector('main') : document.querySelector('.month-cal-wrap');
@@ -615,6 +695,7 @@ var Cycle2 = (function () {
     document.body.setAttribute('data-cycle2-saving', '1');
     return api('/api/cycle2/' + action, {method: 'POST', body: data, cache: 'no-store'}).then(function () {
       toast('已保存');
+      dirty = true; dropCache(ME && ME.uid, monthAnchor());
       if (action === 'period' &&
         history.state && history.state.type === 'modal') { closeAllModals(); history.back(); }
       return request();
@@ -859,6 +940,14 @@ var Cycle2 = (function () {
         !document.querySelector('#cycle2Content :focus')) paintPage(s);
     }).catch(function () { scrub(); });
   }, 15000);
+
+  /* The chains are measured off the live grid, so re-measure when it moves. */
+  var runResize = 0;
+  window.addEventListener('resize', function () {
+    if (!state || recordTab || CURRENT_VIEW !== 'cycle2') return;
+    clearTimeout(runResize);
+    runResize = setTimeout(drawRunChains, 150);
+  });
 
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) scrub(); else if (ME) mount();

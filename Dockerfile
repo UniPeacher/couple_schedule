@@ -5,7 +5,8 @@ WORKDIR /app
 COPY app.py special_days.py settings_service.py template_page.html /app/
 COPY notices.py trips.py images.py /app/
 COPY cycle.py cycle_collaboration.py cycle_engine.py cycle2.py cycle2_collaboration.py /app/
-COPY cycle.js cycle.css cycle2.js cycle2.css settings_ui.js settings_ui.css /app/
+COPY cycle2.js cycle2.css settings_ui.js settings_ui.css /app/
+COPY app.js app.css manifest.webmanifest sw.js /app/
 COPY *.png /app/
 ENV PORT=8795 DATA_DIR=/data
 EXPOSE 8795

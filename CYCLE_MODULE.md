@@ -50,7 +50,7 @@
 - 标准库 Python + SQLite，独立 cycle_* 表，不进入共享日程、AI 简报、SSR 或 localStorage。
 - 新表 CREATE IF NOT EXISTS 幂等创建，不修改原日程、手账、账号或旧经期记录；旧备注保持私密，旧日期授权不会自动扩大到身体信息。
 - 角色仅控制个人 UI 排序，不能绕过服务端授权；账号 a 没有额外健康读取权限。
-- /api/cycle* 和通知列表响应 no-store，写接口要求 JSON 并检查 Origin。
+- /api/cycle2* 和通知列表响应 no-store，写接口要求 JSON 并检查 Origin。
 - 组合分享设置在单个数据库事务中提交，校验失败整体回滚。
 - 分享撤回后接口立即停止返回数据；已打开页面每 15 秒刷新共享片段，回到前台重新读取，离线不保证远程清屏。
 - 现有固定双账号没有解绑／重绑流程。以后加入时必须清除分享、协作授权与待确认代记、通知，并使旧会话失效。
@@ -60,19 +60,20 @@
 
 ## 文件与测试
 
-- cycle.py：基础记录、预估、建表、数据导出和备份过滤。
+- cycle.py：基础记录、预估、建表、数据导出和备份过滤（v2 引擎的数据模型基座）。
 - cycle_collaboration.py：共享详情、代记确认、周期概览与状态提醒。
-- cycle.js / cycle.css：角色视图、课表下方入口、表单与私密内存态。
+- cycle2.py / cycle_engine.py / cycle2_collaboration.py：v2 领域层（四相分期、加权预估、协作）。
+- cycle2.js / cycle2.css：周期页 UI（底栏「周期」入口）。
 - app.py：API、静态资源、事务和定时提醒。
-- tests/test_cycle.py、tests/test_cycle_collaboration.py：真实 SQLite / HTTP 验收。
-- tests/cycle_browser.cjs：隔离双账号浏览器流程，不能指向正式端口。
+- tests/test_cycle2_engine.py、tests/test_cycle2_collaboration.py、tests/test_cycle2_migration.py：真实 SQLite / HTTP 验收。
+- tests/cycle2_browser.cjs：隔离双账号浏览器流程，不能指向正式端口。
 
 ```bash
 python3 -m unittest discover -s tests -v
-node --check cycle.js
-python3 tests/browser_server.py
+node --check app.js
+python3 tests/cycle2_browser_server.py
 # 另一个终端，准备 Playwright 与 Chromium 后运行：
-NODE_PATH=/path/to/node_modules CHROMIUM_PATH=/path/to/chromium node tests/cycle_browser.cjs
+NODE_PATH=/path/to/node_modules CHROMIUM_PATH=/path/to/chromium node tests/cycle2_browser.cjs
 ```
 
 测试截图仅用合成数据，写到忽略的 output/。浏览器覆盖课表下方/首屏之外布局、角色与授权、代记确认、结构化共享、私密备注、通知去重、JSON 真下载、月历、深色和桌面渲染。

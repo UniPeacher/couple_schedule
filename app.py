@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import urllib.request
 import contextlib
+import zlib
 import shutil
 import cycle
 import cycle2
@@ -728,6 +729,24 @@ def set_setting(key, value):
             (key, str(value))
         )
 
+# 全量导出的业务表；users/meta/cycle2 单独处理，密码哈希、推送 Token、AI 密钥永不导出。
+EXPORT_TABLES = ("events", "comments", "anniversaries", "diaries", "diary_photos",
+                 "wishes", "trips", "trip_items")
+EXPORT_META_KEYS = ("window_start", "window_end", "min_gap")
+
+
+def build_export(conn, uid):
+    data = {t: [dict(r) for r in conn.execute("SELECT * FROM %s" % t)] for t in EXPORT_TABLES}
+    data["users"] = [dict(uid=r["uid"], name=r["name"], week1=r["week1"])
+                     for r in conn.execute("SELECT uid,name,week1 FROM users")]
+    data["settings"] = {r["key"]: r["value"] for r in conn.execute("SELECT key,value FROM meta")
+                        if r["key"] in EXPORT_META_KEYS}
+    data["cycle2_mine"] = cycle2.export_data(conn, uid)
+    return dict(ok=True,
+                exported_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                exported_by=uid,
+                data=data)
+
 def wal_checkpoint():
     try:
         with LOCK:
@@ -1243,16 +1262,25 @@ class Handler(BaseHTTPRequestHandler):
         else:
             final_html = raw_html.replace('</body>', script_tag + '\n</body>', 1)
 
-        return self.send_html(final_html)
+        # SSR 首屏按用户/数据变化，ETag 取最终内容而非模板 mtime，避免跨会话误发缓存体
+        body = final_html.encode("utf-8")
+        etag = '"%x"' % (zlib.crc32(body) & 0xffffffff)
+        headers = [("ETag", etag), ("Cache-Control", "no-cache")]
+        if self.headers.get("If-None-Match") and etag in self.headers.get("If-None-Match"):
+            return self.send_bytes(304, b"", "text/html; charset=utf-8", extra=headers)
+        return self.send_bytes(200, body, "text/html; charset=utf-8", extra=headers)
 
     def do_GET(self):
         path = urlparse(self.path).path
         try:
             if path in ("/", "/index.html"):
                 return self.render_index_html()
-            if path in ("/cycle.js", "/cycle.css", "/cycle2.js", "/cycle2.css",
-                        "/settings_ui.js", "/settings_ui.css"):
+            if path in ("/app.js", "/app.css", "/cycle2.js", "/cycle2.css",
+                        "/settings_ui.js", "/settings_ui.css",
+                        "/manifest.webmanifest", "/sw.js"):
                 mime = "text/javascript" if path.endswith(".js") else "text/css"
+                if path.endswith(".webmanifest"):
+                    mime = "application/manifest+json"
                 asset_fp = os.path.join(APP_DIR, path[1:])
                 try:
                     st = os.stat(asset_fp)
@@ -1273,6 +1301,16 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:
                     payload = settings_service.payload(CONN, uid)
                 return self.send_json(payload, extra=[("Cache-Control", "no-store, private"), ("Vary", "Cookie")])
+            if path == "/api/export":
+                uid = self.authed()
+                if uid is None:
+                    return
+                with LOCK:
+                    payload = build_export(CONN, uid)
+                fname = "couple-schedule-backup-%s.json" % date.today().isoformat()
+                return self.send_json(payload, extra=[
+                    ("Cache-Control", "no-store, private"), ("Vary", "Cookie"),
+                    ("Content-Disposition", 'attachment; filename="%s"' % fname)])
             if path == "/api/cycle2" or path.startswith("/api/cycle2/"):
                 uid = self.authed()
                 if uid is None:
@@ -1292,25 +1330,6 @@ class Handler(BaseHTTPRequestHandler):
                             raise cycle2.Error("接口不存在", 404)
                     return self.send_json(payload, extra=headers)
                 except cycle2.Error as exc:
-                    return self.send_json({"error": str(exc)}, exc.status, extra=headers)
-            if path == "/api/cycle" or path.startswith("/api/cycle/"):
-                uid = self.authed()
-                if uid is None:
-                    return
-                headers = [("Cache-Control", "no-store, private"), ("Vary", "Cookie")]
-                try:
-                    with LOCK:
-                        if path == "/api/cycle/export":
-                            payload = cycle.export_data(CONN, uid)
-                            headers.append(("Content-Disposition", 'attachment; filename="my-cycle-data.json"'))
-                        elif path == "/api/cycle":
-                            qs = parse_qs(urlparse(self.path).query)
-                            month = qs.get("month", [date.today().strftime("%Y-%m")])[0]
-                            payload = cycle.snapshot(CONN, uid, month)
-                        else:
-                            raise cycle.Error("接口不存在", 404)
-                    return self.send_json(payload, extra=headers)
-                except cycle.Error as exc:
                     return self.send_json({"error": str(exc)}, exc.status, extra=headers)
             if path.startswith("/img/"):
                 req_name = path[5:]
@@ -1589,19 +1608,6 @@ class Handler(BaseHTTPRequestHandler):
                             conn, uid, path[len("/api/cycle2/"):], d)
                     return self.send_json(result, extra=headers)
                 except cycle2_collaboration.c.Error as exc:
-                    return self.send_json({"error": str(exc)}, exc.status, extra=headers)
-            if path.startswith("/api/cycle/"):
-                uid = self.authed()
-                if uid is None:
-                    return
-                headers = [("Cache-Control", "no-store, private"), ("Vary", "Cookie")]
-                if not self.check_write_guard(extra=headers):
-                    return
-                try:
-                    with db_transaction() as conn:
-                        result = cycle.mutate(conn, uid, path[len("/api/cycle/"):], d)
-                    return self.send_json(result, extra=headers)
-                except cycle.Error as exc:
                     return self.send_json({"error": str(exc)}, exc.status, extra=headers)
             if path == "/api/login":
                 ip = self.get_client_ip()
