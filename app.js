@@ -1036,14 +1036,15 @@ function renderApp(){
     if (n == null) return "";
     return ico + "第" + n + "周·" + (n % 2 === 1 ? "单" : "双");
   }
-  /* 教学周次角标拆两半：周次靠左、单双周靠右，周导航按钮居中；点周次弹周跳转面板 */
+  /* 教学周次角标拆两半：周次靠左、单双周靠右，周导航按钮居中；
+     周次角标（带▾）= 按周跳转入口，今天按钮（带▾）= 按日期跳转入口 */
   var weekLeftHTML = "", weekRightHTML = "";
   if (wn.a != null || wn.b != null){
     if (wn.a != null && wn.a === wn.b){
-      weekLeftHTML = '<button type="button" class="wl-weeknum" data-act="week-pick" title="点按跳转到任意一周">第 ' + wn.a + ' 周</button>';
+      weekLeftHTML = '<button type="button" class="wl-weeknum" data-act="week-pick" title="按周次跳转">第 ' + wn.a + ' 周 <span class="mp-caret">▾</span></button>';
       weekRightHTML = '<button type="button" class="wl-weeknum wl-right">' + (wn.a % 2 === 1 ? "单周" : "双周") + '</button>';
     } else {
-      weekRightHTML = '<button type="button" class="wl-weeknum wl-right" data-act="week-pick" title="点按跳转到任意一周">' + weekNumTag(wn.a, "🐶") + " " + weekNumTag(wn.b, "🐾") + '</button>';
+      weekRightHTML = '<button type="button" class="wl-weeknum wl-right" data-act="week-pick" title="按周次跳转">' + weekNumTag(wn.a, "🐶") + " " + weekNumTag(wn.b, "🐾") + ' <span class="mp-caret">▾</span></button>';
     }
   }
 
@@ -1147,7 +1148,7 @@ function renderApp(){
         weekLeftHTML +
         '<div class="week-nav">' +
           '<button class="p-btn" data-act="prev">‹ 上周</button>' +
-          '<button class="p-btn pri" data-act="today">🐾 今天</button>' +
+          '<button class="p-btn pri" data-act="today" title="回到今天"><span class="today-paw">🐾 </span>' + todayISO().slice(5) + ' <span class="mp-caret" data-act="date-pick" title="按日期跳转到任意一天">▾</span></button>' +
           '<button class="p-btn" data-act="next">下周 ›</button>' +
         '</div>' +
         weekRightHTML +
@@ -1284,11 +1285,6 @@ function ensureWeekPicker(){
         '<span class="wp-zhou">周</span>' +
         '<select id="wpSel" aria-label="选择周次"></select>' +
       '</div>' +
-      '<div class="wp-field">' +
-        '<span class="wp-label">按日期</span>' +
-        '<input type="date" class="wp-date-input" id="wpDate" aria-label="选择日期">' +
-        '<button type="button" class="p-btn pri" data-wp="go-date">跳转</button>' +
-      '</div>' +
       '<div class="wp-dates-hint" id="wpHint"></div>' +
       '<div class="mp-foot"><button type="button" class="p-btn" data-wp="back-now">🐾 回到本周</button></div>' +
     '</div>';
@@ -1298,13 +1294,6 @@ function ensureWeekPicker(){
     var b = e.target.closest("[data-wp]");
     if (!b) return;
     if (b.dataset.wp === "back-now"){ pickWeekTo(weekNumOfDate(todayISO()), todayISO()); return; }
-    if (b.dataset.wp === "go-date"){
-      var d = $("#wpDate").value;
-      if (!d){ toast("先选一个日期哦 🐾", "err"); return; }
-      var k = weekNumOfDate(d);
-      if (k == null){ toast("这个日期在校历第 1 周之前，跳不过去哦 🐾", "err"); return; }
-      pickWeekTo(k, d);
-    }
   });
   /* 下拉选周：change 即跳 */
   ov.querySelector("#wpSel").addEventListener("change", function(){
@@ -1384,8 +1373,61 @@ function openWeekPicker(){
   $("#wpNum").max = wpEnd;
   $("#wpSel").value = String(wn);
   paintWeekHint(wn);
-  $("#wpDate").value = "";
   openModal("#ovWeekPick");
+}
+
+/* 按日期跳转：入口在「今天」按钮的▾；不需要校历配置，任意日期可达 */
+function ensureDatePick(){
+  var ov = $("#ovDatePick");
+  if (ov) return ov;
+  ov = document.createElement("div");
+  ov.className = "overlay";
+  ov.id = "ovDatePick";
+  ov.innerHTML =
+    '<div class="modal">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>跳到哪一天？📅</h3></div>' +
+        '<img src="/img/dog-set.png" alt="" class="mhead-img">' +
+      '</div>' +
+      '<div class="wp-field">' +
+        '<span class="wp-label">按日期</span>' +
+        '<input type="date" class="wp-date-input" id="dpDate" aria-label="选择日期">' +
+      '</div>' +
+      '<div class="mp-foot"><button type="button" class="p-btn" data-dp="back-today">🐾 回到今天</button></div>' +
+    '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener("click", function(e){
+    if (e.target === ov){ closeAllModals(); return; }
+    var b = e.target.closest("[data-dp]");
+    if (!b) return;
+    if (b.dataset.dp === "back-today"){ jumpToDay(todayISO()); return; }
+  });
+  ov.querySelector("#dpDate").addEventListener("change", function(){
+    if (this.value) jumpToDay(this.value);
+  });
+  ov.querySelector("#dpDate").addEventListener("keydown", function(e){
+    if (e.key === "Enter" && this.value) jumpToDay(this.value);
+  });
+  return ov;
+}
+
+function openDatePick(){
+  ensureDatePick();
+  $("#dpDate").value = ANCHOR || todayISO();
+  openModal("#ovDatePick");
+}
+
+function jumpToDay(date){
+  if (!date) return;
+  var p = date.split("-");
+  var wd = (new Date(+p[0], +p[1] - 1, +p[2]).getDay() + 6) % 7; /* 周一=0 */
+  var mon = shiftISO(date, -wd);
+  closeAllModals();
+  ANCHOR = mon;
+  DATA = null;
+  load().then(function(){
+    setTimeout(function(){ scrollToDay(date); }, 60);
+  });
 }
 
 function bottomNavHTML(){
@@ -2704,6 +2746,9 @@ var CLICK_ACTIONS = {
   },
   "week-pick": function(el, e) {
     openWeekPicker();
+  },
+  "date-pick": function(el, e) {
+    openDatePick();
   },
   "open-day-diary": function(el, e) {
     var act = "open-day-diary";
