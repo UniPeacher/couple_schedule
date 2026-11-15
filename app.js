@@ -1148,7 +1148,7 @@ function renderApp(){
         weekLeftHTML +
         '<div class="week-nav">' +
           '<button class="p-btn" data-act="prev">‹ 上周</button>' +
-          '<button class="p-btn pri" data-act="today" title="回到今天"><span class="today-paw">🐾 </span>' + todayISO().slice(5) + ' <span class="mp-caret" data-act="date-pick" title="按日期跳转到任意一天">▾</span></button>' +
+          '<button class="p-btn pri" data-act="date-pick" title="按日期跳转到任意一天"><span class="today-paw">🐾 </span>' + todayISO().slice(5) + ' <span class="mp-caret">▾</span></button>' +
           '<button class="p-btn" data-act="next">下周 ›</button>' +
         '</div>' +
         weekRightHTML +
@@ -1413,7 +1413,7 @@ function ensureDatePick(){
 
 function openDatePick(){
   ensureDatePick();
-  $("#dpDate").value = ANCHOR || todayISO();
+  $("#dpDate").value = todayISO();
   openModal("#ovDatePick");
 }
 
@@ -2477,20 +2477,6 @@ var CLICK_ACTIONS = {
   },
   "next": function(el, e) {
     var act = "next"; ANCHOR = shiftISO(ANCHOR, 7); DATA = null; load(); 
-  },
-  "today": function(el, e) {
-    var act = "today";
-    var curT = todayISO();
-    if (ANCHOR === curT){
-      scrollToToday();
-    } else {
-      ANCHOR = curT;
-      DATA = null;
-      load().then(function(){
-        setTimeout(scrollToToday, 60);
-      });
-    }
-  
   },
   "open-add": function(el, e) {
     var act = "open-add";

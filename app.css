@@ -981,12 +981,7 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
 }
 .month-jump-btn:active{transform:scale(.97)}
 .mp-caret{font-size:10px;color:var(--ink-muted);font-weight:700}
-/* 日期▾自身是唯一触发点，触达区扩大到手指可点（伪元素不改变布局） */
-[data-act="date-pick"]{
-  position:relative;cursor:pointer;
-  font-size:11px;color:inherit;
-}
-[data-act="date-pick"]::after{content:"";position:absolute;inset:-12px -8px -12px -6px}
+.week-nav .mp-caret{cursor:pointer}
 .mp-yearrow{
   display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:12px;
 }
