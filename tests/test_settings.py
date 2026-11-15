@@ -5,7 +5,7 @@ import unittest
 import app
 import cycle2
 import settings_service as service
-import test_cycle as base_tests
+import test_http as base_tests
 
 class ScopedSettingsTests(unittest.TestCase):
     def setUp(self):
