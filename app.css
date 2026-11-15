@@ -107,6 +107,10 @@ body{
   overscroll-behavior-y: none;
 }
 button,input,select,textarea{font-family:inherit}
+/* 双击不再触发浏览器缩放/300ms 等待（iOS Safari 对 viewport 无视 user-scalable，只能靠这条） */
+button,a,[data-act],[data-c2],[data-mp],[data-settings],.opt,.c2-opt,.b-tab,.p-btn,.fab{
+  touch-action: manipulation;
+}
 
 /* 动效 */
 @keyframes heartBeat{0%,100%{transform:scale(1)}50%{transform:scale(1.22)}}

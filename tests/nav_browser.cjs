@@ -19,6 +19,7 @@ async function login(p) {
 }
 const state = p => p.evaluate(() => history.state);
 const view = p => p.evaluate(() => CURRENT_VIEW);
+const depth = p => p.evaluate(() => history.length);
 async function goBackExpect(p, want, name) {
   await p.goBack();
   await p.waitForFunction(w => JSON.stringify(history.state) === JSON.stringify(w), want,
@@ -52,10 +53,15 @@ const RECORD_SHEET = () => p.locator('#cycle2DayForm');
     assert.deepEqual(await state(p), {type: 'view', v: 'cycle2'});
     const d0 = new Date(), ymd = [d0.getFullYear(), String(d0.getMonth() + 1).padStart(2, '0'),
       String(d0.getDate()).padStart(2, '0')].join('-');
-    await p.locator('.c2-cal-cell[data-date="' + ymd + '"]').click();
+    const tabLen = await depth(p);
+    await p.evaluate(ym => {
+      const el = document.querySelector('.c2-cal-cell[data-date="' + ym + '"]');
+      el.click(); el.click();   // 双击日格只允许压一条记录条目
+    }, ymd);
     await RECORD_SHEET().waitFor();
     assert.deepEqual(await state(p), {type: 'modal', id: 'cycle2-record'});
-    console.log('PASS record sheet pushes its own entry');
+    assert.equal(await depth(p), tabLen + 1, 'double-tap pushes exactly one entry');
+    console.log('PASS record sheet pushes its own entry (once, even on double-tap)');
     await goBackExpect(p, {type: 'view', v: 'cycle2'}, 'cycle main from record sheet');
     await CYCLE_MAIN().waitFor({state: 'visible', timeout: 5000});
     await RECORD_SHEET().waitFor({state: 'detached', timeout: 5000});
@@ -76,16 +82,22 @@ const RECORD_SHEET = () => p.locator('#cycle2DayForm');
     assert.equal(await view(p), 'week');
     console.log('PASS back from cycle main -> week');
 
-    /* ---- 2. 记新日程：保存后不留弹窗历史条目 ---- */
+    /* ---- 2. 记新日程：双击保存只建一条；保存后不留弹窗历史条目 ---- */
+    const evTitle = '导航测试日程-' + (Date.now() % 1000000);
     await WEEK_FAB().click();
     await p.locator('#ovAdd.show').waitFor();
     assert.equal((await state(p)).type, 'modal');
-    await p.locator('#f_title').fill('导航测试日程');
-    await p.locator('#addForm button.p-btn.pri').click();
+    await p.locator('#f_title').fill(evTitle);
+    await p.evaluate(() => {
+      const b = document.querySelector('#addForm button.p-btn.pri');
+      b.click(); b.click();     // 双击保存只允许提交一次
+    });
     await p.waitForSelector('text=已记下啦');
     await p.waitForFunction(() => history.state === null, null, {timeout: 5000});
     await WEEK_FAB().waitFor({state: 'visible', timeout: 5000});
-    console.log('PASS add event save consumes the modal entry');
+    assert.equal(await p.locator('.etitle', {hasText: evTitle}).count(), 1,
+      'double-submit must create exactly one event');
+    console.log('PASS add event: double-submit-safe, entry consumed');
 
     /* ---- 3. 详情 -> 编辑：历史条目被顶替，返回一层即回课表 ---- */
     await p.locator('.ev[data-act="detail"]').first().click();
@@ -104,6 +116,9 @@ const RECORD_SHEET = () => p.locator('#cycle2DayForm');
     await p.locator('#ovDetail.show').waitFor();
     await p.locator('[data-act="del-event"]').first().click();
     await p.locator('.overlay.uconfirm.show').waitFor();
+    await p.evaluate(() => { document.querySelector('[data-act="del-event"]').click(); });
+    assert.equal(await p.locator('.overlay.uconfirm.show').count(), 1,
+      'double-tap must not stack a second confirm');
     await goBackExpect(p, {type: 'modal', id: '#ovDetail'}, 'detail behind dismissed confirm');
     await p.locator('.overlay.uconfirm.show').waitFor({state: 'detached', timeout: 3000});
     await p.locator('#ovDetail.show').waitFor();
@@ -123,7 +138,10 @@ const RECORD_SHEET = () => p.locator('#cycle2DayForm');
     await p.locator('.seg [data-act="switch-view"][data-v="trips"]').click();
     await p.locator('[data-act="trip-new-toggle"]').waitFor();
     assert.deepEqual(await state(p), {type: 'view', v: 'trips'});
-    await p.locator('[data-act="trip-open"]').first().click();
+    await p.evaluate(() => {
+      const el = document.querySelector('[data-act="trip-open"]');
+      el.click(); el.click();   // 双击同一旅行只压一条层级条目
+    });
     await p.locator('[data-act="trip-back"]').waitFor();
     assert.equal((await state(p)).trip, trip.id, 'trip detail carries the trip id');
     await goBackExpect(p, {type: 'view', v: 'trips'}, 'trip list from detail');
@@ -147,8 +165,11 @@ const RECORD_SHEET = () => p.locator('#cycle2DayForm');
     await api('/api/wishes/toggle', {id: wish.id});
     await p.locator('.seg [data-act="switch-view"][data-v="wishes"]').click();
     await p.locator('[data-act="wish-to-diary"]').first().waitFor();
-    // 取消按钮路径：关弹窗落在手账页，一次返回回心愿页
-    await p.locator('[data-act="wish-to-diary"]').first().click();
+    // 取消按钮路径：双击只压一层；关弹窗落在手账页，一次返回回心愿页
+    await p.evaluate(() => {
+      const el = document.querySelector('[data-act="wish-to-diary"]');
+      el.click(); el.click();
+    });
     await p.locator('#ovAddDiary.show').waitFor();
     assert.equal(await view(p), 'month');
     assert.deepEqual(await state(p), {type: 'modal', id: '#ovAddDiary'});
@@ -157,8 +178,11 @@ const RECORD_SHEET = () => p.locator('#cycle2DayForm');
       {timeout: 5000});
     await p.locator('.fab[data-act="open-add-diary"]').waitFor({state: 'visible', timeout: 5000});
     await goBackExpect(p, {type: 'view', v: 'wishes'}, 'wishes from month');
-    // 手势返回路径：重开一次，返回关弹窗落手账页，再一次返回回心愿页
-    await p.locator('[data-act="wish-to-diary"]').first().click();
+    // 手势返回路径：重开一次（同样双击），返回关弹窗落手账页，再一次返回回心愿页
+    await p.evaluate(() => {
+      const el = document.querySelector('[data-act="wish-to-diary"]');
+      el.click(); el.click();
+    });
     await p.locator('#ovAddDiary.show').waitFor();
     await goBackExpect(p, {type: 'view', v: 'month'}, 'month view behind diary modal');
     await p.locator('.fab[data-act="open-add-diary"]').waitFor({state: 'visible', timeout: 5000});

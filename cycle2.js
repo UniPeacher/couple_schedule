@@ -72,7 +72,13 @@ var Cycle2 = (function () {
     var u = ((META && META.users) || []).find(function (x) { return x.uid === uid; });
     return u ? u.name : '伴侣';
   }
-  function go() { history.pushState({type: 'view', v: 'cycle2'}, ''); CURRENT_VIEW = 'cycle2'; load(); window.scrollTo(0, 0); }
+  function go() {
+    if (CURRENT_VIEW === 'cycle2') return;   // 双击标记不重复压视图条目
+    history.pushState({type: 'view', v: 'cycle2'}, '');
+    CURRENT_VIEW = 'cycle2';
+    load();
+    window.scrollTo(0, 0);
+  }
   function monthAnchor() {
     if (!anchor) anchor = (typeof MONTH_ANCHOR === 'string' && /^\d{4}-\d{2}$/.test(MONTH_ANCHOR))
       ? MONTH_ANCHOR : todayISO().slice(0, 7);
@@ -797,11 +803,14 @@ var Cycle2 = (function () {
   }
 
   function openRecord(tab) {
-    recordTab = tab || 'symptom';
+    var entering = !recordTab;             // 双击日格/记录行不重复压记录条目
+    recordTab = tab || recordTab || 'symptom';
     recordDate = recordDate || todayISO();
     if (state) {
-      /* 记录页是周期页内的一层子页：压入历史，返回手势/键回到周期主页 */
-      history.pushState({type: 'modal', id: 'cycle2-record'}, '');
+      if (entering) {
+        /* 记录页是周期页内的一层子页：压入历史，返回手势/键回到周期主页 */
+        history.pushState({type: 'modal', id: 'cycle2-record'}, '');
+      }
       paintPage(state);
     }
     window.scrollTo(0, 0);
@@ -813,6 +822,7 @@ var Cycle2 = (function () {
     var a = el.dataset.c2;
     if (a === 'calendar') {
       e.preventDefault();
+      if (CURRENT_VIEW === 'cycle2') return;   // 双击标记不重复压条目
       go();
       /* go() 的整页重绘会清掉选中标记，放到 go() 之后再挂，
          等网络快照到达时自动打开当天的记录页 */
@@ -875,10 +885,24 @@ var Cycle2 = (function () {
     else if (a === 'finish') edit(Object.assign({}, state.active, {end_date: todayISO()}));
     else if (a === 'edit') edit(state.periods.find(function (r) { return r.id === Number(el.dataset.id); }));
     else if (a === 'close-period') closeAllModals();
-    else if (a === 'delete-period' && confirm('删除这条已确认经期？身体感受另行保留。')) save('period/delete', {id: Number(el.dataset.id)}, el);
+    else if (a === 'delete-period') {
+      uiConfirm({icon: '🩸', title: '删除这条已确认经期？',
+        message: '身体感受另行保留。', danger: true, okText: '删除'}).then(function (ok) {
+        if (ok) save('period/delete', {id: Number(el.dataset.id)}, el);
+      });
+    }
     else if (a === 'delete-bbt') save('bbt/delete', {date: recordDate || todayISO()}, el);
-    else if (a === 'delete-all' && confirm('删除全部经期数据？两人共用这一份记录，删除后双方都看不到。') && confirm('不可从 App 撤销，确定删除？')) {
-      save('delete-all', {confirm: 'DELETE_MY_CYCLE_DATA'}, el);
+    else if (a === 'delete-all') {
+      uiConfirm({icon: '🗑️', title: '删除全部经期数据？',
+        message: '两人共用这一份记录，删除后双方都看不到。', danger: true, okText: '继续'})
+        .then(function (ok1) {
+          if (!ok1) return;
+          return uiConfirm({icon: '⚠️', title: '不可从 App 撤销，确定删除？',
+            message: '已导出的副本需要另外处理。', danger: true, okText: '删除'})
+            .then(function (ok2) {
+              if (ok2) save('delete-all', {confirm: 'DELETE_MY_CYCLE_DATA'}, el);
+            });
+        });
     }
     else if (a === 'export') {
       api('/api/cycle2/export', {cache: 'no-store'}).then(function (data) {

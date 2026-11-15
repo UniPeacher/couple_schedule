@@ -126,9 +126,12 @@ function syncThemeColor(){
    自带一条历史条目：手势返回经 popstate 关闭；按钮/Esc 关闭时消费条目，
    不留空条目导致下一次返回"失灵"。skipNextPopRender 屏蔽主动回退那次 popstate。 */
 var skipNextPopRender = false;
+var activeConfirm = null;
 function uiConfirm(opts){
+  /* 已有确认框在弹着时，连点同一按钮只算一次 */
+  if (activeConfirm) return activeConfirm;
   opts = opts || {};
-  return new Promise(function(resolve){
+  activeConfirm = new Promise(function(resolve){
     var settled = false;
     history.pushState({type:"uconfirm"}, "");
     var ov = document.createElement("div");
@@ -144,6 +147,7 @@ function uiConfirm(opts){
     function finish(val){
       if (settled) return;
       settled = true;
+      activeConfirm = null;
       document.removeEventListener("keydown", onKey);
       if (mo) mo.disconnect();
       ov.classList.remove("show");
@@ -174,6 +178,7 @@ function uiConfirm(opts){
     ov.classList.add("show");
     try { (opts.danger ? ov.querySelector(".confirm-btn.cancel") : ov.querySelector(".confirm-btn.ok")).focus(); } catch(e){}
   });
+  return activeConfirm;
 }
 
 /* 输入校验失败反馈：红框抖动 + 聚焦 */
@@ -2710,8 +2715,10 @@ var CLICK_ACTIONS = {
   },
   "trip-create": function(el, e) {
     var act = "trip-create";
+    if (el.dataset.busy === "1") return;
     var tDest = tripFormValue("trip_dest");
     if (!tDest){ toast("先写上要去哪儿", "err"); markInputErr(document.getElementById("trip_dest")); return; }
+    el.dataset.busy = "1";
     tripAction("create", {
       destination: tDest,
       start_date: tripFormValue("trip_start"),
@@ -2723,19 +2730,22 @@ var CLICK_ACTIONS = {
       loadTrip(res.id);
       /* 新建后直接进入清单详情，与 trip-open 同样压入层级条目 */
       history.pushState({type:"view", v:"trips", trip:res.id}, "");
-    }).catch(function(e){ toast("❌ " + e.message, "err"); });
-  
+    }).catch(function(e){ toast("❌ " + e.message, "err"); })
+      .finally(function(){ delete el.dataset.busy; });
+
   },
   "trip-open": function(el, e) {
     var act = "trip-open";
-    TRIP_ID = parseInt(el.getAttribute("data-id"), 10);
+    var tid = parseInt(el.getAttribute("data-id"), 10);
+    if (TRIP_ID === tid) return;       // 双击同一次旅行不重复压层级条目
+    TRIP_ID = tid;
     tripEditingItem = null; tripNewOpen = false;
     TRIP_DETAIL = TRIP_DETAILS[TRIP_ID] || null;
     if (TRIP_DETAIL) render();        // 看过的清单秒开，随后静默对账
     loadTrip(TRIP_ID);
     /* 下钻一层清单页压入历史，返回手势/键回到列表 */
     history.pushState({type:"view", v:"trips", trip:TRIP_ID}, "");
-  
+
   },
   "trip-back": function(el, e) {
     var act = "trip-back";
@@ -2930,12 +2940,15 @@ var CLICK_ACTIONS = {
     var inp = $("#cmtText");
     var text = inp ? inp.value.trim() : "";
     if (!text || !curDetail) return;
+    if (el.dataset.busy === "1") return;
+    el.dataset.busy = "1";
     var cmtDate = curDetail.date || todayISO();
     api("/api/comment", {method:"POST", body:{event_id:curDetail.id, text:text, date:cmtDate}})
       .then(function(){ return load(); })
       .then(function(){ refreshDetail(); })
-      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
-  
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); })
+      .finally(function(){ delete el.dataset.busy; });
+
   },
   "del-cmt": function(el, e) {
     var act = "del-cmt";
@@ -3193,6 +3206,7 @@ var CLICK_ACTIONS = {
   },
   "wish-to-diary": function(el, e) {
     var act = "wish-to-diary";
+    if (CURRENT_VIEW === "month") return;   // 双击不重复压视图条目
     var wishTitle = el.getAttribute("data-title") || "";
     /* 心愿页跳到手账页是一层导航：压入历史，返回手势回到心愿页 */
     history.pushState({type:"view", v:"month"}, "");
@@ -3249,8 +3263,11 @@ document.addEventListener("click", function(e){
 
 document.addEventListener("submit", function(e){
   var f = e.target;
+  /* 双击/回车连点只提交一次：进行中的表单吞掉后续 submit */
+  if (f.dataset.busy === "1"){ e.preventDefault(); e.stopImmediatePropagation(); return; }
   if (f.id === "loginForm"){
     e.preventDefault();
+    f.dataset.busy = "1";
     api("/api/login", {method:"POST", body:{uid:loginUid, password:$("#loginPw").value}})
       .then(function(j){
         ME = {uid:j.uid, name:j.name};
@@ -3279,9 +3296,11 @@ document.addEventListener("submit", function(e){
           load().then(function(){ pollMessages(); });
         }
       })
-      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); })
+      .finally(function(){ delete f.dataset.busy; });
   } else if (f.id === "addForm"){
     e.preventDefault();
+    f.dataset.busy = "1";
     var body = {
       uid: addUid, repeat: addRep,
       title: $("#f_title").value.trim(), location: $("#f_loc").value.trim(),
@@ -3300,9 +3319,11 @@ document.addEventListener("submit", function(e){
         curEditingEventId = null;
         load();
       })
-      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); })
+      .finally(function(){ delete f.dataset.busy; });
   } else if (f.id === "setForm"){
     e.preventDefault();
+    f.dataset.busy = "1";
     var body = {
       name_a: $("#s_na").value.trim(), name_b: $("#s_nb").value.trim(),
       week1_a: $("#s_w1a").value, week1_b: $("#s_w1b").value,
@@ -3322,9 +3343,11 @@ document.addEventListener("submit", function(e){
         toast("设置已保存 🐾");
         return api("/api/me").then(function(j){ ME = j; load(); });
       });
-    }).catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
+    }).catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); })
+      .finally(function(){ delete f.dataset.busy; });
   } else if (f.id === "annivForm"){
     e.preventDefault();
+    f.dataset.busy = "1";
     var body = {
       title: $("#an_title").value.trim(),
       date: $("#an_date").value,
@@ -3338,11 +3361,13 @@ document.addEventListener("submit", function(e){
         return load();
       })
       .then(function(){ renderAnnivList(); })
-      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); })
+      .finally(function(){ delete f.dataset.busy; });
   } else if (f.id === "addWishForm"){
     e.preventDefault();
     var title = ($("#wf_title") ? $("#wf_title").value : "").trim();
     if (!title){ toast("请输入心愿内容 🐾"); return; }
+    f.dataset.busy = "1";
     var note = ($("#wf_note") ? $("#wf_note").value : "").trim();
     api("/api/wishes", {
       method: "POST",
@@ -3359,7 +3384,8 @@ document.addEventListener("submit", function(e){
       if ($("#wf_note")) $("#wf_note").value = "";
       toast("心愿已贴进清单啦 ✨");
       loadWishes();
-    }).catch(function(err){ toast(err.message || "添加失败", "err"); });
+    }).catch(function(err){ toast(err.message || "添加失败", "err"); })
+      .finally(function(){ delete f.dataset.busy; });
   } else if (f.id === "addDiaryForm"){
     e.preventDefault();
     var sBtn = $("#df_submit_btn");
