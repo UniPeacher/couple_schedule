@@ -205,7 +205,7 @@ html.dark .c2-page{
 /* ---------- metric rows inside the main card ---------- */
 .c2-metrics{margin-top:12px;display:flex;flex-direction:column;gap:8px}
 .c2-metric{
-  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
   padding:11px 14px;border-radius:14px;
   background:var(--bg-card-subtle);border:1px solid var(--line-subtle);
 }
@@ -214,7 +214,7 @@ html.dark .c2-page{
   font-size:12.5px;font-weight:700;color:var(--ink-secondary);white-space:nowrap;
 }
 .c2-metric .k i{font-style:normal;font-size:14px;line-height:1}
-.c2-metric b{font-size:13px;font-weight:800;color:var(--ink-primary);text-align:right}
+.c2-metric b{font-size:13px;font-weight:800;color:var(--ink-primary);text-align:right;white-space:nowrap;margin-left:auto}
 .c2-link{
   display:block;width:100%;border:0;background:transparent;cursor:pointer;
   color:var(--c2-accent-d);font-size:13.5px;font-weight:800;padding:15px 0 0;text-align:center;
@@ -225,7 +225,7 @@ html.dark .c2-page{
 .c2-pred{background:linear-gradient(165deg,var(--c2-accent-bg) 0%,var(--bg-card) 68%)}
 .c2-pred-date{font-size:25px;font-weight:900;letter-spacing:-.4px;color:var(--c2-accent-tx);margin:2px 0 8px}
 .c2-pred-row{font-size:12.5px;line-height:1.75;color:var(--ink-secondary);margin:3px 0}
-.c2-pred-row b{color:var(--c2-accent-tx)}
+.c2-pred-row b{color:var(--c2-accent-tx);white-space:nowrap}
 .c2-conf{
   display:inline-block;font-size:10.5px;border-radius:999px;padding:2px 9px;
   border:1px solid currentColor;font-weight:700;white-space:nowrap;
@@ -349,6 +349,8 @@ html.dark .c2-conf.high{color:#6fd394}html.dark .c2-conf.medium{color:#fbbf24}
 .c2-actions .p-btn{font-size:12px;min-height:38px}
 .c2-history{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line-subtle);font-size:13px}
 .c2-history:last-child{border:0}
+.c2-history strong{white-space:nowrap}
+.c2-nowrap{white-space:nowrap}
 .c2-history .c2-actions{margin:0}
 .c2-details>summary{cursor:pointer;font-size:14px;font-weight:700;color:var(--ink-secondary);padding:4px 0;line-height:1.6}
 .c2-details[open]>summary{margin-bottom:14px}

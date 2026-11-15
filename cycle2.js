@@ -306,7 +306,8 @@ var Cycle2 = (function () {
     var metrics = [['🩸', '最近一次经期', '暂无记录']];
     if (s.periods && s.periods.length) {
       var r = s.periods[0];
-      metrics[0][2] = fmtRange(r.start_date, r.end_date) + (r.end_date ? '' : ' · 进行中');
+      metrics[0][2] = r.end_date ? fmtRange(r.start_date, r.end_date)
+        : fmtD(r.start_date) + ' · 进行中';
     }
     if (p.available) {
       var left = daysBetween(todayISO(), p.estimated_start);
@@ -361,8 +362,8 @@ var Cycle2 = (function () {
     /* Only surface the fertile estimate while it is still ahead: a window that has
        already closed says nothing about the coming days. */
     if (p.fertile_start && p.fertile_end >= todayISO()) {
-      fertile = '<br>预估易孕期 ' + fmtRange(p.fertile_start, p.fertile_end) +
-        '，仅供参考，不作为避孕依据';
+      fertile = '<br>预估易孕期 <span class="c2-nowrap">' + fmtRange(p.fertile_start, p.fertile_end) +
+        '</span>，仅供参考，不作为避孕依据';
     }
     return '<section class="c2-card c2-window-strip c2-pred">' +
       '<div class="c2-empty-head"><span class="c2-ico-chip">📅</span><h3>下次预计</h3>' +
@@ -430,7 +431,7 @@ var Cycle2 = (function () {
   function periodPanel(s) {
     var rows = (s.periods || []).map(function (r) {
       return '<div class="c2-history"><div><strong>' + h(r.start_date) + '</strong>' +
-        '<p class="c2-muted">至 ' + h(r.end_date || '结束待确认') + ' · ' +
+        '<p class="c2-muted">至 <span class="c2-nowrap">' + h(r.end_date || '结束待确认') + '</span> · ' +
         (r.source && r.source.author_uid !== s.uid ? '伴侣代记，本人已确认' : '本人记录') + '</p></div>' +
         '<div class="c2-actions">' + btn('编辑', 'edit', 'data-id="' + r.id + '"') +
         btn('删除', 'delete-period', 'data-id="' + r.id + '"') + '</div></div>';
