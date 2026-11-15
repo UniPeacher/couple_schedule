@@ -122,6 +122,29 @@ function syncThemeColor(){
   if (tc) tc.content = document.documentElement.classList.contains("dark") ? "#15181e" : "#faf6f0";
 }
 
+/* 外观模式："1"固定深色 / "0"固定浅色 / 未存过=跟随系统；跟随系统时随手机深浅色实时切换 */
+function themeMode(){
+  var v = null;
+  try { v = localStorage.getItem("sched_dark_mode"); } catch(e){}
+  return v === "1" ? "dark" : v === "0" ? "light" : "system";
+}
+var systemThemeMQ = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+function applyThemeMode(){
+  var dark = themeMode() === "dark" || (themeMode() === "system" && systemThemeMQ && systemThemeMQ.matches);
+  document.documentElement.classList.toggle("dark", dark);
+  syncThemeColor();
+  var btn = $("#darkToggleBtn");
+  if (btn){
+    btn.innerHTML = dark ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>';
+  }
+  document.querySelectorAll("#themeSeg .opt").forEach(function(o){
+    o.classList.toggle("on", o.getAttribute("data-theme") === themeMode());
+  });
+}
+if (systemThemeMQ && systemThemeMQ.addEventListener) {
+  systemThemeMQ.addEventListener("change", function(){ if (themeMode() === "system") applyThemeMode(); });
+}
+
 /* 萌系确认弹窗：替代原生 confirm。resolve(true)=确认，resolve(false)=取消。
    自带一条历史条目：手势返回经 popstate 关闭；按钮/Esc 关闭时消费条目，
    不留空条目导致下一次返回"失灵"。skipNextPopRender 屏蔽主动回退那次 popstate。 */
@@ -2513,34 +2536,22 @@ var CLICK_ACTIONS = {
   "set-theme": function(el, e) {
     var act = "set-theme";
     var theme = el.getAttribute("data-theme");
-    var isDark = theme === "dark";
-    document.documentElement.classList.toggle("dark", isDark);
     try {
-      localStorage.setItem("sched_dark_mode", isDark ? "1" : "0");
+      if (theme === "system") localStorage.removeItem("sched_dark_mode");
+      else localStorage.setItem("sched_dark_mode", theme === "dark" ? "1" : "0");
     } catch(e){}
-    syncThemeColor();
-    document.querySelectorAll("#themeSeg .opt").forEach(function(o){
-      o.classList.toggle("on", o.getAttribute("data-theme") === theme);
-    });
-    var btn = $("#darkToggleBtn");
-    if (btn){
-      btn.innerHTML = isDark ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>';
-    }
-  
+    applyThemeMode();
   },
+
   "toggle-dark": function(el, e) {
     var act = "toggle-dark";
-    var isDark = document.documentElement.classList.toggle("dark");
+    var isDark = themeMode() === "dark" || (themeMode() === "system" && systemThemeMQ && systemThemeMQ.matches);
     try {
-      localStorage.setItem("sched_dark_mode", isDark ? "1" : "0");
+      localStorage.setItem("sched_dark_mode", isDark ? "0" : "1");
     } catch(e){}
-    syncThemeColor();
-    var btn = $("#darkToggleBtn");
-    if (btn){
-      btn.innerHTML = isDark ? '☀️<span class="btn-txt"> 浅色</span>' : '🌙<span class="btn-txt"> 深色</span>';
-    }
-  
+    applyThemeMode();
   },
+
   "switch-view": function(el, e) {
     var act = "switch-view";
     var targetV = el.getAttribute("data-v");

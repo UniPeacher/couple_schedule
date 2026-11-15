@@ -9,7 +9,7 @@
   try {
     var savedDark = localStorage.getItem("sched_dark_mode");
     var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (savedDark === "1" || (savedDark === null && prefersDark)){
+    if (savedDark === "1" || (savedDark !== "0" && prefersDark)){
       document.documentElement.classList.add("dark");
     }
     var tc = document.querySelector('meta[name="theme-color"]');
@@ -107,7 +107,7 @@ html.dark, html.dark body {
 <script id="__SSR_DATA__">window.__INITIAL_DATA__ = null;</script>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="/cycle2.js?v=20261115f"></script>
-<script src="/settings_ui.js?v=20261115b"></script>
-<script src="/app.js?v=20261116g"></script>
+<script src="/settings_ui.js?v=20261116a"></script>
+<script src="/app.js?v=20261116h"></script>
 </body>
 </html>
