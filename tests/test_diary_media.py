@@ -7,6 +7,8 @@ import http.client
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -67,6 +69,55 @@ class DiaryMediaTests(unittest.TestCase):
             return r.status, json.loads(body)
         except ValueError:
             return r.status, body.decode()
+
+    def test_photo_suffix_range(self):
+        os.makedirs(app.PHOTOS_DIR, exist_ok=True)
+        Path(app.PHOTOS_DIR, "range_sample.mp4").write_bytes(b"0123456789")
+        for requested, expected, content_range in (
+                ("bytes=0-1", b"01", "bytes 0-1/10"),
+                ("bytes=-2", b"89", "bytes 8-9/10"),
+                ("bytes=7-", b"789", "bytes 7-9/10"),
+                ("bytes=-20", b"0123456789", "bytes 0-9/10")):
+            with self.subTest(requested=requested):
+                c = http.client.HTTPConnection("127.0.0.1", self.srv.server_port)
+                c.request("GET", "/photos/range_sample.mp4", headers={
+                    "Cookie": app.COOKIE + "=" + app.make_token("a"), "Range": requested})
+                r = c.getresponse()
+                self.assertEqual(r.status, 206)
+                self.assertEqual(r.getheader("Content-Range"), content_range)
+                self.assertEqual(r.read(), expected)
+                c.close()
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "requires ffmpeg")
+    def test_hevc_preview_is_h264_and_preserves_source(self):
+        video = os.path.join(app.PHOTOS_DIR, "compatibility.mp4")
+        os.makedirs(app.PHOTOS_DIR, exist_ok=True)
+        subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc2=size=96x64:rate=10",
+                        "-t", "0.5", "-c:v", "libx265", "-x265-params", "pools=1:frame-threads=1",
+                        "-tag:v", "hvc1", video], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, check=True)
+        original = Path(video).read_bytes()
+        self.assertTrue(images.ensure_live_preview(video))
+        preview = os.path.join(app.PHOTOS_DIR, "pv_compatibility.mp4")
+        self.assertEqual(Path(video).read_bytes(), original)
+        codec = subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                                         "-show_entries", "stream=codec_name", "-of", "csv=p=0", preview])
+        self.assertEqual(codec.strip(), b"h264")
+        self.assertTrue(images._moov_is_front(preview))
+
+    def test_preview_link_requires_completed_file(self):
+        status, payload = self.req("/api/diaries", {"date": "2026-10-04", "title": "播放副本"})
+        self.assertEqual(status, 200)
+        app.CONN.execute("INSERT INTO diary_photos(diary_id,file_name,live_video,sort_order) VALUES(?,?,?,?)",
+                         (payload["id"], "preview_test.jpg", "preview_test.mp4", 0))
+        _, detail = self.req("/api/diaries?date=2026-10-04")
+        self.assertNotIn("live_preview", detail["diaries"][0]["photos"][0])
+        os.makedirs(app.PHOTOS_DIR, exist_ok=True)
+        Path(app.PHOTOS_DIR, "pv_preview_test.mp4").write_bytes(b"completed preview")
+        _, detail = self.req("/api/diaries?date=2026-10-04")
+        photo = detail["diaries"][0]["photos"][0]
+        self.assertEqual(photo["live_preview"], "pv_preview_test.mp4")
+        self.assertEqual(photo["live_video"], "preview_test.mp4")
 
     def test_photos_saved_before_response(self):
         """响应返回时照片文件必须已在磁盘上：前端立刻刷新就能看到图。"""

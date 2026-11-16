@@ -63,6 +63,11 @@ except Exception as _e:  # pragma: no cover
     special_days = None
     sys.stderr.write("[warn] special_days 引擎未加载，纪念日提醒关闭: %s\n" % _e)
 
+class MediaHTTPServer(ThreadingHTTPServer):
+    # 一篇手账最多 18 张照片，缩略图并发不能挤满默认的 5 个待接入连接。
+    request_queue_size = 64
+
+
 PORT = int(os.environ.get("PORT", "8795"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
@@ -1454,9 +1459,15 @@ class Handler(BaseHTTPRequestHandler):
                         try:
                             rng = range_hdr[6:].split(",")[0].strip()
                             s_str, e_str = rng.split("-", 1)
-                            start = int(s_str) if s_str else 0
-                            end = int(e_str) if e_str else (file_size - 1)
-                            end = min(end, file_size - 1)
+                            if s_str:
+                                start = int(s_str)
+                                end = min(int(e_str), file_size - 1) if e_str else file_size - 1
+                            else:
+                                suffix = int(e_str)
+                                if suffix <= 0:
+                                    raise ValueError("invalid suffix range")
+                                start = max(0, file_size - suffix)
+                                end = file_size - 1
                             if 0 <= start <= end < file_size:
                                 with open(fp, "rb") as f:
                                     f.seek(start)
@@ -2208,6 +2219,10 @@ class Handler(BaseHTTPRequestHandler):
                 item = dict(r)
                 photos = CONN.execute("SELECT * FROM diary_photos WHERE diary_id=? ORDER BY sort_order, id", (item["id"],)).fetchall()
                 item["photos"] = [dict(p) for p in photos]
+                for photo in item["photos"]:
+                    video = photo.get("live_video")
+                    if video and os.path.exists(os.path.join(PHOTOS_DIR, "pv_" + video)):
+                        photo["live_preview"] = "pv_" + video
                 item["author_name"] = users.get(item["author_uid"], {}).get("name", "小狗")
                 res.append(item)
         return {"date": dt, "diaries": res}
@@ -2534,7 +2549,7 @@ def main():
     init_db()
     threading.Thread(target=cron_summary_worker, daemon=True).start()
     threading.Thread(target=precompute_summaries, daemon=True).start()
-    srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    srv = MediaHTTPServer(("0.0.0.0", PORT), Handler)
     print("sched-share listening on 0.0.0.0:%d, data dir %s" % (PORT, DATA_DIR), flush=True)
     srv.serve_forever()
 

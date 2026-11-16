@@ -141,6 +141,36 @@ def enqueue_media_job(job):
     _MEDIA_QUEUE.put(job)
 
 
+def ensure_live_preview(video_fp):
+    """生成独立的 H.264 播放副本；原视频保留给导出和实况照片合成。"""
+    preview_fp = os.path.join(os.path.dirname(video_fp), "pv_" + os.path.basename(video_fp))
+    if os.path.exists(preview_fp):
+        return True
+    if not os.path.exists(video_fp):
+        return False
+    tmp_fp = preview_fp + ".tmp.mp4"
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-threads", "1", "-i", video_fp,
+             "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264",
+             "-threads", "1", "-preset", "veryfast", "-crf", "26",
+             "-vf", "scale=w=720:h=720:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30",
+             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
+             "-movflags", "+faststart", tmp_fp],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        if r.returncode == 0 and os.path.exists(tmp_fp) and os.path.getsize(tmp_fp) > 1000 \
+                and os.path.exists(video_fp):
+            os.replace(tmp_fp, preview_fp)
+            return True
+    except Exception as e:
+        sys.stderr.write(f"[media worker] 实况播放副本失败: {e}\n")
+    finally:
+        if os.path.exists(tmp_fp):
+            with contextlib.suppress(Exception):
+                os.remove(tmp_fp)
+    return False
+
+
 def finalize_media(photo_fp, video_fp):
     """后台补处理已落盘的手账媒体：视频转码 → 合成实况照片 → 生成缩略图。
 
@@ -203,6 +233,8 @@ def finalize_media(photo_fp, video_fp):
         if photo_fp.lower().endswith(".jpg"):
             with contextlib.suppress(Exception):
                 ensure_view_image(photo_fp, os.path.join(photo_dir, "vw_" + base))
+        if video_fp and os.path.exists(video_fp):
+            ensure_live_preview(video_fp)
 
 
 def _moov_is_front(video_fp):

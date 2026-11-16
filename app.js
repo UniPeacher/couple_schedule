@@ -373,6 +373,7 @@ function openModal(modalId){
 }
 
 function closeAllModals(fromPop){
+  diaryDayRequest += 1;
   var showed = false;
   document.querySelectorAll(".overlay.show:not(.uconfirm)").forEach(function(o){
     o.classList.remove("show");
@@ -397,11 +398,11 @@ function closeAllModals(fromPop){
 function closePhotoViewer(){
   var pv = $("#ovPhotoViewer");
   if (!pv || pv.style.display === "none") return;
+  stopPvLiveVideo();
   if (history.state && history.state.modal === "photo"){
     history.back();
     return;
   }
-  stopPvLiveVideo();
   pv.style.display = "none";
   pv.classList.remove("show");
   syncPageScrollLock();
@@ -1769,24 +1770,40 @@ function applyPvTransform(smooth){
   if (vid){ vid.style.transition = tr; vid.style.transform = tf; }
 }
 
+var pvPlayback = 0;
+
 function stopPvLiveVideo(){
+  pvPlayback += 1;
   var vid = $("#pvVideo");
-  var img = $("#pvImage");
   if (vid){
+    vid.onplaying = vid.onended = vid.onerror = null;
     try { vid.pause(); } catch(e){}
     vid.style.opacity = "0";
     vid.style.display = "none";
+    vid.removeAttribute("src");
+    vid.removeAttribute("data-src");
+    try { vid.load(); } catch(e){}
   }
-  if (img) img.style.opacity = "1";
 }
 
 function playPvLiveVideo(){
   var item = pvPhotosList[pvCurrentIndex];
-  if (!item || typeof item !== "object" || !item.live) return;
+  var viewer = $("#ovPhotoViewer");
   var vid = $("#pvVideo");
-  var img = $("#pvImage");
-  if (!vid) return;
-  vid.muted = true; // 移动端 WebView 默认静音启动以确保 100% 自动播放不被拦截
+  if (!item || typeof item !== "object" || !item.live || !vid ||
+      !viewer || viewer.style.display !== "flex") return;
+  stopPvLiveVideo();
+  var playback = pvPlayback;
+  function isCurrent(){
+    return playback === pvPlayback && pvPhotosList[pvCurrentIndex] === item &&
+      viewer.style.display === "flex";
+  }
+  function showStill(){
+    if (!isCurrent()) return;
+    vid.style.opacity = "0";
+    vid.style.display = "none";
+  }
+  vid.muted = true;
   vid.playsInline = true;
   vid.setAttribute("muted", "");
   vid.setAttribute("playsinline", "");
@@ -1795,35 +1812,16 @@ function playPvLiveVideo(){
   vid.style.display = "block";
   vid.style.zIndex = "3";
   vid.style.pointerEvents = "none";
-
   vid.onplaying = function(){
-    vid.style.opacity = "1";
+    if (isCurrent()) vid.style.opacity = "1";
   };
-  vid.onended = function(){
-    vid.style.opacity = "0";
-    setTimeout(function(){ vid.style.display = "none"; }, 180);
-  };
-  vid.onerror = function(){
-    vid.style.opacity = "0";
-    vid.style.display = "none";
-  };
-
-  if (vid.getAttribute("data-src") !== item.live){
-    vid.src = item.live;
-    vid.setAttribute("data-src", item.live);
-    try { vid.load(); } catch(e){}
-  } else {
-    try { vid.currentTime = 0; } catch(e){}
-  }
-
-  var p = vid.play();
-  if (p && p.catch){
-    p.catch(function(){
-      setTimeout(function(){
-        try { vid.muted = true; vid.play(); } catch(e){}
-      }, 150);
-    });
-  }
+  vid.onended = showStill;
+  vid.onerror = showStill;
+  vid.src = item.preview || item.live;
+  try {
+    var p = vid.play();
+    if (p && p.catch) p.catch(showStill);
+  } catch(e){ showStill(); }
 }
 
 function savePhotoUrlToDevice(imgUrl){
@@ -1932,7 +1930,6 @@ function photoItemView(item){
 
 function updatePhotoViewer(){
   var img = $("#pvImage");
-  var vid = $("#pvVideo");
   var liveBtn = $("#pvLiveBtn");
   var ind = $("#pvIndicator");
   var bPrev = $("#pvBtnPrev");
@@ -1943,11 +1940,17 @@ function updatePhotoViewer(){
   stopPvLiveVideo();
   var cur = pvPhotosList[pvCurrentIndex];
   var liveUrl = (typeof cur === "object" && cur !== null) ? (cur.live || "") : "";
+  img.style.opacity = "0";
+  img.onload = function(){
+    if (pvPhotosList[pvCurrentIndex] === cur) img.style.opacity = "1";
+  };
+  img.onerror = function(){
+    if (pvPhotosList[pvCurrentIndex] === cur && img.getAttribute("src") !== photoItemSrc(cur)){
+      img.src = photoItemSrc(cur);
+    }
+  };
   img.src = photoItemView(cur);
-  if (vid){
-    vid.removeAttribute("src");
-    vid.setAttribute("data-src", "");
-  }
+  if (img.complete && img.naturalWidth) img.style.opacity = "1";
   if (liveBtn){
     liveBtn.style.display = liveUrl ? "inline-flex" : "none";
   }
@@ -1959,11 +1962,7 @@ function updatePhotoViewer(){
   if (ind) ind.textContent = (pvCurrentIndex + 1) + " / " + total;
   if (bPrev) bPrev.style.display = total > 1 ? "flex" : "none";
   if (bNext) bNext.style.display = total > 1 ? "flex" : "none";
-  if (liveUrl){
-    setTimeout(function(){
-      if (pvPhotosList[pvCurrentIndex] === cur) playPvLiveVideo();
-    }, 180);
-  }
+  if (liveUrl) playPvLiveVideo();
 }
 
 var curSummaryMonth = "";
@@ -2412,6 +2411,7 @@ function diaryDayHTML(dtStr, list){
           var pListJson = encodeURIComponent(JSON.stringify(d.photos.map(function(p){
             var srcUrl = "/photos/" + p.file_name;
             return { src: srcUrl, view: "/photos/vw_" + p.file_name,
+                     preview: p.live_preview ? ("/photos/" + p.live_preview) : "",
                      live: p.live_video ? ("/photos/" + p.live_video) : "" };
           })));
           photosHtml = '<div class="polaroid-gallery">' +
@@ -2419,7 +2419,7 @@ function diaryDayHTML(dtStr, list){
               var liveBadge = p.live_video ? '<span class="polaroid-live-badge"><span class="polaroid-live-dot"></span>LIVE</span>' : '';
               return '<div class="polaroid-card">' +
                 liveBadge +
-                '<img src="/photos/tb_' + p.file_name + '" class="polaroid-img" alt="" data-act="preview-photo" data-idx="' + pIdx + '" data-list="' + pListJson + '">' +
+                '<img src="/photos/tb_' + p.file_name + '" loading="lazy" decoding="async" class="polaroid-img" alt="" data-act="preview-photo" data-idx="' + pIdx + '" data-list="' + pListJson + '">' +
               '</div>';
             }).join("") +
           '</div>';
@@ -2474,27 +2474,43 @@ function paintDiaryDay(dtStr, list){
   if (ov && ov.classList.contains("show")) return;
   openModal("#ovDiaryDay");
 }
+var diaryDayRequest = 0;
 function openDayDiaries(dtStr, force){
   activeDiaryDate = dtStr;
-  var cached = DIARY_DAY_CACHE[dtStr];
-  if (cached && !force){
-    // 缓存秒开，后台静默对账；弹窗仍开着且数据有变化才重画
+  var request = ++diaryDayRequest;
+  var box = $("#ovDiaryDayBox");
+  var cached = !force && DIARY_DAY_CACHE[dtStr];
+  if (cached){
     paintDiaryDay(dtStr, cached);
-    api("/api/diaries?date=" + dtStr).then(function(res){
-      var list = res.diaries || [];
-      var changed = JSON.stringify(list) !== JSON.stringify(cached);
-      DIARY_DAY_CACHE[dtStr] = list;
-      if (changed && activeDiaryDate === dtStr && $("#ovDiaryDay").classList.contains("show")){
-        $("#ovDiaryDayBox").innerHTML = diaryDayHTML(dtStr, list);
-      }
-    }).catch(function(){});
-    return;
+  } else {
+    box.innerHTML = '<div class="mhead"><h3>' + fmtDateCN(dtStr) + ' 俩汪足迹 🐾</h3></div>' +
+      '<div role="status" style="text-align:center;padding:24px;color:var(--ink-muted)">🐾 正在翻开这一天的手账…</div>' +
+      '<div class="foot"><button type="button" class="p-btn" data-act="close">关闭</button></div>';
+    openModal("#ovDiaryDay");
+  }
+  box.setAttribute("aria-busy", "true");
+  function isCurrent(){
+    return request === diaryDayRequest && activeDiaryDate === dtStr &&
+      box === $("#ovDiaryDayBox") && $("#ovDiaryDay").classList.contains("show");
   }
   api("/api/diaries?date=" + dtStr).then(function(res){
+    if (!isCurrent()) return;
     var list = res.diaries || [];
     DIARY_DAY_CACHE[dtStr] = list;
-    paintDiaryDay(dtStr, list);
-  }).catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
+    if (!cached || JSON.stringify(list) !== JSON.stringify(cached)){
+      box.innerHTML = diaryDayHTML(dtStr, list);
+    }
+    box.setAttribute("aria-busy", "false");
+  }).catch(function(err){
+    if (!isCurrent()) return;
+    box.setAttribute("aria-busy", "false");
+    if (!cached && err.message !== "unauth"){
+      box.innerHTML = '<div class="mhead"><h3>' + fmtDateCN(dtStr) + ' 俩汪足迹 🐾</h3></div>' +
+        '<div role="status" style="text-align:center;padding:24px;color:var(--ink-muted)">手账暂时没能打开，请重试</div>' +
+        '<div class="foot"><button type="button" class="p-btn pri" data-act="open-day-diary" data-date="' + esc(dtStr) + '">重试</button>' +
+        '<button type="button" class="p-btn" data-act="close">关闭</button></div>';
+    }
+  });
 }
 
 var EVENT_DETAIL_CACHE = {};
@@ -2922,12 +2938,12 @@ var CLICK_ACTIONS = {
       pvPhotosList = [el.getAttribute("data-src") || el.src];
       pvCurrentIndex = 0;
     }
-    updatePhotoViewer();
     var pv = $("#ovPhotoViewer");
     if (pv){
       var pvWasOpen = pv.style.display === "flex";
       pv.style.display = "flex";
       pv.classList.add("show");
+      updatePhotoViewer();
       /* 已开着的大图只换内容（翻页/换图），历史条目不叠加 */
       if (!pvWasOpen){
         try {
