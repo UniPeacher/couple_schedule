@@ -27,9 +27,10 @@ var Cycle2 = (function () {
   }
   function fmtRange(a, b) {
     if (!a || !b) return '';
+    if (a === b) return fmtD(a);
     var pa = a.split('-'), pb = b.split('-');
     if (pa[0] !== pb[0]) return fmtD(a) + ' ～ ' + fmtD(b);
-    return (+pa[1]) + '月' + (+pa[2]) + '日 ～ ' + (+pb[1]) + '月' + (+pb[2]) + '日';
+    return (+pa[1]) + '月' + (+pa[2]) + '日 ～ ' + (+pb[2]) + '日';
   }
   /* SVG arc between two angles (radians, clockwise), for the phase segments. */
   function arcPath(cx, cy, r, a0, a1) {

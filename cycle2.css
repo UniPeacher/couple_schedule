@@ -214,7 +214,7 @@ html.dark .c2-page{
   font-size:12.5px;font-weight:700;color:var(--ink-secondary);white-space:nowrap;
 }
 .c2-metric .k i{font-style:normal;font-size:14px;line-height:1}
-.c2-metric b{font-size:13px;font-weight:800;color:var(--ink-primary);text-align:right;white-space:nowrap;margin-left:auto}
+.c2-metric b{font-size:13px;font-weight:800;color:var(--ink-primary);text-align:right;white-space:nowrap}
 .c2-link{
   display:block;width:100%;border:0;background:transparent;cursor:pointer;
   color:var(--c2-accent-d);font-size:13.5px;font-weight:800;padding:15px 0 0;text-align:center;
