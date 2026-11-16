@@ -2238,46 +2238,14 @@ class Handler(BaseHTTPRequestHandler):
                     if v_data:
                         v_fname = f"live_{dt}_{int(time.time())}_{token}.mp4"
                         v_fpath = os.path.join(PHOTOS_DIR, v_fname)
-                        raw_path = v_fpath + ".raw"
-                        with open(raw_path, "wb") as vf:
+                        # 先把原始视频写到位，后台再原地转码：转码期间链接也不会 404
+                        with open(v_fpath, "wb") as vf:
                             vf.write(v_data)
-                        try:
-                            import subprocess
-                            r = subprocess.run(
-                                [
-                                    "ffmpeg", "-y", "-i", raw_path,
-                                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-                                    "-vf", "scale='min(1080,iw)':-2", "-pix_fmt", "yuv420p",
-                                    "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
-                                    v_fpath
-                                ],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30
-                            )
-                            if r.returncode == 0 and os.path.exists(v_fpath) and os.path.getsize(v_fpath) > 1000:
-                                os.remove(raw_path)
-                            else:
-                                os.replace(raw_path, v_fpath)
-                        except Exception:
-                            if os.path.exists(raw_path):
-                                os.replace(raw_path, v_fpath)
 
-                    # 将静态封面图与 MP4 实况轨合成为标准单文件实况照片 (Motion Photo .jpg)，使得直接下载 .jpg 也是真·实况照片！
-                    try:
-                        if v_fpath and os.path.exists(v_fpath):
-                            with open(v_fpath, "rb") as vf2:
-                                final_mp4 = vf2.read()
-                            motion_jpg = synthesize_motion_photo_bytes(data, final_mp4)
-                            with open(fpath, "wb") as pf2:
-                                pf2.write(motion_jpg)
-                    except Exception:
-                        pass
-
-                # 新照片落库即生成缩略图，首图不等着看大图
-                if os.path.exists(fpath):
-                    try:
-                        ensure_thumb(fpath, os.path.join(PHOTOS_DIR, "tb_" + os.path.basename(fpath)))
-                    except Exception:
-                        pass
+                # 转码、实况合成、缩略图都排到后台：这批 ffmpeg 调用单次可达几十秒，
+                # 压在响应里会让客户端先超时断开，看起来像"一直还在上传"
+                images.enqueue_media_job(
+                    lambda fp=fpath, vfp=v_fpath: images.finalize_media(fp, vfp))
 
                 saved_items.append((fname, v_fname))
             except Exception as e:

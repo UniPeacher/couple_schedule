@@ -5,6 +5,8 @@
 import contextlib
 import hashlib
 import os
+import queue
+import subprocess
 import sys
 import threading
 
@@ -50,7 +52,6 @@ def ensure_thumb(src_fp, thumb_fp):
         return True
     if not os.path.exists(src_fp):
         return False
-    import subprocess
     tmp_fp = thumb_fp + ".tmp.jpg"
     ok = False
     with _THUMB_LOCK:
@@ -74,6 +75,94 @@ def ensure_thumb(src_fp, thumb_fp):
                     with contextlib.suppress(Exception):
                         os.remove(tmp_fp)
     return ok
+
+
+# ---------------------------------------------------------------- 落盘后处理队列
+
+# 手账照片写入磁盘后，转码、合成实况照片、生成缩略图都交给这一条后台线程串行跑。
+# 单次提交多张 LIVE 时这些 ffmpeg 调用实测相加要几十秒，绝不能压在 HTTP 响应里：
+# 客户端会先超时断开（nginx 侧就是 499），用户看到"还在上传"而服务端其实还在干活。
+_MEDIA_QUEUE = queue.Queue()
+
+
+def _media_worker():
+    while True:
+        job = _MEDIA_QUEUE.get()
+        try:
+            job()
+        except Exception as e:
+            sys.stderr.write(f"[media worker] {e}\n")
+        finally:
+            _MEDIA_QUEUE.task_done()
+
+
+_media_thread = threading.Thread(target=_media_worker, name="media-worker", daemon=True)
+_media_thread.start()
+
+
+def enqueue_media_job(job):
+    """把 ffmpeg 处理排进后台队列，调用方立即返回。"""
+    _MEDIA_QUEUE.put(job)
+
+
+def finalize_media(photo_fp, video_fp):
+    """后台补处理已落盘的手账媒体：视频转码 → 合成实况照片 → 生成缩略图。
+
+    只接文件路径，不持有字节：一次提交十几张 LIVE 时原始字节可达数百 MB，
+    排在队列里会把这台 1GB 内存的机器压到 OOM。
+    video_fp 里已经是原始视频，所以转码前后都随时可预览；每一步都是 best-effort，
+    失败就保留上一步的产物，不影响照片本身已可访问。
+    photo_fp 是这条媒体的锚点：照片已进回收站（记录被删）就不再产出任何产物。
+    """
+    if not os.path.exists(photo_fp):
+        return
+    if video_fp and os.path.exists(video_fp):
+        tmp_fp = video_fp + ".tmp.mp4"
+        try:
+            # 源视频通常已是 H.264/AAC：能直接复制流就不重编码，省掉最贵的一步
+            r = subprocess.run(
+                ["ffmpeg", "-y", "-i", video_fp, "-c", "copy",
+                 "-movflags", "+faststart", tmp_fp],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+            if not (r.returncode == 0 and os.path.exists(tmp_fp) and os.path.getsize(tmp_fp) > 1000):
+                r = subprocess.run(
+                    ["ffmpeg", "-y", "-i", video_fp,
+                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+                     "-vf", "scale='min(1080,iw)':-2", "-pix_fmt", "yuv420p",
+                     "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
+                     tmp_fp],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+            # 转码期间这篇手账可能已被删除（照片已进回收站），此时不再产出
+            if r.returncode == 0 and os.path.exists(tmp_fp) and os.path.getsize(tmp_fp) > 1000 \
+                    and os.path.exists(photo_fp):
+                os.replace(tmp_fp, video_fp)
+        except Exception as e:
+            sys.stderr.write(f"[media worker] 转码实况视频失败 {video_fp}: {e}\n")
+        finally:
+            with contextlib.suppress(Exception):
+                os.remove(tmp_fp)
+
+    # 静态封面图 + MP4 视频轨合成为单文件实况照片，直接下载 .jpg 也是真·实况照片
+    if video_fp and os.path.exists(video_fp) and os.path.exists(photo_fp):
+        tmp_fp = photo_fp + ".tmp.jpg"
+        try:
+            with open(photo_fp, "rb") as pf:
+                photo_bytes = pf.read()
+            with open(video_fp, "rb") as vf:
+                motion_jpg = synthesize_motion_photo_bytes(photo_bytes, vf.read())
+            # 原子替换：合成期间并发的大图/缩略图请求不会读到半截文件
+            with open(tmp_fp, "wb") as pf:
+                pf.write(motion_jpg)
+            os.replace(tmp_fp, photo_fp)
+        except Exception as e:
+            sys.stderr.write(f"[media worker] 合成实况照片失败 {photo_fp}: {e}\n")
+            with contextlib.suppress(Exception):
+                os.remove(tmp_fp)
+
+    if os.path.exists(photo_fp):
+        with contextlib.suppress(Exception):
+            ensure_thumb(photo_fp, os.path.join(os.path.dirname(photo_fp),
+                                                "tb_" + os.path.basename(photo_fp)))
 
 
 # ---------------------------------------------------------------- 实况照片合成
