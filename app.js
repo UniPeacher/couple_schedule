@@ -4097,6 +4097,10 @@ document.addEventListener("keydown", function(e){
    部分安卓内核（小米系等）的原生弹层不读取页面 color-scheme，
    深色页面下依旧白底刺眼；自绘弹层走 App 的 CSS 变量，深浅色天然跟随。 ---------- */
 function uiSheetShell(opts){
+  /* 防重入：真机 touch 与 click 可能双发，同一时刻只保留一层选择弹层 */
+  document.querySelectorAll('.overlay.usheet').forEach(function(old){
+    if (old._dismiss) old._dismiss(); else old.remove();
+  });
   var ov = document.createElement("div");
   ov.className = "overlay usheet";
   ov.innerHTML = '<div class="modal sheet-modal">' +
@@ -4310,9 +4314,14 @@ document.addEventListener("pointerdown", function(e){
   var el = e.target.closest ? e.target.closest("input[type=date],input[type=time],select") : null;
   if (el && !el.disabled && !el.readOnly) e.preventDefault();
 }, true);
+var _usheetGate = 0;
 document.addEventListener("click", function(e){
   var el = e.target.closest ? e.target.closest("input[type=date],input[type=time],select") : null;
   if (!el || el.disabled || el.readOnly) return;
+  /* 真机上 touch 与 click 可能先后各触发一次，窗口内只响应一次 */
+  var now = Date.now();
+  if (now - _usheetGate < 400) return;
+  _usheetGate = now;
   var open = usheetOpenFor(el);
   if (!open) return;
   try { open(); } catch (err) {}
