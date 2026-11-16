@@ -1222,7 +1222,7 @@ function renderApp(){
 }
 
 /* 月份跳转面板：手账月历与周期页共用。点各自的月份标签打开，选年选月直达。 */
-var monthPickCb = null, monthPickCur = null, mpBrowseYear = 0;
+var monthPickCb = null, monthPickCur = null, mpBrowseYear = 0, mpYearWin = 0, mpYearMode = false;
 function ensureMonthPicker(){
   var ov = $("#ovMonthPick");
   if (ov) return ov;
@@ -1237,7 +1237,7 @@ function ensureMonthPicker(){
       '</div>' +
       '<div class="mp-yearrow">' +
         '<button type="button" class="p-btn icon-btn" data-mp="year-prev" aria-label="上一年">‹</button>' +
-        '<span class="mp-year" id="mpYear"></span>' +
+        '<button type="button" class="mp-year" id="mpYear" data-mp="year-toggle" aria-expanded="false"></button>' +
         '<button type="button" class="p-btn icon-btn" data-mp="year-next" aria-label="下一年">›</button>' +
       '</div>' +
       '<div class="mp-grid" id="mpGrid"></div>' +
@@ -1251,27 +1251,64 @@ function ensureMonthPicker(){
     }
     var b = e.target.closest("[data-mp]");
     if (!b) return;
-    if (b.dataset.mp === "year-prev" || b.dataset.mp === "year-next"){
-      mpBrowseYear += b.dataset.mp === "year-next" ? 1 : -1;
+    var act = b.dataset.mp;
+    if (act === "year-toggle"){
+      mpYearMode = !mpYearMode;
+      if (mpYearMode) mpYearWin = mpYearBlock(mpBrowseYear);
       paintMonthPickGrid();
       return;
     }
-    if (b.dataset.mp === "back-now"){ pickMonthTo(todayISO().slice(0, 7)); return; }
-    if (b.dataset.mp === "m"){ pickMonthTo(mpBrowseYear + "-" + b.dataset.m); }
+    if (act === "year-prev" || act === "year-next"){
+      var step = act === "year-next" ? 1 : -1;
+      if (mpYearMode){
+        var nextWin = mpYearWin + step * MP_YEAR_SPAN;
+        if (nextWin >= MP_YEAR_MIN && nextWin <= MP_YEAR_MAX) mpYearWin = nextWin;
+      } else {
+        mpBrowseYear = Math.min(Math.max(mpBrowseYear + step, MP_YEAR_MIN), MP_YEAR_MAX + MP_YEAR_SPAN - 1);
+      }
+      paintMonthPickGrid();
+      return;
+    }
+    if (act === "back-now"){ pickMonthTo(todayISO().slice(0, 7)); return; }
+    if (act === "y"){ mpBrowseYear = +b.dataset.y; mpYearMode = false; paintMonthPickGrid(); return; }
+    if (act === "m"){ pickMonthTo(mpBrowseYear + "-" + b.dataset.m); }
   });
   return ov;
 }
+/* 年份模式：一页十年（按整十年对齐），‹ › 翻页；点年份回到月份网格再选月。 */
+var MP_YEAR_MIN = 1900, MP_YEAR_MAX = 2090, MP_YEAR_SPAN = 10;
+function mpYearBlock(y){
+  var start = MP_YEAR_MIN + Math.floor((y - MP_YEAR_MIN) / MP_YEAR_SPAN) * MP_YEAR_SPAN;
+  return Math.min(Math.max(start, MP_YEAR_MIN), MP_YEAR_MAX);
+}
 function paintMonthPickGrid(){
-  $("#mpYear").textContent = mpBrowseYear + " 年";
-  var nowY = +todayISO().slice(0, 4), nowM = +todayISO().slice(5, 7);
+  var yBtn = $("#mpYear"), grid = $("#mpGrid");
+  var todayY = +todayISO().slice(0, 4), todayM = +todayISO().slice(5, 7);
   var cells = "";
-  for (var m = 1; m <= 12; m++){
-    var mm = pad(m);
-    var on = (mpBrowseYear + "-" + mm) === monthPickCur ? " on" : "";
-    var now = (mpBrowseYear === nowY && m === nowM && !on) ? " now" : "";
-    cells += '<button type="button" class="mp-m' + on + now + '" data-mp="m" data-m="' + mm + '">' + m + ' 月</button>';
+  yBtn.setAttribute("aria-expanded", mpYearMode ? "true" : "false");
+  grid.className = mpYearMode ? "mp-grid years" : "mp-grid";
+  var prevBtn = $("#ovMonthPick").querySelector('[data-mp="year-prev"]');
+  var nextBtn = $("#ovMonthPick").querySelector('[data-mp="year-next"]');
+  prevBtn.setAttribute("aria-label", mpYearMode ? "前十年" : "上一年");
+  nextBtn.setAttribute("aria-label", mpYearMode ? "后十年" : "下一年");
+  if (mpYearMode){
+    yBtn.innerHTML = mpYearWin + " – " + (mpYearWin + MP_YEAR_SPAN - 1) + ' <span class="mp-caret">▴</span>';
+    for (var i = 0; i < MP_YEAR_SPAN; i++){
+      var y = mpYearWin + i;
+      var onY = y === mpBrowseYear ? " on" : "";
+      var nowY = (y === todayY && !onY) ? " now" : "";
+      cells += '<button type="button" class="mp-m' + onY + nowY + '" data-mp="y" data-y="' + y + '">' + y + ' 年</button>';
+    }
+  } else {
+    yBtn.innerHTML = mpBrowseYear + ' 年 <span class="mp-caret">▾</span>';
+    for (var m = 1; m <= 12; m++){
+      var mm = pad(m);
+      var on = (mpBrowseYear + "-" + mm) === monthPickCur ? " on" : "";
+      var now = (mpBrowseYear === todayY && m === todayM && !on) ? " now" : "";
+      cells += '<button type="button" class="mp-m' + on + now + '" data-mp="m" data-m="' + mm + '">' + m + ' 月</button>';
+    }
   }
-  $("#mpGrid").innerHTML = cells;
+  grid.innerHTML = cells;
 }
 function pickMonthTo(ym){
   var cb = monthPickCb;
@@ -1284,6 +1321,7 @@ function openMonthPicker(ym, cb){
   monthPickCb = cb || null;
   monthPickCur = ym || todayISO().slice(0, 7);
   mpBrowseYear = +monthPickCur.slice(0, 4);
+  mpYearMode = false;
   ensureMonthPicker();
   paintMonthPickGrid();
   openModal("#ovMonthPick");
@@ -4315,7 +4353,10 @@ function usheetOpenFor(el){
 function usheetHarden(el){
   if (!el || !el.tagName) return;
   if (el.tagName === "SELECT"){
+    /* select 没有 readonly；各内核弹原生下拉的触发点也不一致（click 的 preventDefault
+       在部分定制 ROM 上无效），直接让 select 收不到指针事件，由坐标命中接管。 */
     el.dataset.usheet = "1";
+    if (el.style.pointerEvents !== "none") el.style.pointerEvents = "none";
     return;
   }
   if (el.type === "date" || el.type === "time"){
@@ -4341,9 +4382,27 @@ if (window.MutationObserver){
     }
   }).observe(document.body, {childList: true, subtree: true});
 }
+/* select 设为 pointer-events:none 后事件落在祖先上，按坐标反查命中的 select */
+function usheetSelectAt(x, y){
+  var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
+  /* 只认最上层弹层内的 select：下层弹层（可能正在关闭）的控件不该被命中 */
+  var scope = null;
+  for (var i = 0; i < stack.length; i++){
+    var ov = stack[i].closest ? stack[i].closest(".overlay.show") : null;
+    if (ov){ scope = ov; break; }
+  }
+  var pool = scope ? scope.querySelectorAll('select[data-usheet="1"]')
+                   : document.querySelectorAll('select[data-usheet="1"]');
+  for (var j = 0; j < pool.length; j++){
+    var r = pool[j].getBoundingClientRect();
+    if (r.width && r.height && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return pool[j];
+  }
+  return null;
+}
 var _usheetGate = 0;
 document.addEventListener("click", function(e){
-  var el = e.target.closest ? e.target.closest("input[type=date],input[type=time],select") : null;
+  var el = e.target.closest ? e.target.closest("input[type=date],input[type=time]") : null;
+  if (!el || el.disabled) el = usheetSelectAt(e.clientX, e.clientY);
   if (!el || el.disabled) return;
   /* select 下拉与 input picker 都在 click 的默认动作里，必须在这里拦 */
   e.preventDefault();
