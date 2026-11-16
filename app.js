@@ -403,8 +403,14 @@ function setAppHTML(html){
       }
     }
   }
+  // 横滑功能条（手账页签等）随整树重建会把横向滚动位置弹回最左：重建前后按原顺序保持不动。
+  var segX = [];
+  app.querySelectorAll(".seg-scroll").forEach(function(el){ segX.push(el.scrollLeft); });
   app.innerHTML = "";
   while (tpl.firstChild) app.appendChild(tpl.firstChild);
+  app.querySelectorAll(".seg-scroll").forEach(function(el, i){
+    if (i < segX.length) el.scrollLeft = segX[i];
+  });
 }
 
 function render(){
@@ -4087,6 +4093,231 @@ document.addEventListener("keydown", function(e){
   });
 })();
 
+/* ---------- 自绘日期/时间/下拉选择弹层：替代原生弹层。
+   部分安卓内核（小米系等）的原生弹层不读取页面 color-scheme，
+   深色页面下依旧白底刺眼；自绘弹层走 App 的 CSS 变量，深浅色天然跟随。 ---------- */
+function uiSheetShell(opts){
+  var ov = document.createElement("div");
+  ov.className = "overlay usheet";
+  ov.innerHTML = '<div class="modal sheet-modal">' +
+    '<div class="sheet-head"><span class="sheet-title">' + (opts.title || "选择") + '</span>' +
+    '<button type="button" class="sheet-close" aria-label="关闭">✕</button></div>' +
+    opts.bodyHTML +
+  '</div>';
+  var settled = false;
+  var mo = null;
+  function finish(){
+    if (settled) return;
+    settled = true;
+    document.removeEventListener("keydown", onKey);
+    if (mo) mo.disconnect();
+    ov.classList.remove("show");
+    setTimeout(function(){ if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }, 180);
+  }
+  function onKey(e){ if (e.key === "Escape") finish(); }
+  ov._dismiss = finish;
+  ov.addEventListener("click", function(e){ if (e.target === ov) finish(); });
+  ov.querySelector(".sheet-close").addEventListener("click", finish);
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(ov);
+  /* 视图重渲染即视为失效，弹层随之关闭（与 uiConfirm 同策略） */
+  /* 仅在真正切换视图时关闭（消息轮询等局部重绘不该打断选择） */
+  var entryView = CURRENT_VIEW;
+  mo = new MutationObserver(function(){
+    if (typeof CURRENT_VIEW !== "undefined" && CURRENT_VIEW !== entryView) finish();
+  });
+  mo.observe(document.getElementById("app"), {childList:true});
+  requestAnimationFrame(function(){ ov.classList.add("show"); });
+  return ov;
+}
+function uiDateSheet(input){
+  if (!input || input.disabled || input.readOnly) return;
+  var parts = (input.value || todayISO()).split("-");
+  var y = Math.min(Math.max(+parts[0] || 2026, 1970), 2100);
+  var m = Math.min(Math.max(+parts[1] || 1, 1), 12);
+  var selDay = +parts[2] || 0;
+  var today = todayISO();
+  var ov = uiSheetShell({ title: "选择日期 📅", bodyHTML:
+    '<div class="sheet-sub">' +
+      '<button type="button" class="sheet-nav" data-nav="-1">‹</button>' +
+      '<span class="sheet-month"></span>' +
+      '<button type="button" class="sheet-nav" data-nav="1">›</button>' +
+    '</div>' +
+    '<div class="sheet-wd"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>' +
+    '<div class="sheet-days"></div>' +
+    '<div class="sheet-foot"><button type="button" class="sheet-link" data-act="today">回到今天</button></div>'
+  });
+  var daysEl = ov.querySelector(".sheet-days");
+  var monthEl = ov.querySelector(".sheet-month");
+  function render(){
+    monthEl.textContent = y + " 年 " + m + " 月";
+    var offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+    var dim = new Date(y, m, 0).getDate();
+    var html = "";
+    for (var i = 0; i < offset; i++) html += "<span></span>";
+    for (var d = 1; d <= dim; d++){
+      var iso = y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      var cls = "sheet-day" + (iso === today ? " today" : "") + (d === selDay ? " on" : "");
+      html += '<button type="button" class="' + cls + '" data-v="' + iso + '">' + d + '</button>';
+    }
+    daysEl.innerHTML = html;
+  }
+  daysEl.addEventListener("click", function(e){
+    var b = e.target.closest(".sheet-day");
+    if (!b) return;
+    input.value = b.getAttribute("data-v");
+    input.dispatchEvent(new Event("input", {bubbles:true}));
+    input.dispatchEvent(new Event("change", {bubbles:true}));
+    ov._dismiss();
+  });
+  ov.querySelectorAll(".sheet-nav").forEach(function(b){
+    b.addEventListener("click", function(){
+      m += (+b.getAttribute("data-nav"));
+      if (m < 1){ m = 12; y--; } else if (m > 12){ m = 1; y++; }
+      render();
+    });
+  });
+  ov.querySelector('[data-act="today"]').addEventListener("click", function(){
+    var p = todayISO().split("-");
+    y = +p[0]; m = +p[1]; selDay = +p[2];
+    render();
+  });
+  render();
+}
+function uiTimeSheet(input){
+  if (!input || input.disabled || input.readOnly) return;
+  var parts = (input.value || "19:00").split(":");
+  var h = Math.min(Math.max(+parts[0] || 0, 0), 23);
+  var mi = Math.min(Math.max(+parts[1] || 0, 0), 59);
+  var mode = "h";
+  var ov = uiSheetShell({ title: "选择时间 ⏰", bodyHTML:
+    '<div class="clock-head"><div class="clock-time">' +
+      '<button type="button" class="clock-seg clock-hh"></button>' +
+      '<span class="clock-colon">:</span>' +
+      '<button type="button" class="clock-seg clock-mm"></button>' +
+    '</div></div>' +
+    '<div class="clock-wrap"><div class="clock-dial"></div></div>' +
+    '<div class="sheet-foot clock-foot">' +
+      '<button type="button" class="sheet-link clock-clear">清除</button>' +
+      '<span style="flex:1"></span>' +
+      '<button type="button" class="sheet-link clock-cancel">取消</button>' +
+      '<button type="button" class="sheet-ok">设置</button>' +
+    '</div>'
+  });
+  var dial = ov.querySelector(".clock-dial");
+  var hhEl = ov.querySelector(".clock-hh");
+  var mmEl = ov.querySelector(".clock-mm");
+  function pad(n){ return String(n).padStart(2, "0"); }
+  function paintSegs(){
+    hhEl.textContent = pad(h);
+    mmEl.textContent = pad(mi);
+    hhEl.classList.toggle("on", mode === "h");
+    mmEl.classList.toggle("on", mode === "m");
+  }
+  function renderDial(){
+    var html = "";
+    var i, ang, r2, sel;
+    if (mode === "h"){
+      for (i = 1; i <= 12; i++){
+        ang = i * 30 * Math.PI / 180;
+        html += '<button type="button" class="clock-n" style="left:' + (118 + 94 * Math.sin(ang) - 15) + 'px;top:' + (118 - 94 * Math.cos(ang) - 15) + 'px">' + i + '</button>';
+      }
+      for (i = 0; i < 12; i++){
+        var innerH = i === 0 ? 0 : 12 + i;
+        ang = i * 30 * Math.PI / 180;
+        html += '<button type="button" class="clock-n clock-n-in" style="left:' + (118 + 62 * Math.sin(ang) - 14) + 'px;top:' + (118 - 62 * Math.cos(ang) - 14) + 'px">' + pad(innerH) + '</button>';
+      }
+      r2 = (h === 0 || h > 12) ? 62 : 94;
+      ang = (h % 12) * 30
+      sel = pad(h);
+    } else {
+      for (i = 0; i < 60; i += 5){
+        ang = i * 6 * Math.PI / 180;
+        html += '<button type="button" class="clock-n" style="left:' + (118 + 94 * Math.sin(ang) - 15) + 'px;top:' + (118 - 94 * Math.cos(ang) - 15) + 'px">' + pad(i) + '</button>';
+      }
+      r2 = 94;
+      ang = mi * 6
+      sel = pad(mi);
+    }
+    html += '<div class="clock-hand" style="height:' + r2 + 'px;transform:rotate(' + ang + 'deg)"><div class="clock-knob">' + sel + '</div></div>' +
+            '<div class="clock-center"></div>';
+    dial.innerHTML = html;
+  }
+  dial.addEventListener("click", function(e){
+    var rect = dial.getBoundingClientRect();
+    var dx = e.clientX - (rect.left + 118);
+    var dy = e.clientY - (rect.top + 118);
+    var r = Math.hypot(dx, dy);
+    if (r < 24) return;
+    var deg = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+    if (mode === "h"){
+      var idx = Math.round(deg / 30) % 12;
+      h = r < 78 ? (idx === 0 ? 0 : 12 + idx) : (idx === 0 ? 12 : idx);
+      mode = "m";
+    } else {
+      mi = Math.round(deg / 6) % 60;
+    }
+    paintSegs();
+    renderDial();
+  });
+  hhEl.addEventListener("click", function(){ mode = "h"; paintSegs(); renderDial(); });
+  mmEl.addEventListener("click", function(){ mode = "m"; paintSegs(); renderDial(); });
+  paintSegs();
+  renderDial();
+  var clearBtn = ov.querySelector(".clock-clear");
+  var cancelBtn = ov.querySelector(".clock-cancel");
+  var okBtn = ov.querySelector(".sheet-ok");
+  clearBtn.addEventListener("click", function(){
+    input.value = "";
+    input.dispatchEvent(new Event("input", {bubbles:true}));
+    input.dispatchEvent(new Event("change", {bubbles:true}));
+    ov._dismiss();
+  });
+  cancelBtn.addEventListener("click", function(){ ov._dismiss(); });
+  okBtn.addEventListener("click", function(){
+    input.value = pad(h) + ":" + pad(mi);
+    input.dispatchEvent(new Event("input", {bubbles:true}));
+    input.dispatchEvent(new Event("change", {bubbles:true}));
+    ov._dismiss();
+  });
+}
+function uiSelectSheet(sel){
+  if (!sel || sel.disabled) return;
+  var opts = Array.prototype.slice.call(sel.options);
+  if (!opts.length) return;
+  var body = '<div class="sheet-opt-list">' + opts.map(function(o, i){
+    return '<button type="button" class="sheet-opt' + (o.selected ? " on" : "") + (o.disabled ? " disabled" : "") + '" data-i="' + i + '">' +
+      '<span class="sheet-opt-label">' + esc(o.textContent) + '</span><span class="sheet-dot"></span></button>';
+  }).join("") + '</div>';
+  var ov = uiSheetShell({ title: sel.getAttribute("aria-label") || "请选择", bodyHTML: body });
+  ov.querySelector(".sheet-opt-list").addEventListener("click", function(e){
+    var b = e.target.closest(".sheet-opt");
+    if (!b || b.classList.contains("disabled")) return;
+    sel.value = opts[+b.getAttribute("data-i")].value;
+    sel.dispatchEvent(new Event("input", {bubbles:true}));
+    sel.dispatchEvent(new Event("change", {bubbles:true}));
+    ov._dismiss();
+  });
+}
+function usheetOpenFor(el){
+  if (el.tagName === "SELECT") return function(){ uiSelectSheet(el); };
+  if (el.type === "date") return function(){ uiDateSheet(el); };
+  if (el.type === "time") return function(){ uiTimeSheet(el); };
+  return null;
+}
+/* pointerdown 拦下原生弹层的默认行为；click 打开自绘弹层。异常时原生弹层自然兜底 */
+document.addEventListener("pointerdown", function(e){
+  var el = e.target.closest ? e.target.closest("input[type=date],input[type=time],select") : null;
+  if (el && !el.disabled && !el.readOnly) e.preventDefault();
+}, true);
+document.addEventListener("click", function(e){
+  var el = e.target.closest ? e.target.closest("input[type=date],input[type=time],select") : null;
+  if (!el || el.disabled || el.readOnly) return;
+  var open = usheetOpenFor(el);
+  if (!open) return;
+  try { open(); } catch (err) {}
+}, true);
+
 window.addEventListener("popstate", function(e){
   // 主动关闭弹窗/确认框触发的那次回退，不做任何处理
   if (skipNextPopRender){ skipNextPopRender = false; return; }
@@ -4094,6 +4325,9 @@ window.addEventListener("popstate", function(e){
   // 0. 确认弹窗在最上层时，物理返回只关闭确认弹窗，不动视图与历史
   var uc = document.querySelector(".overlay.uconfirm.show");
   if (uc && uc._dismiss){ uc._dismiss(); return; }
+  // 0.2 自绘选择弹层在最上层时，物理返回只关闭它
+  var us = document.querySelector(".overlay.usheet.show");
+  if (us && us._dismiss){ us._dismiss(); return; }
 
   // 0.5 设置页有未保存修改时，返回手势先询问（与底部导航的离开守卫同一策略）
   if (CURRENT_VIEW === "settings" && window.Settings && Settings.isDirty() &&
