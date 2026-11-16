@@ -988,10 +988,14 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
   display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:12px;
 }
 .mp-year{
-  font-size:16px;font-weight:900;color:var(--ink-primary);
+  font:inherit;font-size:16px;font-weight:900;color:var(--ink-primary);
   letter-spacing:.5px;min-width:74px;text-align:center;
+  background:none;border:none;padding:2px 6px;border-radius:10px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:3px;
 }
+.mp-year:active{transform:scale(.97)}
 .mp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.mp-grid.years{grid-template-columns:repeat(5,1fr)}
 .mp-m{
   border:1.5px solid var(--line-strong);border-radius:14px;background:var(--bg-card);
   color:var(--ink-secondary);font-size:13.5px;font-weight:700;padding:10px 0;cursor:pointer;
@@ -1160,6 +1164,21 @@ html:not(.dark) .login-hero img{mix-blend-mode:multiply}
 .sheet-opt.disabled{opacity:.4;pointer-events:none}
 .sheet-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--line-strong);flex:none}
 .sheet-opt.on .sheet-dot{border-color:var(--dog-a);background:var(--dog-a)}
+
+/* ---------- 表单控件在深色下的细节 ---------- */
+/* 复选框/单选用主题强调色，避免深色页面上出现系统默认蓝 */
+input[type=checkbox], input[type=radio]{accent-color:var(--dog-a)}
+/* 日期/时间为只读展示态：点下去给一点反馈，明确"可点击弹选择器" */
+input[type=date][data-usheet], input[type=time][data-usheet]{cursor:pointer}
+input[type=date][data-usheet]:active, input[type=time][data-usheet]:active{transform:scale(.995)}
+/* 只读日期/时间在深色下的占位「年/月/日」偏暗，提一档对比 */
+html.dark input[type=date][data-usheet], html.dark input[type=time][data-usheet]{color:var(--ink-primary)}
+html.dark input[type=date][data-usheet]::-webkit-datetime-edit,
+html.dark input[type=time][data-usheet]::-webkit-datetime-edit{color:var(--ink-primary)}
+html.dark input[type=date][data-usheet]:invalid::-webkit-datetime-edit-text,
+html.dark input[type=date][data-usheet]:invalid::-webkit-datetime-edit-month-field,
+html.dark input[type=date][data-usheet]:invalid::-webkit-datetime-edit-day-field,
+html.dark input[type=date][data-usheet]:invalid::-webkit-datetime-edit-year-field{color:var(--ink-muted)}
 .login-hero:hover img{transform:scale(1.04)}
 .login-wave-corner{
   position:absolute;right:8px;top:8px;

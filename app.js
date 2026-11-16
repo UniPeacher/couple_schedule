@@ -3528,6 +3528,9 @@ document.addEventListener("submit", function(e){
       .finally(function(){ delete f.dataset.busy; });
   } else if (f.id === "addForm"){
     e.preventDefault();
+    /* readonly 控件不参与浏览器 required 校验，这里补齐 */
+    var lack = usheetMissingRequired(f);
+    if (lack){ toast("还差「" + lack + "」没填哦 🐾", "err"); return; }
     f.dataset.busy = "1";
     var body = {
       uid: addUid, repeat: addRep,
@@ -4363,7 +4366,25 @@ function usheetHarden(el){
     el.dataset.usheet = "1";
     if (!el.readOnly) el.readOnly = true;
     if (el.getAttribute("inputmode") !== "none") el.setAttribute("inputmode", "none");
+    /* readonly 会让浏览器跳过 required 约束校验，用 aria-required 留给 JS 侧校验 */
+    if (el.required) el.setAttribute("aria-required", "true");
   }
+}
+/* 必填校验：readonly 的 date/time 不再被浏览器约束校验覆盖，统一在这里判断。
+   返回第一个缺失字段的中文标签，全部通过返回 null。 */
+function usheetMissingRequired(scope){
+  var fields = (scope || document).querySelectorAll("[required], [aria-required=\"true\"]");
+  for (var i = 0; i < fields.length; i++){
+    var el = fields[i];
+    if (el.disabled) continue;
+    if (el.offsetParent === null && el.type !== "hidden") continue;  /* 隐藏字段（如未选模式的日期）不算 */
+    if (!String(el.value || "").trim()){
+      var lab = el.closest ? el.closest(".field") : null;
+      var labelEl = lab ? lab.querySelector("label") : null;
+      return (labelEl ? labelEl.textContent : (el.getAttribute("aria-label") || "必填项")).replace(/[（(].*?[）)]/g, "").trim();
+    }
+  }
+  return null;
 }
 function usheetHardenAll(root){
   (root || document).querySelectorAll('input[type=date],input[type=time],select').forEach(usheetHarden);
