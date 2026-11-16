@@ -176,7 +176,7 @@ function uiConfirm(opts){
       document.removeEventListener("keydown", onKey);
       if (mo) mo.disconnect();
       ov.classList.remove("show");
-      if (!document.querySelector(".overlay.show")) document.body.style.overflow = "";
+      syncPageScrollLock();
       setTimeout(function(){ if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }, 220);
       /* 按钮/Esc 关闭：消费自己压入的历史条目；手势返回已在 popstate 弹掉，无需再退 */
       if (history.state && history.state.type === "uconfirm"){
@@ -313,6 +313,45 @@ function load(opts){
   }).catch(function(e){ if (e.message !== "unauth") toast(e.message, "err"); });
 }
 
+/* 页面滚动锁与安卓壳下拉刷新闸门。
+   任一层遮罩（弹窗/确认框/选择弹层/大图）打开时：锁住文档滚动，并通知原生壳
+   不要把这一层里的向下拖拽当成下拉刷新——原生 SwipeRefreshLayout 只判断 WebView
+   文档能否上滚，弹层里它永远是"到顶"，于是拖一下就整页 reload。
+   状态由"当前是否有遮罩"派生而不是计数：按钮、遮罩、Esc、物理返回、重入清场
+   各条路径都会走到这里，计数一旦漏减就会永久锁死或永久放开。 */
+function syncPageScrollLock(){
+  var locked = !!document.querySelector(".overlay.show, #ovPhotoViewer.show");
+  document.documentElement.classList.toggle("ov-lock", locked);
+  var bridge = window.AndroidApp;
+  if (bridge && bridge.setPullRefreshEnabled){
+    try { bridge.setPullRefreshEnabled(!locked); } catch(e){}
+  }
+  return locked;
+}
+
+/* 原生壳下拉刷新调这个：只重取当前视图的数据并重绘，不整页 load。
+   整页 reload 会丢滚动位置、丢掉未提交的表单和已打开的面板。 */
+function softRefresh(){
+  if (!ME) return Promise.resolve();
+  var p;
+  if (CURRENT_VIEW === "month") p = load({silent: false});
+  else if (CURRENT_VIEW === "messages") p = loadMessages();
+  else if (CURRENT_VIEW === "wishes") p = loadWishes();
+  else if (CURRENT_VIEW === "trips") p = loadTrips();
+  else if (CURRENT_VIEW === "cycle2"){ Cycle2.mount(); p = Promise.resolve(); }
+  else p = load({silent: false});
+  return Promise.resolve(p).then(function(){
+    if (CURRENT_VIEW === "summary" && typeof loadSummary === "function" && curSummaryMonth){
+      return loadSummary(curSummaryMonth, true, false);
+    }
+  }).then(function(){
+    if (CURRENT_VIEW === "month" || CURRENT_VIEW === "cycle2"){
+      api("/api/month?month=" + MONTH_ANCHOR).then(function(mj){ applyMonth(mj); }).catch(function(){});
+    }
+  }).catch(function(){ /* 失败已在各自 path 里 toast 过，不重复报 */ });
+}
+window.softRefresh = softRefresh;
+
 /* 模态框打开与关闭（支持原生历史记录与物理/手势返回键）；打开期间锁住 body 滚动防穿透。
    每个弹窗与一条历史条目一一配对：首次打开压入；已开着（或条目已在栈顶）只刷新不叠加；
    在别的弹窗上层打开时顶替下层条目（编辑页顶替详情页），返回不留空条目。 */
@@ -323,7 +362,7 @@ function openModal(modalId){
     (history.state && history.state.type === "modal" && history.state.id === modalId);
   var nested = !already && !!document.querySelector(".overlay.show:not(.uconfirm)");
   el.classList.add("show");
-  document.body.style.overflow = "hidden";
+  syncPageScrollLock();
   if (already) return;
   if (nested) history.replaceState({type:"modal", id:modalId}, "");
   else history.pushState({type:"modal", id:modalId}, "");
@@ -342,7 +381,7 @@ function closeAllModals(fromPop){
     pv.classList.remove("show");
     showed = true;
   }
-  document.body.style.overflow = "";
+  syncPageScrollLock();
   /* 主动关闭时消费配对的历史条目，返回键不会停在已关闭的弹窗上；
      popstate 路径（fromPop）条目已被弹出，不能再退 */
   if (!fromPop && history.state && history.state.type === "modal") history.back();
@@ -361,7 +400,7 @@ function closePhotoViewer(){
   stopPvLiveVideo();
   pv.style.display = "none";
   pv.classList.remove("show");
-  document.body.style.overflow = "";
+  syncPageScrollLock();
 }
 function renderTopbarHTML(){
   var myIsA = ME.uid === "a";
@@ -427,6 +466,9 @@ function render(){
     else renderApp();
   }
   if (detailWasOpen && curDetail && $("#ovDetail")) openDetail(curDetail.id, curDetail.date, false);
+  /* 遮罩都挂在 #app 内，整树重建会把它们一并清掉：锁状态必须跟着重算，
+     否则一次重绘之后页面会永久停在不可滚动。 */
+  syncPageScrollLock();
   Cycle2.mount();
   dismissSplash();
 }
@@ -662,17 +704,16 @@ function loadMessages(){
   if (MESSAGES_DATA){
     // 缓存秒出，后台静默对账；未读数以最新一次拉取为准，不用缓存旧值刷新角标
     renderMessagesList();
-    api("/api/messages").then(function(res){
+    return api("/api/messages").then(function(res){
       if (!(res && res.ok)) return;
       MESSAGES_DATA = res.messages || [];
       saveLS("sched_messages", MESSAGES_DATA);
       setUnreadCount(res.unread_count);
       if (CURRENT_VIEW === "messages") renderMessagesList();
     }).catch(function(){});
-    return;
   }
   if (box) box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted);font-weight:700">🐶 正在拉取信箱通知...</div>';
-  api("/api/messages").then(function(res){
+  return api("/api/messages").then(function(res){
     if (res && res.ok){
       MESSAGES_DATA = res.messages || [];
       saveLS("sched_messages", MESSAGES_DATA);
@@ -792,7 +833,7 @@ function loadWishes(){
     // 缓存秒出，后台静默对账；数据有变化才重画，避免列表跳动
     updateWishStats(wishLocalStats(WISHES_DATA));
     renderWishesList();
-    api("/api/wishes").then(function(res){
+    return api("/api/wishes").then(function(res){
       if (!(res && res.ok)) return;
       var changed = JSON.stringify(res.wishes || []) !== JSON.stringify(WISHES_DATA);
       storeWishes(res.wishes || []);
@@ -802,10 +843,9 @@ function loadWishes(){
         renderWishesList();
       }
     }).catch(function(){});
-    return;
   }
   if (box) box.innerHTML = '<div style="text-align:center;padding:30px 0;color:var(--ink-muted);font-weight:700">🐶 正在翻开俩汪心愿清单...</div>';
-  api("/api/wishes").then(function(res){
+  return api("/api/wishes").then(function(res){
     if (res && res.ok){
       storeWishes(res.wishes || []);
       updateWishStats(res.stats);
@@ -1297,7 +1337,7 @@ function paintMonthPickGrid(){
       var y = mpYearWin + i;
       var onY = y === mpBrowseYear ? " on" : "";
       var nowY = (y === todayY && !onY) ? " now" : "";
-      cells += '<button type="button" class="mp-m' + onY + nowY + '" data-mp="y" data-y="' + y + '">' + y + ' 年</button>';
+      cells += '<button type="button" class="mp-m' + onY + nowY + '" data-mp="y" data-y="' + y + '">' + y + '</button>';
     }
   } else {
     yBtn.innerHTML = mpBrowseYear + ' 年 <span class="mp-caret">▾</span>';
@@ -1445,45 +1485,9 @@ function openWeekPicker(){
   openModal("#ovWeekPick");
 }
 
-/* 按日期跳转：入口在「今天」按钮的▾；不需要校历配置，任意日期可达 */
-function ensureDatePick(){
-  var ov = $("#ovDatePick");
-  if (ov) return ov;
-  ov = document.createElement("div");
-  ov.className = "overlay";
-  ov.id = "ovDatePick";
-  ov.innerHTML =
-    '<div class="modal">' +
-      '<div class="mhead">' +
-        '<div class="mhead-left"><h3>跳到哪一天？📅</h3></div>' +
-        '<img src="/img/dog-set.webp?v=20261116a" alt="" class="mhead-img">' +
-      '</div>' +
-      '<div class="wp-field">' +
-        '<span class="wp-label">按日期</span>' +
-        '<input type="date" class="wp-date-input" id="dpDate" aria-label="选择日期">' +
-      '</div>' +
-      '<div class="mp-foot"><button type="button" class="p-btn" data-dp="back-today">🐾 回到今天</button></div>' +
-    '</div>';
-  document.body.appendChild(ov);
-  ov.addEventListener("click", function(e){
-    if (e.target === ov){ closeAllModals(); return; }
-    var b = e.target.closest("[data-dp]");
-    if (!b) return;
-    if (b.dataset.dp === "back-today"){ jumpToDay(todayISO()); return; }
-  });
-  ov.querySelector("#dpDate").addEventListener("change", function(){
-    if (this.value) jumpToDay(this.value);
-  });
-  ov.querySelector("#dpDate").addEventListener("keydown", function(e){
-    if (e.key === "Enter" && this.value) jumpToDay(this.value);
-  });
-  return ov;
-}
-
+/* 按日期跳转：入口在「今天」按钮的▾，直接开日期面板；不需要校历配置，任意日期可达 */
 function openDatePick(){
-  ensureDatePick();
-  $("#dpDate").value = todayISO();
-  openModal("#ovDatePick");
+  uiDateSheet(null, function(date){ jumpToDay(date); });
 }
 
 function jumpToDay(date){
@@ -4157,6 +4161,7 @@ function uiSheetShell(opts){
     document.removeEventListener("keydown", onKey);
     if (mo) mo.disconnect();
     ov.classList.remove("show");
+    syncPageScrollLock();
     setTimeout(function(){ if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }, 180);
   }
   function onKey(e){ if (e.key === "Escape") finish(); }
@@ -4172,30 +4177,61 @@ function uiSheetShell(opts){
     if (typeof CURRENT_VIEW !== "undefined" && CURRENT_VIEW !== entryView) finish();
   });
   mo.observe(document.getElementById("app"), {childList:true});
-  requestAnimationFrame(function(){ ov.classList.add("show"); });
+  requestAnimationFrame(function(){ ov.classList.add("show"); syncPageScrollLock(); });
   return ov;
 }
-function uiDateSheet(input){
-  if (!input || input.disabled) return;
-  var parts = (input.value || todayISO()).split("-");
-  var y = Math.min(Math.max(+parts[0] || 2026, 1970), 2100);
+function uiDateSheet(input, onPick){
+  if (input && input.disabled) return;
+  var parts = ((input && input.value) || todayISO()).split("-");
+  var y = Math.min(Math.max(+parts[0] || 2026, 1970), 2099);
   var m = Math.min(Math.max(+parts[1] || 1, 1), 12);
   var selDay = +parts[2] || 0;
   var today = todayISO();
   var ov = uiSheetShell({ title: "选择日期 📅", bodyHTML:
     '<div class="sheet-sub">' +
-      '<button type="button" class="sheet-nav" data-nav="-1">‹</button>' +
-      '<span class="sheet-month"></span>' +
-      '<button type="button" class="sheet-nav" data-nav="1">›</button>' +
+      '<button type="button" class="sheet-nav" data-nav="-1" aria-label="上一月">‹</button>' +
+      '<button type="button" class="sheet-month" aria-expanded="false"></button>' +
+      '<button type="button" class="sheet-nav" data-nav="1" aria-label="下一月">›</button>' +
     '</div>' +
+    '<div class="sheet-years"></div>' +
     '<div class="sheet-wd"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>' +
     '<div class="sheet-days"></div>' +
     '<div class="sheet-foot"><button type="button" class="sheet-link" data-act="today">回到今天</button></div>'
   });
   var daysEl = ov.querySelector(".sheet-days");
+  var yearsEl = ov.querySelector(".sheet-years");
+  var wdEl = ov.querySelector(".sheet-wd");
   var monthEl = ov.querySelector(".sheet-month");
+  var navs = ov.querySelectorAll(".sheet-nav");
+  var yearMode = false, yearWin = 0;
+  var Y_MIN = 1970, Y_MAX = 2099, Y_SPAN = 10;
+  function yearBlock(v){
+    var start = Y_MIN + Math.floor((v - Y_MIN) / Y_SPAN) * Y_SPAN;
+    return Math.min(Math.max(start, Y_MIN), Y_MAX - Y_SPAN + 1);
+  }
   function render(){
-    monthEl.textContent = y + " 年 " + m + " 月";
+    monthEl.setAttribute("aria-expanded", yearMode ? "true" : "false");
+    daysEl.style.display = yearMode ? "none" : "";
+    wdEl.style.display = yearMode ? "none" : "";
+    navs.forEach(function(n){
+      n.setAttribute("aria-label", yearMode
+        ? (n.getAttribute("data-nav") === "1" ? "后十年" : "前十年")
+        : (n.getAttribute("data-nav") === "1" ? "下一月" : "上一月"));
+    });
+    if (yearMode){
+      monthEl.innerHTML = yearWin + " – " + (yearWin + Y_SPAN - 1) + ' <span class="mp-caret">▴</span>';
+      yearsEl.style.display = "";
+      var yNow = +todayISO().slice(0, 4), yHtml = "";
+      for (var i = 0; i < Y_SPAN; i++){
+        var yy = yearWin + i;
+        var cls = "sheet-year" + (yy === y ? " on" : "") + (yy === yNow && yy !== y ? " today" : "");
+        yHtml += '<button type="button" class="' + cls + '" data-y="' + yy + '">' + yy + '</button>';
+      }
+      yearsEl.innerHTML = yHtml;
+      return;
+    }
+    yearsEl.style.display = "none";
+    monthEl.innerHTML = y + " 年 " + m + " 月" + ' <span class="mp-caret">▾</span>';
     var offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
     var dim = new Date(y, m, 0).getDate();
     var html = "";
@@ -4210,21 +4246,49 @@ function uiDateSheet(input){
   daysEl.addEventListener("click", function(e){
     var b = e.target.closest(".sheet-day");
     if (!b) return;
-    input.value = b.getAttribute("data-v");
-    input.dispatchEvent(new Event("input", {bubbles:true}));
-    input.dispatchEvent(new Event("change", {bubbles:true}));
+    var picked = b.getAttribute("data-v");
+    if (input){
+      input.value = picked;
+      input.dispatchEvent(new Event("input", {bubbles:true}));
+      input.dispatchEvent(new Event("change", {bubbles:true}));
+    }
     ov._dismiss();
+    if (onPick) onPick(picked);
+  });
+  monthEl.addEventListener("click", function(){
+    yearMode = !yearMode;
+    if (yearMode) yearWin = yearBlock(y);
+    render();
+  });
+  yearsEl.addEventListener("click", function(e){
+    var b = e.target.closest(".sheet-year");
+    if (!b) return;
+    y = +b.getAttribute("data-y");
+    yearMode = false;
+    render();
   });
   ov.querySelectorAll(".sheet-nav").forEach(function(b){
     b.addEventListener("click", function(){
-      m += (+b.getAttribute("data-nav"));
-      if (m < 1){ m = 12; y--; } else if (m > 12){ m = 1; y++; }
+      var step = +b.getAttribute("data-nav");
+      if (yearMode){
+        var next = yearWin + step * Y_SPAN;
+        var lastStart = Y_MAX - Y_SPAN + 1;
+        if (next >= Y_MIN && next <= lastStart) yearWin = next;
+        render();
+        return;
+      }
+      m += step;
+      var ny = y, nm = m;
+      if (nm < 1){ nm = 12; ny--; } else if (nm > 12){ nm = 1; ny++; }
+      if (ny < Y_MIN || ny > Y_MAX) return;
+      y = ny; m = nm;
       render();
     });
   });
   ov.querySelector('[data-act="today"]').addEventListener("click", function(){
     var p = todayISO().split("-");
     y = +p[0]; m = +p[1]; selDay = +p[2];
+    yearMode = false;
     render();
   });
   render();

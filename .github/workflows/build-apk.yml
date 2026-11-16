@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feat/cycle-v2 ]
     tags: [ 'v*' ]
   workflow_dispatch:
 
@@ -34,24 +34,32 @@ jobs:
         run: |
           gradle assembleRelease --stacktrace
 
+      - name: Read version from build.gradle
+        run: |
+          VERSION=$(grep -oP 'versionName\s+"\K[^"]+' android/app/build.gradle)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Building v$VERSION"
+
       - name: Prepare APK Artifact
         run: |
           mkdir -p output
-          cp android/app/build/outputs/apk/release/app-release.apk output/couple-schedule-v1.0.0.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "output/couple-schedule-v$VERSION.apk"
 
       - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: couple-schedule-apk
-          path: output/couple-schedule-v1.0.0.apk
+          path: output/couple-schedule-v${{ env.VERSION }}.apk
           retention-days: 30
 
+      # 只有打 tag 才发 Release：普通推送只产构建产物，避免同一版本号反复覆盖已发布的包
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: output/couple-schedule-v1.0.0.apk
-          tag_name: v1.0.0
-          name: "线条小狗日程 v1.0.0 🐾"
+          files: output/couple-schedule-v${{ env.VERSION }}.apk
+          tag_name: ${{ github.ref_name }}
+          name: "线条小狗日程 ${{ github.ref_name }} 🐾"
           body: |
             ## 🐾 线条小狗情侣日程共享 App (Android)
 
