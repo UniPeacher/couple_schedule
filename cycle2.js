@@ -23,14 +23,15 @@ var Cycle2 = (function () {
   function fmtD(iso) {
     if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || '';
     var p = iso.split('-');
-    return (+p[1]) + '月' + (+p[2]) + '日';
+    return (+p[1]) + '.' + (+p[2]);
+  }
+  function fmtFull(iso) {
+    return iso ? iso.replace(/-/g, '.') : '';
   }
   function fmtRange(a, b) {
     if (!a || !b) return '';
     if (a === b) return fmtD(a);
-    var pa = a.split('-'), pb = b.split('-');
-    if (pa[0] !== pb[0]) return fmtD(a) + ' ～ ' + fmtD(b);
-    return (+pa[1]) + '月' + (+pa[2]) + '日 ～ ' + (+pb[2]) + '日';
+    return fmtD(a) + ' ～ ' + fmtD(b);
   }
   /* SVG arc between two angles (radians, clockwise), for the phase segments. */
   function arcPath(cx, cy, r, a0, a1) {
@@ -296,7 +297,7 @@ var Cycle2 = (function () {
 
   function monthLabel() {
     var p = monthAnchor().split('-');
-    return String(p[0]).slice(2) + '年' + (+p[1]) + '月';
+    return p[0] + '.' + (+p[1]);
   }
 
   function mainCard(s) {
@@ -431,8 +432,8 @@ var Cycle2 = (function () {
 
   function periodPanel(s) {
     var rows = (s.periods || []).map(function (r) {
-      return '<div class="c2-history"><div><strong>' + h(r.start_date) + '</strong>' +
-        '<p class="c2-muted">至 <span class="c2-nowrap">' + h(r.end_date || '结束待确认') + '</span> · ' +
+      return '<div class="c2-history"><div><strong>' + h(fmtFull(r.start_date)) + '</strong>' +
+        '<p class="c2-muted">至 <span class="c2-nowrap">' + h(fmtFull(r.end_date) || '结束待确认') + '</span> · ' +
         (r.source && r.source.author_uid !== s.uid ? '伴侣代记，本人已确认' : '本人记录') + '</p></div>' +
         '<div class="c2-actions">' + btn('编辑', 'edit', 'data-id="' + r.id + '"') +
         btn('删除', 'delete-period', 'data-id="' + r.id + '"') + '</div></div>';
