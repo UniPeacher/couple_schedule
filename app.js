@@ -120,6 +120,8 @@ function toast(msg, type){ var t=$("#toast"); t.textContent=msg; t.classList.rem
 function syncThemeColor(){
   var tc = document.querySelector('meta[name="theme-color"]');
   if (tc) tc.content = document.documentElement.classList.contains("dark") ? "#15181e" : "#faf6f0";
+  var csm = document.querySelector('meta[name="color-scheme"]');
+  if (csm) csm.content = document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
 /* 外观模式："1"固定深色 / "0"固定浅色 / 未存过=跟随系统；跟随系统时随手机深浅色实时切换 */

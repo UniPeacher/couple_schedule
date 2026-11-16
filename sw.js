@@ -1,7 +1,7 @@
 /* 线条小狗 · 两人日程 Service Worker
  * 策略：静态资源缓存优先 + 后台更新；页面网络优先（离线回退缓存骨架，数据由前端 localStorage 水合）；/api 永不缓存。
  * 资源更新靠 template 里的 ?v= 版本参数（新 URL 必然回源），无需手动清缓存。 */
-var CACHE = "sched-static-v1";
+var CACHE = "sched-static-v2";
 var STATIC_ASSETS = [
   "/", "/app.css", "/app.js", "/cycle2.css", "/cycle2.js", "/settings_ui.css", "/settings_ui.js",
   "/img/dogheads.png", "/img/dog-couple.png", "/img/dog-couple.webp"
