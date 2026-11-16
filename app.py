@@ -41,6 +41,7 @@ import trips
 IMG_FILES = images.IMG_FILES
 get_image_asset = images.get_image_asset
 ensure_thumb = images.ensure_thumb
+ensure_view_image = images.ensure_view_image
 synthesize_motion_photo_bytes = images.synthesize_motion_photo_bytes
 send_ntfy_push = notices.send_ntfy_push
 push_system_notice = notices.push_system_notice
@@ -1415,8 +1416,13 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 fn = os.path.basename(path[8:])
                 thumb_fp = ""
+                view_fp = ""
+                # tb_ 缩略图给拍立得墙，vw_ 查看尺寸给大图；两者都按需从原图派生
                 if fn.startswith("tb_") and len(fn) > 7:
                     thumb_fp = os.path.join(PHOTOS_DIR, fn)
+                    fn = fn[3:]
+                elif fn.startswith("vw_") and len(fn) > 7:
+                    view_fp = os.path.join(PHOTOS_DIR, fn)
                     fn = fn[3:]
                 fp = os.path.join(PHOTOS_DIR, fn)
                 if thumb_fp and fn.lower().endswith(".jpg"):
@@ -1424,6 +1430,11 @@ class Handler(BaseHTTPRequestHandler):
                         ensure_thumb(fp, thumb_fp)
                     if os.path.exists(thumb_fp):
                         fp = thumb_fp
+                if view_fp and fn.lower().endswith(".jpg"):
+                    if not os.path.exists(view_fp):
+                        ensure_view_image(fp, view_fp)
+                    if os.path.exists(view_fp):
+                        fp = view_fp
                 if fp and os.path.exists(fp):
                     mime = "image/jpeg"
                     lfn = fn.lower()
@@ -1432,9 +1443,10 @@ class Handler(BaseHTTPRequestHandler):
                     elif lfn.endswith(".mp4"): mime = "video/mp4"
                     elif lfn.endswith(".mov"): mime = "video/quicktime"
                     elif lfn.endswith(".webm"): mime = "video/webm"
-                    # 缩略图内容永不变化，可长缓存；原图保留 7 天
+                    # 缩略图与查看尺寸图由同一份原图派生、内容不变，可长缓存；原图保留 7 天
+                    derived = (thumb_fp and fp == thumb_fp) or (view_fp and fp == view_fp)
                     cache_ctl = ("public, max-age=31536000, immutable"
-                                 if (thumb_fp and fp == thumb_fp)
+                                 if derived
                                  else "public, max-age=604800")
                     file_size = os.path.getsize(fp)
                     range_hdr = self.headers.get("Range")

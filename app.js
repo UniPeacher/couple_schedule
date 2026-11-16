@@ -1919,6 +1919,17 @@ function scrollToToday(){
   scrollToDay(todayISO());
 }
 
+function photoItemSrc(item){
+  /* 列表项的原图地址：保存、导出、分享都走它 */
+  return (typeof item === "object" && item !== null) ? (item.src || "") : (item || "");
+}
+
+function photoItemView(item){
+  /* 大图显示地址：vw_ 查看尺寸更省流量，派生图还没生成时回退原图 */
+  if (typeof item !== "object" || item === null) return item || "";
+  return item.view || item.src || "";
+}
+
 function updatePhotoViewer(){
   var img = $("#pvImage");
   var vid = $("#pvVideo");
@@ -1931,9 +1942,8 @@ function updatePhotoViewer(){
   if (total === 0) return;
   stopPvLiveVideo();
   var cur = pvPhotosList[pvCurrentIndex];
-  var imgUrl = (typeof cur === "object" && cur !== null) ? cur.src : cur;
   var liveUrl = (typeof cur === "object" && cur !== null) ? (cur.live || "") : "";
-  img.src = imgUrl;
+  img.src = photoItemView(cur);
   if (vid){
     vid.removeAttribute("src");
     vid.setAttribute("data-src", "");
@@ -2400,7 +2410,9 @@ function diaryDayHTML(dtStr, list){
         var photosHtml = "";
         if (d.photos && d.photos.length > 0){
           var pListJson = encodeURIComponent(JSON.stringify(d.photos.map(function(p){
-            return { src: "/photos/" + p.file_name, live: p.live_video ? ("/photos/" + p.live_video) : "" };
+            var srcUrl = "/photos/" + p.file_name;
+            return { src: srcUrl, view: "/photos/vw_" + p.file_name,
+                     live: p.live_video ? ("/photos/" + p.live_video) : "" };
           })));
           photosHtml = '<div class="polaroid-gallery">' +
             d.photos.map(function(p, pIdx){
@@ -2950,9 +2962,7 @@ var CLICK_ACTIONS = {
   },
   "pv-save-photo": function(el, e) {
     var act = "pv-save-photo";
-    var curItem = pvPhotosList[pvCurrentIndex];
-    var imgUrl = (typeof curItem === "object" && curItem !== null) ? curItem.src : curItem;
-    savePhotoUrlToDevice(imgUrl);
+    savePhotoUrlToDevice(photoItemSrc(pvPhotosList[pvCurrentIndex]));
   
   },
   "close-photo": function(el, e) {
@@ -4120,7 +4130,7 @@ document.addEventListener("keydown", function(e){
       if (pvScale <= 1.05){
         liveHoldTimer = setTimeout(function(){
           var curItem = pvPhotosList[pvCurrentIndex];
-          var imgUrl = (typeof curItem === "object" && curItem !== null) ? curItem.src : curItem;
+          var imgUrl = photoItemSrc(curItem);
           var liveUrl = (typeof curItem === "object" && curItem !== null) ? (curItem.live || "") : "";
           if (liveUrl) playPvLiveVideo();
           if (!window.AndroidApp || window.AndroidApp.saveMediaToGallery){
@@ -4230,6 +4240,8 @@ document.addEventListener("keydown", function(e){
         try {
           var idx = +polaroidImg.getAttribute("data-idx") || 0;
           var list = JSON.parse(decodeURIComponent(polaroidImg.getAttribute("data-list") || "[]"));
+          /* 缩略图 src 只是 tb_ 图；保存/导出要给原图 */
+          if (list[idx]) src = photoItemSrc(list[idx]) || src;
           if (list[idx] && typeof list[idx] === "object") liveUrl = list[idx].live || "";
         } catch(err){}
         showPhotoActionSheet(src, liveUrl);
@@ -4271,14 +4283,15 @@ document.addEventListener("keydown", function(e){
         try {
           var idx = +polaroidImg.getAttribute("data-idx") || 0;
           var list = JSON.parse(decodeURIComponent(polaroidImg.getAttribute("data-list") || "[]"));
+          /* 缩略图 src 只是 tb_ 图；保存/导出要给原图 */
+          if (list[idx]) src = photoItemSrc(list[idx]) || src;
           if (list[idx] && typeof list[idx] === "object") liveUrl = list[idx].live || "";
         } catch(err){}
         showPhotoActionSheet(src, liveUrl);
       } else {
         var curItem = pvPhotosList[pvCurrentIndex];
-        var imgUrl = (typeof curItem === "object" && curItem !== null) ? curItem.src : curItem;
-        var liveUrl = (typeof curItem === "object" && curItem !== null) ? (curItem.live || "") : "";
-        showPhotoActionSheet(imgUrl, liveUrl);
+        showPhotoActionSheet(photoItemSrc(curItem),
+                             (typeof curItem === "object" && curItem !== null) ? (curItem.live || "") : "");
       }
     }
   });

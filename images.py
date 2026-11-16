@@ -77,6 +77,42 @@ def ensure_thumb(src_fp, thumb_fp):
     return ok
 
 
+# 大图查看用的衍生图：手机上大图最长边也就 ~1000px，原图动辄 20MB、
+# 4096px 宽，直接下原图要好几秒，还会和实况视频抢同一条带宽。
+_VIEW_MAX = 1600
+
+
+def ensure_view_image(src_fp, view_fp):
+    """生成大图查看用的衍生图（最长边 1600px）。best-effort：失败返回 False，调用方回退原图。"""
+    if os.path.exists(view_fp):
+        return True
+    if not os.path.exists(src_fp):
+        return False
+    tmp_fp = view_fp + ".tmp.jpg"
+    ok = False
+    with _THUMB_LOCK:
+        if os.path.exists(view_fp):
+            return True
+        for extra in (["-f", "mjpeg"], []):
+            try:
+                r = subprocess.run(
+                    ["ffmpeg", "-y"] + extra + ["-i", src_fp,
+                     "-vf", "scale=w=min(iw\\,%d):h=-2" % _VIEW_MAX, "-q:v", "5",
+                     "-frames:v", "1", tmp_fp],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+                if r.returncode == 0 and os.path.exists(tmp_fp) and os.path.getsize(tmp_fp) > 500:
+                    os.replace(tmp_fp, view_fp)
+                    ok = True
+                    break
+            except Exception as e:
+                sys.stderr.write("[view error] %s: %s\n" % (src_fp, e))
+            finally:
+                if os.path.exists(tmp_fp):
+                    with contextlib.suppress(Exception):
+                        os.remove(tmp_fp)
+    return ok
+
+
 # ---------------------------------------------------------------- 落盘后处理队列
 
 # 手账照片写入磁盘后，转码、合成实况照片、生成缩略图都交给这一条后台线程串行跑。
@@ -116,7 +152,7 @@ def finalize_media(photo_fp, video_fp):
     """
     if not os.path.exists(photo_fp):
         return
-    if video_fp and os.path.exists(video_fp):
+    if video_fp and os.path.exists(video_fp) and not _moov_is_front(video_fp):
         tmp_fp = video_fp + ".tmp.mp4"
         try:
             # 源视频通常已是 H.264/AAC：能直接复制流就不重编码，省掉最贵的一步
@@ -160,9 +196,40 @@ def finalize_media(photo_fp, video_fp):
                 os.remove(tmp_fp)
 
     if os.path.exists(photo_fp):
+        photo_dir = os.path.dirname(photo_fp)
+        base = os.path.basename(photo_fp)
         with contextlib.suppress(Exception):
-            ensure_thumb(photo_fp, os.path.join(os.path.dirname(photo_fp),
-                                                "tb_" + os.path.basename(photo_fp)))
+            ensure_thumb(photo_fp, os.path.join(photo_dir, "tb_" + base))
+        if photo_fp.lower().endswith(".jpg"):
+            with contextlib.suppress(Exception):
+                ensure_view_image(photo_fp, os.path.join(photo_dir, "vw_" + base))
+
+
+def _moov_is_front(video_fp):
+    """moov 原子是否在 mdat 之前（faststart）。在尾部时浏览器要先发一个尾部 Range
+    请求拿索引，移动网络下起播会多等一两秒。"""
+    try:
+        size = os.path.getsize(video_fp)
+        moov_at = mdat_at = -1
+        with open(video_fp, "rb") as f:
+            head = f.read(min(size, 1 << 20))
+            pos = head.find(b"moov")
+            if pos > 0:
+                moov_at = pos
+            pos = head.find(b"mdat")
+            if pos > 0:
+                mdat_at = pos
+        if moov_at > 0 and mdat_at > 0:
+            return moov_at < mdat_at
+        if moov_at < 0:
+            # moov 不在前 1MB：一定是尾部，需要重封装
+            with open(video_fp, "rb") as f:
+                f.seek(max(0, size - (1 << 20)))
+                tail = f.read()
+            return b"moov" not in tail
+        return True
+    except Exception:
+        return True
 
 
 # ---------------------------------------------------------------- 实况照片合成
