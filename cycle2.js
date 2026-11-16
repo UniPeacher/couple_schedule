@@ -584,7 +584,12 @@ var Cycle2 = (function () {
     var shell = document.querySelector('.page-container.c2-page');
     if (shell) shell.classList.toggle('has-savebar', !!recordTab);
     if (recordTab) {
+      /* 记录页横滑页签条随重绘整块重建，会把滚动位置弹回最左：重建前后保持原位 */
+      var prevTabs = box.querySelector('.c2-tabs');
+      var segX = prevTabs ? prevTabs.scrollLeft : 0;
       box.innerHTML = recordPage(s);
+      var newTabs = box.querySelector('.c2-tabs');
+      if (newTabs) newTabs.scrollLeft = segX;
       fillDay(recordDate || todayISO());
       bindForms();
       return;
