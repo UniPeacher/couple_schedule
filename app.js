@@ -29,6 +29,10 @@ var curWishFilter = "all";
 var addWishUid = "a";
 var addWishCat = "travel";
 var addWishPrio = 0;
+var curWishDetailId = null;
+var wishEditing = false;
+var wishEditCat = "life";
+var wishEditPrio = 0;
 var diaryPhotosToUpload = []; // base64 list
 var curEditingDiary = null;
 var curEditingEventId = null;
@@ -909,7 +913,7 @@ function renderWishesList(){
     var isA = w.creator_uid === "a";
     var creatorPill = '<span class="school-badge ' + (isA ? "a" : "b") + '" style="font-size:10px;padding:1px 6px">' + (isA ? "🐶 " : "🐾 ") + esc(w.creator_name || (isA ? "小金毛" : "小白狗")) + '</span>';
 
-    return '<div class="wish-card' + (w.priority ? ' priority' : '') + (isDone ? ' done' : '') + '">' +
+    return '<div class="wish-card' + (w.priority ? ' priority' : '') + (isDone ? ' done' : '') + '" data-act="open-wish" data-wid="' + w.id + '" role="button" title="点开查看详情">' +
       '<button type="button" class="wish-del-btn" data-act="del-wish" data-wid="' + w.id + '" title="删除此心愿">🗑️</button>' +
       '<button type="button" class="wish-check-btn" data-act="toggle-wish" data-wid="' + w.id + '" title="' + (isDone ? "重新标记为待完成" : "打勾！实现这个心愿") + '">' +
         (isDone ? '✓' : '🐾') +
@@ -932,6 +936,85 @@ function renderWishesList(){
       '</div>' +
     '</div>';
   }).join("");
+}
+
+var WISH_CATS = [
+  ["travel", "✈️ 旅行"],
+  ["food", "🍜 美食"],
+  ["movie", "🎬 影音"],
+  ["life", "🏡 生活"],
+  ["other", "💡 其他"]
+];
+function wishCatLabel(v){
+  for (var i = 0; i < WISH_CATS.length; i++){ if (WISH_CATS[i][0] === v) return WISH_CATS[i][1]; }
+  return "✨ 心愿";
+}
+function findWish(id){
+  var list = WISHES_DATA || [];
+  for (var i = 0; i < list.length; i++){ if (+list[i].id === +id) return list[i]; }
+  return null;
+}
+function wishDetailHTML(w){
+  if (!w) return '<div style="padding:20px 0;text-align:center;color:var(--ink-muted);font-weight:700">这条心愿已经不在了 🐾</div>';
+  var isDone = !!w.is_done;
+  var isA = w.creator_uid === "a";
+  var creatorPill = '<span class="school-badge ' + (isA ? "a" : "b") + '" style="font-size:11px;padding:1px 7px">' + (isA ? "🐶 " : "🐾 ") + esc(w.creator_name || (isA ? "小金毛" : "小白狗")) + '</span>';
+  return '<div class="mhead">' +
+      '<div class="mhead-left"><h3>' + (wishEditing ? "修改心愿 ✏️" : "心愿详情 ✨") + '</h3></div>' +
+      '<img src="/img/dog-add.png" alt="" class="mhead-img">' +
+    '</div>' +
+    (wishEditing ? wishEditFormHTML(w) : (
+      '<div class="d-meta">' +
+        '<div class="row"><span class="k">心愿</span><span class="v">' + esc(w.title) + '</span></div>' +
+        '<div class="row"><span class="k">分类</span><span class="v">' + wishCatLabel(w.category) + (w.priority ? ' · <span style="color:#ef4444;font-weight:800">🔥 超级想去</span>' : '') + '</span></div>' +
+        (w.note ? '<div class="row"><span class="k">备注</span><span class="v" style="white-space:pre-wrap">' + esc(w.note) + '</span></div>' : '') +
+        '<div class="row"><span class="k">许愿人</span><span class="v">' + creatorPill + '</span></div>' +
+        '<div class="row"><span class="k">记录于</span><span class="v">' + esc(w.created_at || "") + '</span></div>' +
+        '<div class="row"><span class="k">状态</span><span class="v">' + (isDone ? ('🎉 已实现' + (w.done_at ? ' · ' + esc(w.done_at) : '')) : '⏳ 奔赴中') + '</span></div>' +
+      '</div>' +
+      '<div class="foot" style="justify-content:space-between;margin-top:14px;flex-wrap:wrap;gap:8px">' +
+        '<div style="display:flex;gap:6px">' +
+          '<button class="p-btn pri" data-act="edit-wish-detail">✏️ 修改</button>' +
+          (isDone ? '' : '<button class="p-btn" data-act="wish-detail-toggle">🎉 标记实现</button>') +
+        '</div>' +
+        '<button class="p-btn" data-act="close">关闭</button>' +
+      '</div>'
+    ));
+}
+function wishEditFormHTML(w){
+  var catSeg = WISH_CATS.map(function(c){
+    return '<div class="opt' + (c[0] === wishEditCat ? " on" : "") + '" style="flex:1 1 28%;white-space:nowrap" data-act="pick-wish-edit-cat" data-v="' + c[0] + '">' + c[1] + '</div>';
+  }).join("");
+  return '<div class="field"><label>心愿内容 💖</label>' +
+      '<input id="we_title" maxlength="80" value="' + esc(w.title) + '">' +
+    '</div>' +
+    '<div class="field"><label>心愿分类</label>' +
+      '<div class="seg" id="wishEditCatSeg" style="flex-wrap:wrap">' + catSeg + '</div>' +
+    '</div>' +
+    '<div class="field"><label>期盼程度</label>' +
+      '<div class="seg" id="wishEditPrioSeg">' +
+        '<div class="opt' + (wishEditPrio ? "" : " on") + '" data-act="pick-wish-edit-prio" data-v="0">✨ 普通心愿</div>' +
+        '<div class="opt' + (wishEditPrio ? " on" : "") + '" data-act="pick-wish-edit-prio" data-v="1">🔥 超级想做</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="field"><label>详细备注 / 攻略地点（选填）</label>' +
+      '<textarea id="we_note" rows="3" maxlength="300">' + esc(w.note || "") + '</textarea>' +
+    '</div>' +
+    '<div class="mfoot" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button type="button" class="p-btn" data-act="cancel-edit-wish">取消</button>' +
+      '<button type="button" class="p-btn pri" data-act="save-edit-wish" data-wid="' + w.id + '">💾 保存修改</button>' +
+    '</div>';
+}
+function paintWishDetail(){
+  var box = $("#ovWishDetailBox");
+  if (!box) return;
+  box.innerHTML = wishDetailHTML(findWish(curWishDetailId));
+}
+function openWishDetail(wid){
+  curWishDetailId = +wid;
+  wishEditing = false;
+  paintWishDetail();
+  openModal("#ovWishDetail");
 }
 
 function renderAnnivPage(){
@@ -1561,6 +1644,8 @@ function modalsHTML(){
     '</form></div></div>' +
 
     '<div class="overlay" id="ovDetail"><div class="modal" id="ovDetailBox"></div></div>' +
+
+    '<div class="overlay" id="ovWishDetail"><div class="modal" id="ovWishDetailBox"></div></div>' +
 
     '<div class="overlay" id="ovDiaryDay"><div class="modal" id="ovDiaryDayBox"></div></div>' +
 
@@ -3406,6 +3491,65 @@ var CLICK_ACTIONS = {
   },
 
   /* ---- 心愿 ---- */
+  "open-wish": function(el, e) {
+    openWishDetail(+el.getAttribute("data-wid"));
+  },
+  "edit-wish-detail": function(el, e) {
+    var w = findWish(curWishDetailId);
+    if (!w) return;
+    wishEditing = true;
+    wishEditCat = w.category || "life";
+    wishEditPrio = w.priority ? 1 : 0;
+    paintWishDetail();
+  },
+  "cancel-edit-wish": function(el, e) {
+    wishEditing = false;
+    paintWishDetail();
+  },
+  "pick-wish-edit-cat": function(el, e) {
+    wishEditCat = el.getAttribute("data-v") || "life";
+    document.querySelectorAll("#wishEditCatSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-v") === wishEditCat);
+    });
+  },
+  "pick-wish-edit-prio": function(el, e) {
+    wishEditPrio = +el.getAttribute("data-v") || 0;
+    document.querySelectorAll("#wishEditPrioSeg .opt").forEach(function(o){
+      o.classList.toggle("on", +o.getAttribute("data-v") === wishEditPrio);
+    });
+  },
+  "save-edit-wish": function(el, e) {
+    var wid = +el.getAttribute("data-wid");
+    var w = findWish(wid);
+    if (!w) return;
+    var title = ($("#we_title") ? $("#we_title").value : "").trim();
+    if (!title){ toast("请输入心愿内容 🐾"); return; }
+    if (el.dataset.busy === "1") return;
+    el.dataset.busy = "1";
+    var note = ($("#we_note") ? $("#we_note").value : "").trim();
+    api("/api/wishes/update", {
+      method: "POST",
+      body: {id: wid, title: title, category: wishEditCat, priority: wishEditPrio, note: note}
+    }).then(function(){
+      w.title = title; w.note = note; w.category = wishEditCat; w.priority = wishEditPrio;
+      storeWishes(WISHES_DATA);
+      wishEditing = false;
+      paintWishDetail();
+      renderWishesList();
+      toast("心愿已更新 ✨");
+    }).catch(function(err){ toast(err.message || "保存失败", "err"); })
+      .finally(function(){ delete el.dataset.busy; });
+  },
+  "wish-detail-toggle": function(el, e) {
+    var wid = curWishDetailId;
+    if (!wid) return;
+    api("/api/wishes/toggle", {method:"POST", body:{id:wid}}).then(function(res){
+      toast(res.is_done ? "🎉 恭喜！共同实现了一个心愿！" : "已重新标记为待完成 🐾");
+      return loadWishes();
+    }).then(function(){
+      paintWishDetail();
+    }).catch(function(err){ toast(err.message || "操作失败", "err"); });
+  },
   "toggle-wish": function(el, e) {
     var act = "toggle-wish";
     var wid = +el.getAttribute("data-wid");
