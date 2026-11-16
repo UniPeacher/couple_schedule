@@ -4135,7 +4135,7 @@ function uiSheetShell(opts){
   return ov;
 }
 function uiDateSheet(input){
-  if (!input || input.disabled || input.readOnly) return;
+  if (!input || input.disabled) return;
   var parts = (input.value || todayISO()).split("-");
   var y = Math.min(Math.max(+parts[0] || 2026, 1970), 2100);
   var m = Math.min(Math.max(+parts[1] || 1, 1), 12);
@@ -4189,7 +4189,7 @@ function uiDateSheet(input){
   render();
 }
 function uiTimeSheet(input){
-  if (!input || input.disabled || input.readOnly) return;
+  if (!input || input.disabled) return;
   var parts = (input.value || "19:00").split(":");
   var h = Math.min(Math.max(+parts[0] || 0, 0), 23);
   var mi = Math.min(Math.max(+parts[1] || 0, 0), 59);
@@ -4309,15 +4309,44 @@ function usheetOpenFor(el){
   if (el.type === "time") return function(){ uiTimeSheet(el); };
   return null;
 }
-/* pointerdown 拦下原生弹层的默认行为；click 打开自绘弹层。异常时原生弹层自然兜底 */
-document.addEventListener("pointerdown", function(e){
-  var el = e.target.closest ? e.target.closest("input[type=date],input[type=time],select") : null;
-  if (el && !el.disabled && !el.readOnly) e.preventDefault();
-}, true);
+/* 原生弹层由 focus/click 的默认行为弹出，pointerdown 上的 preventDefault 拦不住。
+   做法：这三类控件统一 readonly + inputmode=none——原生 picker 与软键盘都不再弹，
+   点击仍由自绘弹层接管；readonly 不影响 JS 赋值与 change 事件派发。 */
+function usheetHarden(el){
+  if (!el || !el.tagName) return;
+  if (el.tagName === "SELECT"){
+    el.dataset.usheet = "1";
+    return;
+  }
+  if (el.type === "date" || el.type === "time"){
+    el.dataset.usheet = "1";
+    if (!el.readOnly) el.readOnly = true;
+    if (el.getAttribute("inputmode") !== "none") el.setAttribute("inputmode", "none");
+  }
+}
+function usheetHardenAll(root){
+  (root || document).querySelectorAll('input[type=date],input[type=time],select').forEach(usheetHarden);
+}
+/* 动态渲染出来的新控件也要加固 */
+function usheetHardenTree(node){
+  if (!node || node.nodeType !== 1) return;
+  if (node.matches && node.matches('input[type=date],input[type=time],select')) usheetHarden(node);
+  if (node.querySelectorAll) usheetHardenAll(node);
+}
+if (window.MutationObserver){
+  new MutationObserver(function(muts){
+    for (var i = 0; i < muts.length; i++){
+      var added = muts[i].addedNodes;
+      for (var j = 0; j < added.length; j++) usheetHardenTree(added[j]);
+    }
+  }).observe(document.body, {childList: true, subtree: true});
+}
 var _usheetGate = 0;
 document.addEventListener("click", function(e){
   var el = e.target.closest ? e.target.closest("input[type=date],input[type=time],select") : null;
-  if (!el || el.disabled || el.readOnly) return;
+  if (!el || el.disabled) return;
+  /* select 下拉与 input picker 都在 click 的默认动作里，必须在这里拦 */
+  e.preventDefault();
   /* 真机上 touch 与 click 可能先后各触发一次，窗口内只响应一次 */
   var now = Date.now();
   if (now - _usheetGate < 400) return;
