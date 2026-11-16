@@ -2657,6 +2657,8 @@ var CLICK_ACTIONS = {
     if ($("#f_ws")) $("#f_ws").value = "";
     if ($("#f_ts")) $("#f_ts").value = "19:00";
     if ($("#f_te")) $("#f_te").value = "21:00";
+    /* 星期几默认今天，不再固定停在周一 */
+    if ($("#f_wd")) $("#f_wd").value = (new Date().getDay() + 6) % 7;
     /* 单次日程默认今天；今天不在当前查看的周里时，默认落到该周的周一 */
     if ($("#f_date")){
       var defDate = todayISO();
