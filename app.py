@@ -141,6 +141,20 @@ CREATE TABLE IF NOT EXISTS events(
   tstart    TEXT NOT NULL,
   tend      TEXT NOT NULL,
   week_spec TEXT DEFAULT '');
+-- 单周调整：一条每周日程在某个日期上的单独改动，不影响系列本身
+CREATE TABLE IF NOT EXISTS event_overrides(
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id  INTEGER NOT NULL,
+  orig_date TEXT NOT NULL,
+  action    TEXT NOT NULL,
+  new_date  TEXT,
+  title     TEXT,
+  location  TEXT,
+  note      TEXT,
+  tstart    TEXT,
+  tend      TEXT,
+  created   TEXT NOT NULL,
+  UNIQUE(event_id, orig_date));
 CREATE TABLE IF NOT EXISTS meta(
   key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS comments(
@@ -709,6 +723,22 @@ def get_all_events():
         return [dict(r) for r in rows]
 
 
+def get_event_by_id(eid):
+    with LOCK:
+        row = CONN.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_event_overrides(event_id=None):
+    """单周调整记录：{(event_id, orig_date): row} 或按 event_id 过滤后的列表"""
+    with LOCK:
+        if event_id is None:
+            rows = CONN.execute("SELECT * FROM event_overrides").fetchall()
+        else:
+            rows = CONN.execute("SELECT * FROM event_overrides WHERE event_id=?", (event_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_comment_counts(date_str=None):
     with LOCK:
         if date_str:
@@ -860,6 +890,7 @@ def init_db():
         # 创建高性能二级索引，大幅加速高频日程、日记、评论及未读通知轮询
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_events_lookup ON events(uid, repeat, weekday, date)",
+            "CREATE INDEX IF NOT EXISTS idx_event_overrides_lookup ON event_overrides(event_id, orig_date)",
             "CREATE INDEX IF NOT EXISTS idx_comments_lookup ON comments(event_id, date, created)",
             "CREATE INDEX IF NOT EXISTS idx_diaries_lookup ON diaries(date, id)",
             "CREATE INDEX IF NOT EXISTS idx_diary_photos_lookup ON diary_photos(diary_id, sort_order)",
@@ -947,6 +978,135 @@ def occurs_on(ev, d, week1):
     return bool(parts) and spec_matches(parts, n)
 
 
+OVERRIDE_ACTIONS = ("edit", "skip")
+OVERRIDE_FIELDS = ("title", "location", "note", "tstart", "tend")
+
+
+def override_map():
+    """{(event_id, orig_date): override}：单周调整按「系列 + 原日期」唯一"""
+    return {(ov["event_id"], ov["orig_date"]): ov for ov in get_event_overrides()}
+
+
+def apply_override(ev, ov):
+    """把单周调整叠加到事件副本上，返回前端渲染用的一次发生实例"""
+    item = {
+        "id": ev["id"], "uid": ev["uid"], "title": ev["title"], "location": ev["location"],
+        "note": ev["note"], "tstart": ev["tstart"], "tend": ev["tend"],
+        "week_spec": ev["week_spec"], "repeat": ev["repeat"],
+    }
+    if ov:
+        for key in OVERRIDE_FIELDS:
+            if ov.get(key):
+                item[key] = ov[key]
+        item["adjusted"] = True
+        item["adjusted_orig_date"] = ov["orig_date"]
+        item["adjusted_moved"] = bool(ov.get("new_date"))
+    return item
+
+
+def day_occurrences(events, overrides, by_id, d, week1, uid_filter):
+    """某个用户视角下当天的日程。
+
+    返回 (occurrences, ghosts)：occurrences 是当天真实发生的课，
+    ghosts 是「这一天被停掉 / 被挪走」的占位，不占时间也不参与冲突计算，
+    只让用户还能看到并撤销自己的单周调整。
+    """
+    d_iso = d.isoformat()
+    out, ghosts = [], []
+    for ev in events:
+        if ev["uid"] not in uid_filter:
+            continue
+        ov = overrides.get((ev["id"], d_iso))
+        if ov and ov["action"] == "skip":
+            ghost = apply_override(ev, None)
+            ghost["occ_status"] = "cancelled"
+            ghost["occ_date"] = d_iso
+            ghosts.append(ghost)
+            continue
+        if not occurs_on(ev, d, week1):
+            continue
+        if ov and ov.get("new_date"):
+            ghost = apply_override(ev, None)
+            ghost["occ_status"] = "moved"
+            ghost["occ_date"] = d_iso
+            ghost["moved_to"] = ov["new_date"]
+            ghosts.append(ghost)
+            continue
+        item = apply_override(ev, ov)
+        item["occ_status"] = "adjusted" if ov else "normal"
+        item["occ_date"] = d_iso
+        out.append(item)
+    for (eid, orig_iso), ov in overrides.items():
+        if ov["action"] != "edit" or ov.get("new_date") != d_iso:
+            continue
+        ev = by_id.get(eid)
+        if ev is None or ev["uid"] not in uid_filter:
+            continue
+        try:
+            orig = date.fromisoformat(orig_iso)
+        except ValueError:
+            continue
+        if not occurs_on(ev, orig, week1):
+            continue
+        moved = apply_override(ev, ov)
+        moved["occ_status"] = "moved_in"
+        moved["occ_date"] = d_iso
+        moved["moved_from"] = orig_iso
+        out.append(moved)
+    return out, ghosts
+
+
+def find_override_for_date(event_id, shown_date):
+    """详情页按用户点开的那一天取单周调整，原日期或改期后的日期都命中"""
+    if not shown_date:
+        return None
+    for ov in get_event_overrides(event_id):
+        if ov["orig_date"] == shown_date or ov.get("new_date") == shown_date:
+            return ov
+    return None
+
+
+def validate_override_payload(ev, d):
+    """校验单周调整；返回 (错误, 规整后的字段)。"""
+    action = str(d.get("action") or "edit").strip()
+    if action not in OVERRIDE_ACTIONS:
+        return "调整类型无效", None
+    orig_date = str(d.get("date") or "").strip()
+    if not DATE_RE.match(orig_date):
+        return "日期无效", None
+    try:
+        orig = date.fromisoformat(orig_date)
+    except ValueError:
+        return "日期无效", None
+    if ev["repeat"] != "weekly":
+        return "单次日程直接编辑即可，不需要单独调整", None
+    if ev["weekday"] is None or orig.weekday() != ev["weekday"]:
+        return "这一天不是这节日程的日子", None
+    f = {"action": action, "orig_date": orig_date, "new_date": "", "title": "",
+         "location": "", "note": "", "tstart": "", "tend": ""}
+    if action == "skip":
+        return None, f
+    new_date = str(d.get("new_date") or "").strip() or orig_date
+    if not DATE_RE.match(new_date):
+        return "新日期无效", None
+    try:
+        date.fromisoformat(new_date)
+    except ValueError:
+        return "新日期无效", None
+    # 只改了时间地点时不算改期，前端也不必标「已改到别的日子」
+    f["new_date"] = "" if new_date == orig_date else new_date
+    f["title"] = str(d.get("title") or "").strip()[:120] or ev["title"]
+    f["location"] = str(d.get("location") or "").strip()[:200]
+    f["note"] = str(d.get("note") or "").strip()[:200]
+    tstart = str(d.get("tstart") or "").strip() or ev["tstart"]
+    tend = str(d.get("tend") or "").strip() or ev["tend"]
+    if not TIME_RE.match(tstart) or not TIME_RE.match(tend) or t2m(tstart) >= t2m(tend):
+        return "时间无效（需 开始 < 结束）", None
+    f["tstart"], f["tend"] = tstart, tend
+    return None, f
+
+
+
 def t2m(t):
     h, m = t.split(":")
     return int(h) * 60 + int(m)
@@ -973,6 +1133,8 @@ def week_payload(anchor_iso, uid=None):
     days = [mon + timedelta(days=i) for i in range(7)]
     users = get_users()
     events = get_all_events()
+    overrides = override_map()
+    by_id = {ev["id"]: ev for ev in events}
     ws = t2m(get_setting("window_start", "08:00"))
     we = t2m(get_setting("window_end", "22:00"))
     if ws >= we:
@@ -987,18 +1149,15 @@ def week_payload(anchor_iso, uid=None):
         for u_id in ("a", "b"):
             u = users[u_id]
             evs, ivs = [], []
-            for ev in events:
-                if ev["uid"] not in (u_id, "both") or not occurs_on(ev, d, u["week1"]):
-                    continue
-                evs.append({
-                    "id": ev["id"], "uid": ev["uid"], "title": ev["title"], "location": ev["location"],
-                    "note": ev["note"], "tstart": ev["tstart"], "tend": ev["tend"],
-                    "week_spec": ev["week_spec"], "repeat": ev["repeat"],
-                    "n_comments": cmap.get(ev["id"], 0),
-                })
+            occs, ghosts = day_occurrences(events, overrides, by_id, d, u["week1"], (u_id, "both"))
+            for ev in occs:
+                ev["n_comments"] = cmap.get(ev["id"], 0)
+                evs.append(ev)
                 ivs.append([t2m(ev["tstart"]), t2m(ev["tend"])])
+            for ghost in ghosts:
+                ghost["n_comments"] = 0
             evs.sort(key=lambda x: (x["tstart"], x["tend"]))
-            per[u_id] = {"events": evs, "busy": merge_ivs(ivs)}
+            per[u_id] = {"events": evs, "busy": merge_ivs(ivs), "adjusted": ghosts}
         both = merge_ivs(per["a"]["busy"] + per["b"]["busy"])
         free, cur = [], ws
         for s, e in both:
@@ -1392,11 +1551,28 @@ class Handler(BaseHTTPRequestHandler):
                 ev_uid = ev["uid"]
                 owner_name = (f"{users['a']['name']} & {users['b']['name']}" if ev_uid == "both"
                               else users.get(ev_uid, {}).get("name", ev_uid))
+                ov = find_override_for_date(eid, req_date) if req_date else None
+                occurrence = None
+                if ov:
+                    occurrence = apply_override(dict(ev), ov)
+                    occurrence["occ_date"] = req_date
+                    if ov["action"] == "skip":
+                        occurrence["occ_status"] = "cancelled"
+                    elif not ov.get("new_date"):
+                        occurrence["occ_status"] = "adjusted"
+                    elif ov["new_date"] == req_date:
+                        occurrence["occ_status"] = "moved_in"
+                        occurrence["moved_from"] = ov["orig_date"]
+                    else:
+                        occurrence["occ_status"] = "moved"
+                        occurrence["moved_to"] = ov["new_date"]
                 return self.send_json({
                     "event": dict(ev),
                     "owner": {"uid": ev_uid, "name": owner_name},
                     "comments": [dict(c) for c in cmts],
-                    "filter_date": req_date
+                    "filter_date": req_date,
+                    "override": ov,
+                    "occurrence": occurrence,
                 })
             if path == "/api/health":
                 return self.send_json({"ok": True, "time": time.strftime("%F %T")})
@@ -1957,7 +2133,16 @@ class Handler(BaseHTTPRequestHandler):
                 with db_transaction():
                     CONN.execute("DELETE FROM events WHERE id=?", (eid,))
                     CONN.execute("DELETE FROM comments WHERE event_id=?", (eid,))
+                    CONN.execute("DELETE FROM event_overrides WHERE event_id=?", (eid,))
                 return self.send_json({"ok": True})
+            if path == "/api/events/override":
+                if self.authed() is None:
+                    return
+                return self.save_event_override(d)
+            if path == "/api/events/override/delete":
+                if self.authed() is None:
+                    return
+                return self.delete_event_override(d)
             if path == "/api/comment":
                 uid = self.authed()
                 if uid is None:
@@ -2121,8 +2306,91 @@ class Handler(BaseHTTPRequestHandler):
                 "UPDATE events SET uid=?, title=?, location=?, note=?, repeat=?, weekday=?, date=?, tstart=?, tend=?, week_spec=? WHERE id=?",
                 (uid, title, location, note, repeat, weekday, ev_date, tstart, tend, week_spec, eid)
             )
+            # 系列本身改了星期几 / 改成单次后，旧的单周调整已经对不上这一天，直接作废
+            for ov in CONN.execute("SELECT id, orig_date FROM event_overrides WHERE event_id=?", (eid,)).fetchall():
+                try:
+                    stale = repeat != "weekly" or weekday is None or date.fromisoformat(ov["orig_date"]).weekday() != weekday
+                except ValueError:
+                    stale = True
+                if stale:
+                    CONN.execute("DELETE FROM event_overrides WHERE id=?", (ov["id"],))
 
         return self.send_json({"ok": True, "id": eid})
+
+    def save_event_override(self, d):
+        """只改动某个日期上的这一次发生：改期 / 改时间地点 / 停课，系列本身不变。"""
+        eid = d.get("id")
+        if not isinstance(eid, int):
+            return self.send_json({"error": "缺少日程ID"}, 400)
+        ev = get_event_by_id(eid)
+        if ev is None:
+            return self.send_json({"error": "日程不存在"}, 404)
+        err, f = validate_override_payload(ev, d)
+        if err:
+            return self.send_json({"error": err}, 400)
+
+        created = time.strftime("%Y-%m-%d %H:%M:%S")
+        with db_transaction():
+            CONN.execute(
+                "INSERT INTO event_overrides(event_id, orig_date, action, new_date, title, location, note, tstart, tend, created) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(event_id, orig_date) DO UPDATE SET action=excluded.action, new_date=excluded.new_date, "
+                "title=excluded.title, location=excluded.location, note=excluded.note, "
+                "tstart=excluded.tstart, tend=excluded.tend, created=excluded.created",
+                (eid, f["orig_date"], f["action"], f["new_date"], f["title"], f["location"],
+                 f["note"], f["tstart"], f["tend"], created))
+
+        self.notify_override(ev, f)
+        return self.send_json({"ok": True})
+
+    def delete_event_override(self, d):
+        """撤销这一周的单周调整，恢复成系列原本的安排。"""
+        eid = d.get("id")
+        if not isinstance(eid, int):
+            return self.send_json({"error": "缺少日程ID"}, 400)
+        ev = get_event_by_id(eid)
+        if ev is None:
+            return self.send_json({"error": "日程不存在"}, 404)
+        shown_date = str(d.get("date") or "").strip()
+        ov = find_override_for_date(eid, shown_date) if shown_date else None
+        if ov is None:
+            return self.send_json({"error": "这一周没有单独调整"}, 404)
+        with db_transaction():
+            CONN.execute("DELETE FROM event_overrides WHERE id=?", (ov["id"],))
+        return self.send_json({"ok": True, "restored_date": ov["orig_date"]})
+
+    def notify_override(self, ev, f):
+        """把这一周的调整告诉对方（自己改自己的课表就不必通知）。"""
+        actor = self.current_uid()
+        if not actor:
+            return
+        owners = {"a", "b"} if ev["uid"] == "both" else {ev["uid"]}
+        targets = [u for u in ("a", "b") if u != actor and u in owners]
+        if not targets:
+            return
+        users = get_users()
+        author_name = users.get(actor, users["a"])["name"]
+        orig = f["orig_date"]
+        if f["action"] == "skip":
+            content = "【%s】%s 这节课不上了，系列里其它周次照旧" % (ev["title"], orig)
+        else:
+            eff_date = f["new_date"] or orig
+            when = "%s %s~%s" % (eff_date, f["tstart"], f["tend"])
+            changed = []
+            if f["new_date"] and f["new_date"] != orig:
+                changed.append("改到 " + when)
+            elif (f["tstart"], f["tend"]) != (ev["tstart"], ev["tend"]):
+                changed.append("时间改成 " + when)
+            if f["location"] and f["location"] != (ev["location"] or ""):
+                changed.append("地点 " + f["location"])
+            if f["title"] != ev["title"]:
+                changed.append("改名为【%s】" % f["title"])
+            if not changed:
+                return
+            content = "【%s】%s 这一次：%s" % (ev["title"], orig, "，".join(changed))
+        for target in targets:
+            push_system_notice(target, "🐾 %s 调整了一次日程" % author_name, content,
+                               "event:%s:%s" % (ev["id"], orig))
 
     def save_settings(self, d):
         uid = self.current_uid()

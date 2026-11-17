@@ -1127,6 +1127,36 @@ html:not(.dark) .mhead-img{mix-blend-mode:multiply}
 }
 .d-meta .v{color:var(--ink-primary);font-weight:600}
 
+/* 单周调整：详情页提示、底部入口、表单里的目标说明 */
+.adj-note{
+  font-size:12.5px;font-weight:700;color:#b45309;
+  background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;
+  padding:7px 11px;margin-bottom:10px;
+}
+html.dark .adj-note{background:#2a2113;border-color:#78500e;color:#fcd34d}
+.week-adjust-row{display:flex;gap:8px;margin-top:12px}
+.week-adjust-row .p-btn{flex:1;justify-content:center}
+.wa-target{
+  font-size:13px;font-weight:700;color:var(--ink-secondary);
+  background:var(--bg-card-subtle);border:1.5px dashed var(--line-strong);
+  border-radius:12px;padding:9px 12px;margin-bottom:12px;line-height:1.5;
+}
+.wa-hint{font-size:11.5px;color:var(--ink-muted);font-weight:600;margin-top:2px}
+
+/* 停课 / 改期的虚拟占位：虚线框，不参与时间占用 */
+.ev-ghost{
+  background:transparent!important;
+  border:1.5px dashed var(--line-strong)!important;
+  border-left-width:4px!important;
+  color:var(--ink-light)!important;
+  box-shadow:none!important;
+  opacity:.85;
+}
+.ev-ghost .etitle{color:var(--ink-muted)!important;text-decoration:line-through}
+.ev-ghost .et-pill{color:var(--ink-light)!important}
+.ev-ghost .del{display:none!important}
+.ev-adjusted{outline:1.5px dashed #fbbf24;outline-offset:-3px}
+
 /* 快捷情侣贴纸短语 */
 .quick-phrases{
   display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 6px;

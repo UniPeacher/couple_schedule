@@ -37,6 +37,7 @@ var wishEditPrio = 0;
 var diaryPhotosToUpload = []; // base64 list
 var curEditingDiary = null;
 var curEditingEventId = null;
+var weekAdjustEid = null, weekAdjustMode = "edit";
 var activeDiaryDate = "";
 var addUid = "a", addRep = "weekly", loginUid = "a", annivType = "love";
 
@@ -520,12 +521,17 @@ function eventBlock(ev, uid, date){
   var bits = [];
   if (ev.location) bits.push('📍 ' + esc(ev.location));
   if (ev.week_spec) bits.push('🗓️ ' + esc(ev.week_spec) + '周');
-  var tip = ev.title + (ev.note ? '：' + ev.note : '');
+  // 单周调整过的这一次加标记，避免被当成系列改动
+  if (ev.occ_status === "adjusted") bits.push('🛠️ 本周单独调整');
+  else if (ev.occ_status === "moved_in") bits.push('🛠️ 从 ' + esc(ev.moved_from.slice(5)) + ' 调来');
+  var tip = ev.title + (ev.note ? '：' + ev.note : '') +
+    (ev.occ_status === "moved_in" ? '（从 ' + ev.moved_from.slice(5) + ' 调来）' : '');
   var top = gpx(t2m(ev.tstart)), h = Math.max(gpx(t2m(ev.tend)) - top, 18);
   var isBothCard = uid === "both";
   var jTag = (!isBothCard && ev.uid === "both") ? "💕 " : "";
   var bothBadge = (isBothCard && h >= 44) ? '<span class="both-badge">🐶 💕 🐾 两人共同</span>' : '';
-  return '<div class="ev ' + uid + '" data-act="detail" data-id="' + ev.id + '" data-date="' + date +
+  return '<div class="ev ' + uid + (ev.occ_status === "adjusted" || ev.occ_status === "moved_in" ? ' ev-adjusted' : '') +
+    '" data-act="detail" data-id="' + ev.id + '" data-date="' + date +
     '" style="top:' + top +
     'px;height:' + h + 'px" title="' + esc(tip) + '">' +
     bothBadge +
@@ -616,6 +622,8 @@ function eventStackHTML(group, uid, date){
     var bits = [];
     if (ev.location) bits.push('📍 ' + esc(ev.location));
     if (ev.week_spec) bits.push('🗓️ ' + esc(ev.week_spec) + '周');
+    if (ev.occ_status === "adjusted") bits.push('🛠️ 本周单独调整');
+    else if (ev.occ_status === "moved_in") bits.push('🛠️ 从 ' + esc(ev.moved_from.slice(5)) + ' 调来');
     var jTag = ev.uid === "both" ? "💕 " : "";
     return '<div class="ev-stack-body" data-b="' + gid + '" data-i="' + i + '" style="display:' + (i === 0 ? 'block' : 'none') + '">' +
       '<span class="et-pill">' + ev.tstart + '–' + ev.tend + '</span>' +
@@ -626,10 +634,23 @@ function eventStackHTML(group, uid, date){
     '</div>';
   }).join("");
 
-  return '<div class="ev-stack ' + uid + stackFitCls(geos[0].h) +
+  var adjusted = group.some(function(ev){ return ev.occ_status === "adjusted" || ev.occ_status === "moved_in"; });
+  return '<div class="ev-stack ' + uid + stackFitCls(geos[0].h) + (adjusted ? ' ev-adjusted' : '') +
     '" data-stack="' + gid + '" data-act="detail" data-id="' + first.id +
     '" data-date="' + date + '" style="top:' + geos[0].top + 'px;height:' + geos[0].h + 'px">' +
     '<div class="ev-tabs">' + tabs + '</div>' + bodies + '</div>';
+}
+
+/* 停课 / 改期后留在原日期上的虚影：本身不占时间，点开可以撤销这一周的调整 */
+function eventGhostBlock(ev, uid, date){
+  var top = gpx(t2m(ev.tstart)), h = Math.max(gpx(t2m(ev.tend)) - top, 18);
+  var label = ev.occ_status === "cancelled" ? '本周停课' : '已调到 ' + (ev.moved_to || "").slice(5);
+  return '<div class="ev ev-ghost ' + uid + '" data-act="detail" data-id="' + ev.id +
+    '" data-date="' + date + '" style="top:' + top + 'px;height:' + h + 'px" title="' +
+    esc(ev.title + "：" + label + "，点开可撤销") + '">' +
+    '<span class="et-pill">' + ev.tstart + '–' + ev.tend + '</span>' +
+    '<span class="etitle">' + esc(ev.title) + '</span>' +
+    '<span class="em">🛠️ ' + esc(label) + '</span></div>';
 }
 
 /* ---------------- 月历手账视图渲染 ---------------- */
@@ -1215,7 +1236,8 @@ function renderApp(){
       '</div>' +
     '</div>';
 
-    var emptyDay = d.users.a.events.length === 0 && d.users.b.events.length === 0;
+    var emptyDay = d.users.a.events.length === 0 && d.users.b.events.length === 0 &&
+      !(d.users.a.adjusted || []).length && !(d.users.b.adjusted || []).length;
     body += '<div class="dcol' + (isToday ? ' today' : '') + '"' + (isToday ? ' id="colToday"' : ' id="daycol-' + d.date + '"') + ' style="height:' + CALH + 'px"><div class="divider"></div>' +
       (emptyDay ?
         '<div class="sleepy" title="今天俩汪都没安排，睡大觉~">' +
@@ -1256,6 +1278,12 @@ function renderApp(){
       var uid = pair[0], list = pair[1];
       groupOverlapping(list).forEach(function(group){
         body += (group.length > 1) ? eventStackHTML(group, uid, d.date) : eventBlock(group[0], uid, d.date);
+      });
+    });
+    // 这一周被停掉 / 挪走的课：在原时段留一条虚影，点开可撤销
+    ['a', 'b'].forEach(function(uid){
+      (d.users[uid].adjusted || []).forEach(function(ghost){
+        body += eventGhostBlock(ghost, uid, d.date);
       });
     });
     body += '</div>';
@@ -1633,6 +1661,35 @@ function modalsHTML(){
     '</form></div></div>' +
 
     '<div class="overlay" id="ovDetail"><div class="modal" id="ovDetailBox"></div></div>' +
+
+    '<div class="overlay" id="ovWeekAdjust"><div class="modal">' +
+      '<div class="mhead">' +
+        '<div class="mhead-left"><h3>只改这一周 🛠️</h3></div>' +
+        '<img src="/img/dog-set.webp?v=20261116a" alt="" class="mhead-img">' +
+      '</div>' +
+      '<form id="weekAdjustForm">' +
+        '<input type="hidden" id="wa_id" value="">' +
+        '<input type="hidden" id="wa_date" value="">' +
+        '<div class="wa-target" id="wa_target"></div>' +
+        '<div class="field"><label>这一周怎么安排？</label><div class="seg" id="waSeg">' +
+          '<div class="opt on" data-act="wa-mode" data-v="edit">🕒 换个时间 / 挪一天</div>' +
+          '<div class="opt" data-act="wa-mode" data-v="skip">🚫 这周不上了</div>' +
+        '</div></div>' +
+        '<div id="waEditBox">' +
+          '<div class="field"><label>挪到哪一天（不改就留空）</label><input type="date" id="wa_newdate"></div>' +
+          '<div class="row2">' +
+            '<div class="field"><label>开始时间</label><input type="time" id="wa_ts" required></div>' +
+            '<div class="field"><label>结束时间</label><input type="time" id="wa_te" required></div></div>' +
+          '<div class="field"><label>事项名称</label><input id="wa_title" maxlength="120" required></div>' +
+          '<div class="field"><label>地点（可选）</label><input id="wa_loc" maxlength="200"></div>' +
+          '<div class="field"><label>备注（可选）</label><input id="wa_note" maxlength="200"></div>' +
+        '</div>' +
+        '<div class="wa-hint">只影响选中的这一天，整个系列和其它周次都不变。</div>' +
+        '<div class="foot">' +
+          '<button type="button" class="p-btn" data-act="close">取消</button>' +
+          '<button class="p-btn pri" id="waSubmitBtn">🐾 就这么改这一周</button>' +
+        '</div>' +
+      '</form></div></div>' +
 
     '<div class="overlay" id="ovWishDetail"><div class="modal" id="ovWishDetailBox"></div></div>' +
 
@@ -2516,6 +2573,12 @@ function openDayDiaries(dtStr, force){
 }
 
 var EVENT_DETAIL_CACHE = {};
+function dropEventDetailCache(eid){
+  /* 单周调整会同时改变「这一天」和「被挪到的那一天」，整表清掉比按 key 猜更省事 */
+  Object.keys(EVENT_DETAIL_CACHE).forEach(function(k){
+    if (k.indexOf(eid + "|") === 0) delete EVENT_DETAIL_CACHE[k];
+  });
+}
 function openDetail(id, date, force){
   curDetail = {id: +id, date: date || todayISO()};
   var q = curDetail.date ? ("?date=" + curDetail.date) : "";
@@ -2551,16 +2614,29 @@ function detailHTML(j){
     var dt = new Date(+p[0], +p[1]-1, +p[2]);
     dateLine = curDetail.date.slice(5) + " " + WD[(dt.getDay() + 6) % 7];
   }
+  // 打开的是哪一天，就显示那一天实际的样子（单周调整已经叠加在上面）
+  var occ = j.occurrence || ev;
+  var status = occ.occ_status || "";
+  var adjNote = "";
+  if (status === "adjusted" || status === "moved_in"){
+    adjNote = '<div class="adj-note">🛠️ ' + (status === "moved_in"
+      ? '这一周的课从 ' + esc((occ.moved_from || "").slice(5)) + ' 调到这一天，其余周次不受影响'
+      : '这一周单独调整过，其余周次照旧') + '</div>';
+  } else if (status === "cancelled"){
+    adjNote = '<div class="adj-note">🚫 这一周停课，其余周次照常</div>';
+  } else if (status === "moved"){
+    adjNote = '<div class="adj-note">↪️ 这一周已调到 ' + esc((occ.moved_to || "").slice(5)) + '，其余周次照常</div>';
+  }
   var ownerPrefix = isBoth ? "💕 两人共同 · " : (isA ? "🐶 小金毛 · " : "🐾 小白狗 · ");
   var rows = '<div class="d-meta">' +
     '<div class="row"><span class="k">归属</span><span class="v">' +
       '<span class="school-badge ' + o.uid + '">' + ownerPrefix + esc(o.name) + '</span>' +
     '</span></div>' +
-    '<div class="row"><span class="k">时间</span><span class="v">' + ev.tstart + "–" + ev.tend +
+    '<div class="row"><span class="k">时间</span><span class="v">' + occ.tstart + "–" + occ.tend +
       (ev.repeat === "weekly" ? "（每周" + WD[ev.weekday] + "）" : "（单次 " + esc(ev.date) + "）") + '</span></div>' +
-    (ev.location ? '<div class="row"><span class="k">地点</span><span class="v">📍 ' + esc(ev.location) + '</span></div>' : "") +
+    (occ.location ? '<div class="row"><span class="k">地点</span><span class="v">📍 ' + esc(occ.location) + '</span></div>' : "") +
     (ev.week_spec ? '<div class="row"><span class="k">周次</span><span class="v">🗓️ ' + esc(ev.week_spec) + '周</span></div>' : "") +
-    (ev.note ? '<div class="row"><span class="k">备注</span><span class="v">📝 ' + esc(ev.note) + '</span></div>' : "") +
+    (occ.note ? '<div class="row"><span class="k">备注</span><span class="v">📝 ' + esc(occ.note) + '</span></div>' : "") +
     '</div>';
 
   var cmts = j.comments.length ? j.comments.map(function(c){
@@ -2583,11 +2659,20 @@ function detailHTML(j){
     return '<span class="phrase-pill" data-act="quick-cmt" data-text="' + esc(t) + '">' + esc(t) + '</span>';
   }).join("");
 
+  var canAdjust = ev.repeat === "weekly" && !!curDetail && !!curDetail.date;
+  var weekBtns = "";
+  if (canAdjust && status && status !== "normal"){
+    weekBtns = '<button class="p-btn" data-act="undo-week" data-id="' + ev.id + '">↩️ 撤销这一周的调整</button>';
+  } else if (canAdjust){
+    weekBtns = '<button class="p-btn" data-act="edit-week" data-id="' + ev.id + '">🔧 只改这一周</button>';
+  }
+
   return '<div class="mhead">' +
       '<div class="mhead-left"><h3>' + esc(ev.title) + '</h3></div>' +
       '<img src="/img/dog-add.png" alt="" class="mhead-img">' +
     '</div>' +
     (dateLine ? '<div style="font-size:12px;color:var(--ink-muted);margin:-6px 0 10px;font-weight:600">当前查看 ' + dateLine + ' 的安排</div>' : "") +
+    adjNote +
     rows +
     '<div style="font-weight:800;font-size:13.5px;margin:14px 0 4px;color:var(--ink-primary);display:flex;align-items:center;gap:6px">' +
       '<span>情侣留言板 💕</span><span style="font-size:12px;color:var(--ink-light)">(' + j.comments.length + ')</span>' +
@@ -2598,6 +2683,7 @@ function detailHTML(j){
       '<input id="cmtText" maxlength="500" placeholder="和 TA 说点什么…（回车发送）">' +
       '<button class="p-btn pri" data-act="send-cmt" style="padding:8px 16px">🐾 发送</button>' +
     '</div>' +
+    (weekBtns ? '<div class="week-adjust-row">' + weekBtns + '</div>' : '') +
     '<div class="foot" style="justify-content:space-between;margin-top:14px;flex-wrap:wrap;gap:8px">' +
       '<div style="display:flex;gap:6px">' +
         '<button class="p-btn pri" data-act="edit-event" data-id="' + ev.id + '">✏️ 编辑日程</button>' +
@@ -3357,6 +3443,63 @@ var CLICK_ACTIONS = {
     }).catch(function(err){ toast(err.message || "加载失败", "err"); });
   
   },
+  "edit-week": function(el, e) {
+    var eid = +el.getAttribute("data-id");
+    var shownDate = (curDetail && curDetail.date) || "";
+    if (!shownDate){ toast("先选好要看哪一天的安排", "err"); return; }
+    api("/api/event/" + eid + "?date=" + shownDate).then(function(j){
+      var ev = j.occurrence || j.event;
+      if (!ev || j.event.repeat !== "weekly"){ toast("这条日程不是每周重复的，直接编辑就行", "err"); return; }
+      weekAdjustEid = eid;
+      weekAdjustMode = "edit";
+      if ($("#wa_id")) $("#wa_id").value = eid;
+      if ($("#wa_date")) $("#wa_date").value = shownDate;
+      if ($("#wa_target")){
+        $("#wa_target").innerHTML = '🛠️ <strong>' + esc(j.event.title) + '</strong> · 只调整 ' +
+          fmtDateCN(shownDate) + ' 这一次';
+      }
+      document.querySelectorAll("#waSeg .opt").forEach(function(o){
+        o.classList.toggle("on", o.getAttribute("data-v") === "edit");
+      });
+      var box = $("#waEditBox");
+      if (box) box.style.display = "";
+      if ($("#wa_newdate")) $("#wa_newdate").value = ev.occ_date === shownDate ? "" : (ev.occ_date || "");
+      if ($("#wa_ts")) $("#wa_ts").value = ev.tstart || "19:00";
+      if ($("#wa_te")) $("#wa_te").value = ev.tend || "21:00";
+      if ($("#wa_title")) $("#wa_title").value = ev.title || "";
+      if ($("#wa_loc")) $("#wa_loc").value = ev.location || "";
+      if ($("#wa_note")) $("#wa_note").value = ev.note || "";
+      openModal("#ovWeekAdjust");
+      var ovDetail = $("#ovDetail");
+      if (ovDetail) ovDetail.classList.remove("show");
+    }).catch(function(err){ toast(err.message || "加载失败", "err"); });
+  },
+  "wa-mode": function(el, e) {
+    weekAdjustMode = el.getAttribute("data-v") || "edit";
+    document.querySelectorAll("#waSeg .opt").forEach(function(o){
+      o.classList.toggle("on", o.getAttribute("data-v") === weekAdjustMode);
+    });
+    var box = $("#waEditBox");
+    if (box) box.style.display = weekAdjustMode === "skip" ? "none" : "";
+    var btn = $("#waSubmitBtn");
+    if (btn) btn.textContent = weekAdjustMode === "skip" ? "🚫 这周停掉" : "🐾 就这么改这一周";
+  },
+  "undo-week": function(el, e) {
+    var eid = +el.getAttribute("data-id");
+    var shownDate = (curDetail && curDetail.date) || "";
+    if (!shownDate) return;
+    uiConfirm({icon:"↩️", title:"撤销这一周的调整？", message:"恢复成每周固定的安排，其它周次本来就没动。", okText:"撤销"}).then(function(ok){
+      if (!ok) return;
+      api("/api/events/override/delete", {method:"POST", body:{id:eid, date:shownDate}})
+        .then(function(){
+          dropEventDetailCache(eid);
+          closeAllModals();
+          toast("已恢复这一周原本的安排 🐾");
+          load();
+        })
+        .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); });
+    });
+  },
   "del-event": function(el, e) {
     var act = "del-event";
     uiConfirm({icon:"🗓️", title:"删除这条日程？", message:"日程和它下面的留言都会删掉。", danger:true, okText:"删除"}).then(function(ok){
@@ -3705,6 +3848,38 @@ document.addEventListener("submit", function(e){
         } else {
           load().then(function(){ pollMessages(); });
         }
+      })
+      .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); })
+      .finally(function(){ delete f.dataset.busy; });
+  } else if (f.id === "weekAdjustForm"){
+    e.preventDefault();
+    if (!weekAdjustEid || !$("#wa_date").value) return;
+    f.dataset.busy = "1";
+    var waBody = {
+      id: weekAdjustEid,
+      date: $("#wa_date").value,
+      action: weekAdjustMode
+    };
+    if (weekAdjustMode === "edit"){
+      waBody.new_date = $("#wa_newdate").value || $("#wa_date").value;
+      waBody.tstart = $("#wa_ts").value;
+      waBody.tend = $("#wa_te").value;
+      waBody.title = $("#wa_title").value.trim();
+      waBody.location = $("#wa_loc").value.trim();
+      waBody.note = $("#wa_note").value.trim();
+      if (t2m(waBody.tstart) >= t2m(waBody.tend)){
+        toast("结束时间要比开始时间晚哦 🐾", "err");
+        delete f.dataset.busy;
+        return;
+      }
+    }
+    api("/api/events/override", {method:"POST", body:waBody})
+      .then(function(){
+        dropEventDetailCache(weekAdjustEid);
+        closeAllModals();
+        toast(weekAdjustMode === "skip" ? "这一周的课已停掉 🐾" : "这一周改好啦 🐾");
+        weekAdjustEid = null;
+        load();
       })
       .catch(function(err){ if (err.message !== "unauth") toast(err.message, "err"); })
       .finally(function(){ delete f.dataset.busy; });
