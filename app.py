@@ -2204,6 +2204,7 @@ class Handler(BaseHTTPRequestHandler):
             "diaries_by_date": by_date,
             "total_count": len(diaries),
             "anniversaries": annivs,
+            "nodes_by_date": special_days.calendar_nodes_in_month(ym, annivs) if special_days else {},
             "users": {u: {"name": users[u]["name"], "wx_configured": bool(users[u].get("wx_uid", ""))} for u in ("a", "b")},
             "unread_count": get_unread_notifications_count(uid),
         }
@@ -2225,7 +2226,9 @@ class Handler(BaseHTTPRequestHandler):
                         photo["live_preview"] = "pv_" + video
                 item["author_name"] = users.get(item["author_uid"], {}).get("name", "小狗")
                 res.append(item)
-        return {"date": dt, "diaries": res}
+            annivs = [dict(r) for r in CONN.execute("SELECT * FROM anniversaries").fetchall()]
+        nodes = special_days.calendar_nodes_in_month(dt[:7], annivs).get(dt, []) if special_days else []
+        return {"date": dt, "diaries": res, "nodes": nodes}
 
     def _save_diary_media_items(self, dt, photos_input):
         import base64

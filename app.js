@@ -21,6 +21,7 @@ var ME = null, DATA = null, ANCHOR = null, META = null;
 var CURRENT_VIEW = "week"; // "week" | "month" | "summary" | "messages" | "wishes" | "trips" | "anniv" | "settings" | "cycle2"
 var MONTH_ANCHOR = todayISO().slice(0, 7); // YYYY-MM
 var MONTH_DATA = null;
+var MONTH_SELECTED_DATE = "";
 var UNREAD_COUNT = 0;
 var MESSAGES_DATA = [];
 var curMsgFilter = "all";
@@ -277,7 +278,9 @@ function load(opts){
       render();
       if (silent) return Promise.resolve();
     }
-    return api("/api/month?month=" + MONTH_ANCHOR).then(function(j){
+    var requestedMonth = MONTH_ANCHOR;
+    return api("/api/month?month=" + requestedMonth).then(function(j){
+      if (MONTH_ANCHOR !== requestedMonth || CURRENT_VIEW !== "month") return;
       applyMonth(j);
       render();
     }).catch(function(e){ if (e.message !== "unauth") toast(e.message, "err"); });
@@ -1061,122 +1064,107 @@ function renderAnnivPage(){
 
 function renderSettingsPage(){ return Settings.render(); }
 
+function monthSelectedDate(){
+  if (MONTH_SELECTED_DATE.slice(0, 7) === MONTH_ANCHOR) return MONTH_SELECTED_DATE;
+  var today = todayISO();
+  var dates = Object.keys((MONTH_DATA && MONTH_DATA.diaries_by_date) || {}).sort();
+  if (!MONTH_DATA) return today.slice(0, 7) === MONTH_ANCHOR ? today : MONTH_ANCHOR + "-01";
+  MONTH_SELECTED_DATE = today.slice(0, 7) === MONTH_ANCHOR ? today : (dates[dates.length - 1] || MONTH_ANCHOR + "-01");
+  return MONTH_SELECTED_DATE;
+}
+
+function monthDayCardHTML(dtStr){
+  var list = (MONTH_DATA && MONTH_DATA.diaries_by_date && MONTH_DATA.diaries_by_date[dtStr]) || [];
+  var nodes = (MONTH_DATA && MONTH_DATA.nodes_by_date && MONTH_DATA.nodes_by_date[dtStr]) || [];
+  var parts = dtStr.split("-");
+  var wd = WD[(new Date(+parts[0], +parts[1] - 1, +parts[2]).getDay() + 6) % 7];
+  var heading = '<div class="album-day-heading"><div><span class="album-eyebrow">这一天的故事</span>' +
+    '<h2>' + (+parts[1]) + ' 月 ' + (+parts[2]) + ' 日 <span>' + wd + '</span></h2></div>' +
+    '<button type="button" class="album-add" data-act="open-add-diary" data-date="' + dtStr + '" aria-label="记录这一天"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></button></div>';
+  var nodeHTML = nodes.length ? '<div class="album-occasions">' + nodes.map(function(node){
+    return '<div class="album-occasion ' + esc(node.kind) + '"><span class="album-occasion-icon" aria-hidden="true">' + esc(node.icon) + '</span>' +
+      '<div><strong>' + esc(node.label) + '</strong><p>' + esc(node.detail) + '</p></div></div>';
+  }).join("") + '</div>' : '';
+  if (!list.length){
+    return heading + nodeHTML + '<div class="album-empty"><span class="album-empty-mark" aria-hidden="true">✧</span>' +
+      '<h3>把这一天，留在这里</h3><p>一张照片，或一句想记住的话。</p>' +
+      '<button type="button" class="album-write" data-act="open-add-diary" data-date="' + dtStr + '">写一篇手账 <span aria-hidden="true">↗</span></button></div>';
+  }
+  var users = (MONTH_DATA && MONTH_DATA.users) || {};
+  return heading + nodeHTML + '<div class="album-stories">' + list.map(function(d){
+    var cover = d.cover_photo ? '<div class="album-cover"><img src="/photos/tb_' + esc(d.cover_photo) + '" alt="' + esc(d.title) + '的照片" loading="lazy" decoding="async">' +
+      (d.photo_count > 1 ? '<span class="album-photo-count">' + d.photo_count + ' 张照片</span>' : '') + '</div>' : '';
+    var author = users[d.author_uid] && users[d.author_uid].name;
+    return '<button type="button" class="album-story' + (cover ? ' has-cover' : '') + '" data-act="open-day-diary" data-date="' + dtStr + '">' + cover +
+      '<div class="album-story-body">' + (d.mood ? '<span class="album-mood">' + esc(d.mood) + '</span>' : '') +
+      '<h3>' + esc(d.title) + '</h3>' + (d.content ? '<p class="album-excerpt">' + esc(d.content.slice(0, 180)) + '</p>' : '') +
+      '<div class="album-story-meta"><span>' + esc(d.location || author || "我们的日常") + '</span><span>翻开手账 <span aria-hidden="true">↗</span></span></div></div></button>';
+  }).join("") + '</div>';
+}
+
+function selectMonthDay(dtStr){
+  if (dtStr.slice(0, 7) !== MONTH_ANCHOR) return;
+  MONTH_SELECTED_DATE = dtStr;
+  document.querySelectorAll('.month-cell[data-date]').forEach(function(cell){
+    var selected = cell.getAttribute("data-date") === dtStr;
+    cell.classList.toggle("selected", selected);
+    cell.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+  var box = $("#monthDayCard");
+  if (box) box.innerHTML = monthDayCardHTML(dtStr);
+  var fab = $(".journal-fab");
+  if (fab) fab.setAttribute("data-date", dtStr);
+}
+
 function renderMonthApp(){
-  var ym = MONTH_ANCHOR; // "YYYY-MM"
+  var ym = MONTH_ANCHOR;
   var parts = ym.split("-");
   var year = +parts[0], month = +parts[1];
-  var u = (META && META.users) || [{uid:"a",name:"小金毛"},{uid:"b",name:"小白狗"}];
-
-  // 计算本月日历格子 (周一到周日)
   var firstDay = new Date(year, month - 1, 1);
-  var lastDay = new Date(year, month, 0);
-  var startDayOfWeek = (firstDay.getDay() + 6) % 7; // 0=周一, 6=周日
-  var totalDays = lastDay.getDate();
-
-  var cellsHtml = "";
-  // 周标题
-  WD.forEach(function(w){
-    cellsHtml += '<div class="month-head-cell">' + w + '</div>';
-  });
-
-  // 上月填充
+  var startDayOfWeek = (firstDay.getDay() + 6) % 7;
+  var totalDays = new Date(year, month, 0).getDate();
+  var byDate = (MONTH_DATA && MONTH_DATA.diaries_by_date) || {};
+  var nodesByDate = (MONTH_DATA && MONTH_DATA.nodes_by_date) || {};
+  var todayStr = todayISO();
+  var selectedDate = monthSelectedDate();
+  var cellsHtml = WD.map(function(w){ return '<div class="month-head-cell">' + w.slice(1) + '</div>'; }).join("");
   var prevMonthLastDay = new Date(year, month - 1, 0).getDate();
   for (var i = startDayOfWeek - 1; i >= 0; i--){
-    var pDay = prevMonthLastDay - i;
-    cellsHtml += '<div class="month-cell other-month"><div class="mday-head"><span class="mday-num">' + pDay + '</span></div></div>';
+    cellsHtml += '<div class="month-cell other-month" aria-hidden="true"><span class="mday-num">' + (prevMonthLastDay - i) + '</span></div>';
   }
-
-  var byDate = (MONTH_DATA && MONTH_DATA.diaries_by_date) || {};
-  var annivList = (MONTH_DATA && MONTH_DATA.anniversaries) || (DATA && DATA.anniversaries) || [];
-  var todayStr = todayISO();
-
-  // 本月各天
   for (var d = 1; d <= totalDays; d++){
     var dtStr = year + "-" + pad(month) + "-" + pad(d);
-    var isToday = (dtStr === todayStr);
     var dayDiaries = byDate[dtStr] || [];
-    
-    // 纪念日判定
-    var dayBadges = [];
-    annivList.forEach(function(item){
-      if (item.target_type === "birthday"){
-        var bp = item.date.split("-");
-        if (+bp[1] === month && +bp[2] === d){
-          dayBadges.push('<span class="mday-badge" title="' + esc(item.title) + ' 生日">🎂</span>');
-        }
-      } else if (item.target_type === "love"){
-        var lp = item.date.split("-");
-        if (+lp[1] === month && +lp[2] === d){
-          dayBadges.push('<span class="mday-badge" title="' + esc(item.title) + ' 纪念日">💖</span>');
-        }
-      } else {
-        if (item.date === dtStr){
-          dayBadges.push('<span class="mday-badge" title="' + esc(item.title) + ' 倒计时">⏳</span>');
-        }
-      }
-    });
-    if (dayDiaries.length > 1){
-      dayBadges.push('<span class="mday-badge" title="这一天有 ' + dayDiaries.length + ' 篇手账">📔' + dayDiaries.length + '</span>');
-    }
-
-    var diaryPreview = "";
-    if (dayDiaries.length > 0){
-      var firstD = dayDiaries[0];
-      var thumb = firstD.cover_photo ? ('/photos/tb_' + firstD.cover_photo) : '/img/dog-add.png';
-      diaryPreview = '<div class="mday-polaroid">' +
-        '<img src="' + thumb + '" class="mday-thumb" alt="">' +
-        '<div class="mday-info">' + esc(firstD.title) + '</div>' +
-      '</div>';
-    }
-
-    cellsHtml += '<div class="month-cell' + (isToday ? ' today' : '') + '" data-act="open-day-diary" data-date="' + dtStr + '">' +
-      '<div class="mday-head">' +
-        '<span class="mday-num">' + d + '</span>' +
-        '<div class="mday-badges">' + dayBadges.join("") + '</div>' +
-      '</div>' +
-      diaryPreview +
-    '</div>';
+    var dayNodes = nodesByDate[dtStr] || [];
+    var isToday = dtStr === todayStr;
+    var selected = dtStr === selectedDate;
+    var names = dayNodes.map(function(node){ return node.label; }).join("、");
+    var nodeHTML = dayNodes.length ? '<span class="mday-node-row" title="' + esc(names) + '"><span class="mday-node-label">' + esc(dayNodes[0].label) + '</span>' +
+      (dayNodes.length > 1 ? '<span class="mday-node-more">+' + (dayNodes.length - 1) + '</span>' : '') + '</span>' : '';
+    var aria = year + '年' + month + '月' + d + '日' + (isToday ? '，今天' : '') + (names ? '，' + names : '') +
+      (dayDiaries.length ? '，' + dayDiaries.length + '篇手账' : '，还没有手账');
+    cellsHtml += '<button type="button" class="month-cell' + (isToday ? ' today' : '') + (selected ? ' selected' : '') +
+      (dayNodes.length ? ' has-node' : '') + '" data-act="select-month-day" data-date="' + dtStr + '" aria-label="' + esc(aria) + '" aria-pressed="' + selected + '"' + (isToday ? ' aria-current="date"' : '') + '>' +
+      '<span class="mday-num">' + d + '</span>' + nodeHTML +
+      (dayDiaries.length ? '<span class="mday-record-dot" aria-hidden="true"></span>' : '') + '</button>';
   }
-
-  // 下月填充对齐 7 的倍数
-  var currentCellCount = startDayOfWeek + totalDays;
-  var remain = (7 - (currentCellCount % 7)) % 7;
+  var remain = (7 - ((startDayOfWeek + totalDays) % 7)) % 7;
   for (var n = 1; n <= remain; n++){
-    cellsHtml += '<div class="month-cell other-month"><div class="mday-head"><span class="mday-num">' + n + '</span></div></div>';
+    cellsHtml += '<div class="month-cell other-month" aria-hidden="true"><span class="mday-num">' + n + '</span></div>';
   }
-
   var count = (MONTH_DATA && MONTH_DATA.total_count) || 0;
-
-  var html =
-  renderTopBar() +
-
-  '<div class="page-container">' +
-    diarySegHTML("month") +
-
-    '<div class="month-cal-wrap" style="padding:0">' +
-      '<div class="month-topcard">' +
-      '<div class="week-nav">' +
-        '<button class="p-btn" data-act="month-prev">‹ 上月</button>' +
-        '<button class="p-btn pri" data-act="month-cur">🐾 本月</button>' +
-        '<button class="p-btn" data-act="month-next">下月 ›</button>' +
-      '</div>' +
-      '<div style="font-size:15px;font-weight:800;color:var(--ink-primary)">' +
-        '<button type="button" class="month-jump-btn" data-act="month-pick">🗓️ ' + year + ' 年 ' + month + ' 月 <span class="mp-caret">▾</span></button>' +
-        ' · 俩汪足迹手账 🐾' +
-      '</div>' +
-      '<div style="font-size:12px;font-weight:700;color:var(--dog-a)">' +
-        '✨ 本月已记录 ' + count + ' 篇出游美好回忆' +
-      '</div>' +
-    '</div>' +
-
-    '<div class="month-grid">' + cellsHtml + '</div>' +
-    '</div>' +
-  '</div>' +
-  '<button class="fab" data-act="open-add-diary" title="记下今天去哪玩啦">🐾 记手账 +</button>';
-
-  html += bottomNavHTML();
-  html += modalsHTML();
-
+  var days = Object.keys(byDate).length;
+  var html = renderTopBar() + '<div class="page-container journal-page">' + diarySegHTML("month") +
+    '<header class="journal-heading"><div><span class="album-eyebrow">OUR LITTLE DAYS</span><h1>把日子，慢慢收藏<span class="journal-heading-dot">.</span></h1>' +
+      '<p>一起走过的平凡，也值得被记住。</p></div><img src="/img/dog-couple.webp?v=20261116a" alt="" class="journal-puppies"></header>' +
+    '<div class="journal-layout"><section class="month-cal-wrap" aria-label="手账月历">' +
+      '<div class="month-topcard"><button type="button" class="month-jump-btn" data-act="month-pick" aria-label="选择月份，当前' + year + '年' + month + '月"><span>' + year + '</span><strong>' + month + ' 月</strong><span class="mp-caret">⌄</span></button>' +
+        '<div class="album-month-nav"><button type="button" data-act="month-prev" aria-label="上一月"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m14 6-6 6 6 6"/></svg></button><button type="button" class="album-today" data-act="month-cur">今天</button><button type="button" data-act="month-next" aria-label="下一月"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m10 6 6 6-6 6"/></svg></button></div></div>' +
+      '<p class="album-month-summary">' + (count ? '留下了 <strong>' + days + '</strong> 天、<strong>' + count + '</strong> 篇回忆' : '这一页，等我们慢慢写满') + '</p>' +
+      '<div class="month-grid">' + cellsHtml + '</div><div class="album-calendar-foot"><span><i class="album-legend-dot"></i>有手账的日子</span><span>点击日期 · 翻看回忆</span></div></section>' +
+      '<section class="album-day" id="monthDayCard" aria-label="选中日手账">' + monthDayCardHTML(selectedDate) + '</section></div></div>' +
+    '<button class="fab journal-fab" data-act="open-add-diary" data-date="' + selectedDate + '" title="记录这一天">＋ 写手账</button>';
+  html += bottomNavHTML() + modalsHTML();
   setAppHTML(html);
 }
 
@@ -2393,12 +2381,23 @@ function renderAnnivList(){
 }
 
 var DIARY_DAY_CACHE = {};
+var DIARY_DAY_NODES = {};
+function dayNodesHTML(dtStr){
+  var nodes = DIARY_DAY_NODES[dtStr] || (MONTH_DATA && MONTH_DATA.nodes_by_date && MONTH_DATA.nodes_by_date[dtStr]) || [];
+  if (!nodes.length) return "";
+  return '<section class="diary-day-nodes" aria-label="这一天的重要日子"><h4>这一天，值得纪念</h4>' +
+    nodes.map(function(node){
+      return '<div class="diary-day-node"><span class="diary-node-icon" aria-hidden="true">' + esc(node.icon) + '</span>' +
+        '<div><div class="diary-node-title">' + esc(node.label) + '</div><div class="diary-node-detail">' + esc(node.detail) + '</div></div></div>';
+    }).join("") + '</section>';
+}
 function diaryDayHTML(dtStr, list){
   var html = '<div class="mhead">' +
       '<div class="mhead-left"><h3>' + fmtDateCN(dtStr) + ' 俩汪足迹 🐾</h3></div>' +
       '<img src="/img/dog-wave.png" alt="" class="mhead-img">' +
     '</div>';
 
+    html += dayNodesHTML(dtStr);
     if (list.length === 0){
       html += '<div style="text-align:center;padding:24px 0;color:var(--ink-muted);font-size:13px">' +
         '这一天还没有记录足迹哦~<br>' +
@@ -2496,8 +2495,11 @@ function openDayDiaries(dtStr, force){
   api("/api/diaries?date=" + dtStr).then(function(res){
     if (!isCurrent()) return;
     var list = res.diaries || [];
+    var nodes = res.nodes || [];
+    var previousNodes = DIARY_DAY_NODES[dtStr] || (MONTH_DATA && MONTH_DATA.nodes_by_date && MONTH_DATA.nodes_by_date[dtStr]) || [];
     DIARY_DAY_CACHE[dtStr] = list;
-    if (!cached || JSON.stringify(list) !== JSON.stringify(cached)){
+    DIARY_DAY_NODES[dtStr] = nodes;
+    if (!cached || JSON.stringify(list) !== JSON.stringify(cached) || JSON.stringify(nodes) !== JSON.stringify(previousNodes)){
       box.innerHTML = diaryDayHTML(dtStr, list);
     }
     box.setAttribute("aria-busy", "false");
@@ -2895,6 +2897,7 @@ var CLICK_ACTIONS = {
   "month-cur": function(el, e) {
     var act = "month-cur";
     MONTH_ANCHOR = todayISO().slice(0, 7);
+    MONTH_SELECTED_DATE = todayISO();
     MONTH_DATA = null;
     load();
 
@@ -2911,6 +2914,9 @@ var CLICK_ACTIONS = {
   },
   "date-pick": function(el, e) {
     openDatePick();
+  },
+  "select-month-day": function(el, e) {
+    selectMonthDay(el.getAttribute("data-date"));
   },
   "open-day-diary": function(el, e) {
     var act = "open-day-diary";
@@ -3832,6 +3838,7 @@ document.addEventListener("submit", function(e){
     api(url, {method:"POST", body:body})
       .then(function(){
         closeAllModals();
+        if (CURRENT_VIEW === "month" && savedDate.slice(0, 7) === MONTH_ANCHOR) MONTH_SELECTED_DATE = savedDate;
         toast(editId ? "手账修改已保存 🐾" : "手账已贴在小窝啦 🐾");
         diaryPhotosToUpload = [];
         load().then(function(){
