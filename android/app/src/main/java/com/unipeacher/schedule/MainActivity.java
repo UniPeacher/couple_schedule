@@ -7,6 +7,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -17,7 +18,9 @@ import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -40,6 +43,8 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
     private SwipeRefreshLayout swipeRefresh;
+    private View connectionError;
+    private boolean mainFrameFailed = false;
     private ValueCallback<Uri[]> filePathCallback;
     private long lastBackPressTime = 0;
     private String pendingTargetAction = null;
@@ -50,6 +55,8 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        migrateServerUrl();
 
         // 初始化通知渠道并动态请求权限
         NotificationHelper.createNotificationChannel(this);
@@ -63,6 +70,9 @@ public class MainActivity extends AppCompatActivity {
 
         swipeRefresh = findViewById(R.id.swipeRefresh);
         webView = findViewById(R.id.webView);
+        connectionError = findViewById(R.id.connectionError);
+        findViewById(R.id.retryConnection).setOnClickListener(v -> loadServerUrl());
+        findViewById(R.id.changeServerUrl).setOnClickListener(v -> showServerSettingsDialog());
 
         swipeRefresh.setColorSchemeResources(R.color.accent);
         /* 下拉只重取当前视图的数据，不 reload：整页重载会丢滚动位置、未提交的表单
@@ -196,9 +206,41 @@ public class MainActivity extends AppCompatActivity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                mainFrameFailed = false;
+                isPageLoaded = false;
+                connectionError.setVisibility(View.GONE);
+                swipeRefresh.setVisibility(View.VISIBLE);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request,
+                                        WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request.isForMainFrame()) showConnectionError();
+            }
+
+            @SuppressWarnings("deprecation")
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description,
+                                        String failingUrl) {
+                super.onReceivedError(view, errorCode, description, failingUrl);
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) showConnectionError();
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request,
+                                            WebResourceResponse errorResponse) {
+                super.onReceivedHttpError(view, request, errorResponse);
+                if (request.isForMainFrame()) showConnectionError();
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 swipeRefresh.setRefreshing(false);
+                if (mainFrameFailed) return;
                 /* 新页面没有弹层，重置为可用；否则上次卡在"禁用"状态时下拉会永久失灵。 */
                 swipeRefresh.setEnabled(true);
                 isPageLoaded = true;
@@ -352,9 +394,30 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
+    private void migrateServerUrl() {
+        SharedPreferences pref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        String savedUrl = pref.getString(KEY_SERVER_URL, null);
+        String migratedUrl = ServerUrlMigration.migrate(savedUrl, getString(R.string.default_server_url));
+        if (!migratedUrl.equals(savedUrl)) {
+            pref.edit().putString(KEY_SERVER_URL, migratedUrl).commit();
+        }
+    }
+
+    private void showConnectionError() {
+        mainFrameFailed = true;
+        isPageLoaded = false;
+        swipeRefresh.setRefreshing(false);
+        swipeRefresh.setVisibility(View.GONE);
+        connectionError.setVisibility(View.VISIBLE);
+    }
+
     private void loadServerUrl() {
         SharedPreferences pref = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         String url = pref.getString(KEY_SERVER_URL, getString(R.string.default_server_url));
+        mainFrameFailed = false;
+        isPageLoaded = false;
+        connectionError.setVisibility(View.GONE);
+        swipeRefresh.setVisibility(View.VISIBLE);
         webView.loadUrl(url);
     }
 
@@ -378,7 +441,7 @@ public class MainActivity extends AppCompatActivity {
                             newUrl = "https://" + newUrl;
                         }
                         pref.edit().putString(KEY_SERVER_URL, newUrl).apply();
-                        webView.loadUrl(newUrl);
+                        loadServerUrl();
                         Toast.makeText(this, "已切换为：" + newUrl, Toast.LENGTH_SHORT).show();
                     }
                 })
