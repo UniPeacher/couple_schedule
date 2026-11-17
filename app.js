@@ -1160,14 +1160,14 @@ function renderMonthApp(){
     var isToday = dtStr === todayStr;
     var selected = dtStr === selectedDate;
     var names = dayNodes.map(function(node){ return node.label; }).join("、");
-    var dayMarks = (dayNodes.length ? '<i class="mday-node-mark"></i>' : '') +
-      (dayDiaries.length ? '<i class="mday-record-dot"></i>' : '');
-    var marksHTML = dayMarks ? '<span class="mday-marks" aria-hidden="true">' + dayMarks + '</span>' : '';
+    var nodeHTML = dayNodes.length ? '<span class="mday-node-row" title="' + esc(names) + '"><span class="mday-node-label">' + esc(dayNodes[0].label) + '</span>' +
+      (dayNodes.length > 1 ? '<span class="mday-node-more">+' + (dayNodes.length - 1) + '</span>' : '') + '</span>' : '';
+    var marksHTML = dayDiaries.length ? '<span class="mday-marks" aria-hidden="true"><i class="mday-record-dot"></i></span>' : '';
     var aria = year + '年' + month + '月' + d + '日' + (isToday ? '，今天' : '') + (names ? '，' + names : '') +
       (dayDiaries.length ? '，' + dayDiaries.length + '篇手账' : '，还没有手账');
     cellsHtml += '<button type="button" class="month-cell' + (isToday ? ' today' : '') + (selected ? ' selected' : '') +
-      '" data-act="select-month-day" data-date="' + dtStr + '" aria-label="' + esc(aria) + '" aria-pressed="' + selected + '"' + (isToday ? ' aria-current="date"' : '') + '>' +
-      '<span class="mday-num">' + d + marksHTML + '</span></button>';
+      (dayNodes.length ? ' has-node' : '') + '" data-act="select-month-day" data-date="' + dtStr + '" aria-label="' + esc(aria) + '" aria-pressed="' + selected + '"' + (isToday ? ' aria-current="date"' : '') + '>' +
+      '<span class="mday-num">' + d + marksHTML + '</span>' + nodeHTML + '</button>';
   }
   var remain = (7 - ((startDayOfWeek + totalDays) % 7)) % 7;
   for (var n = 1; n <= remain; n++){
@@ -1182,7 +1182,7 @@ function renderMonthApp(){
       '<div class="month-topcard"><button type="button" class="month-jump-btn" data-act="month-pick" aria-label="选择月份，当前' + year + '年' + month + '月"><span>' + year + '</span><strong>' + month + ' 月</strong><span class="mp-caret">⌄</span></button>' +
         '<div class="album-month-nav"><button type="button" data-act="month-prev" aria-label="上一月"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m14 6-6 6 6 6"/></svg></button><button type="button" class="album-today" data-act="month-cur">今天</button><button type="button" data-act="month-next" aria-label="下一月"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m10 6 6 6-6 6"/></svg></button></div></div>' +
       '<p class="album-month-summary">' + (count ? '留下了 <strong>' + days + '</strong> 天、<strong>' + count + '</strong> 篇回忆' : '这一页，等我们慢慢写满') + '</p>' +
-      '<div class="month-grid">' + cellsHtml + '</div><div class="album-calendar-foot"><span><i class="album-legend-node"></i>纪念日<i class="album-legend-dot"></i>有手账</span><span>点击日期 · 翻看回忆</span></div></section>' +
+      '<div class="month-grid">' + cellsHtml + '</div><div class="album-calendar-foot"><span><i class="album-legend-dot"></i>有手账的日子</span><span>点击日期 · 翻看回忆</span></div></section>' +
       '<section class="album-day" id="monthDayCard" aria-label="选中日手账">' + monthDayCardHTML(selectedDate) + '</section></div></div>' +
     '<button class="fab journal-fab" data-act="open-add-diary" data-date="' + selectedDate + '" title="记录这一天">＋ 写手账</button>';
   html += bottomNavHTML() + modalsHTML();
