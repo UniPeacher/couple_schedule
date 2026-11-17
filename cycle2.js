@@ -9,7 +9,7 @@ var Cycle2 = (function () {
   var PHASES = ['menstrual', 'follicular', 'ovulation', 'luteal'];
   var PHASE_LABEL = {menstrual: '行经期', follicular: '卵泡期', ovulation: '排卵期', luteal: '黄体期'};
   var CONF_LABEL = {high: '可信度较高', medium: '可信度中等', low: '样本较少'};
-  var WD = ['日', '一', '二', '三', '四', '五', '六'];
+  var WD = ['一', '二', '三', '四', '五', '六', '日'];
   var WD_FULL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   var MOODS = ['开心', '平静', '放松', '兴奋', '敏感', '焦虑', '烦躁', '低落'];
   var MOOD_EMOJI = ['🙂', '😌', '😊', '🤩', '🥺', '😰', '😤', '😔'];
@@ -203,101 +203,56 @@ var Cycle2 = (function () {
       ? [['period', '行经期'], ['ovulation', '排卵期'], ['follicular', '卵泡期'], ['luteal', '黄体期']]
       : [['period', '经期'], ['predicted pill-dash', '预测经期'], ['fertile pill-fill', '排卵期'],
          ['ovulation gear', '排卵日'], ['note', '有记录']];
-    return '<div class="c2-legend">' + items.map(function (it) {
-      return '<span><i class="' + it[0] + '">' + (it[0].indexOf('gear') >= 0 ? '❋' : '') + '</i>' + it[1] + '</span>';
+    return '<div class="c2-legend' + (kind === 'ring' ? '' : ' c2-calendar-legend') + '">' + items.map(function (it) {
+      return '<span><i class="' + it[0] + '">' + (it[0].indexOf('gear') >= 0 ? '✦' : '') + '</i>' + it[1] + '</span>';
     }).join('') + '</div>';
   }
 
   /* ---------- month calendar ---------- */
   function calendarGrid(s) {
     var p = monthAnchor().split('-'), year = +p[0], month = +p[1];
-    var first = new Date(year, month - 1, 1);
+    var lead = (new Date(year, month - 1, 1).getDay() + 6) % 7;
     var days = new Date(year, month, 0).getDate();
-    var lead = first.getDay();
     var marks = {}, noted = {};
     (s.month_marks || []).forEach(function (m) { marks[m.date] = m.kind; });
     (s.notes || []).forEach(function (n) { noted[n.date] = 1; });
     var todayStr = todayISO();
-    /* Huawei-style day chains: consecutive period / predicted / fertile days are
-       joined into one scalloped capsule by drawRunChains(); the cell only tags
-       which run it belongs to. */
+    var labels = {period: '经期', predicted: '预测经期', fertile: '排卵期', ovulation: '排卵日'};
+    function isoDate(day) {
+      return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    }
     function runOf(kind) {
       return kind === 'fertile' || kind === 'ovulation' ? 'fertile'
-        : kind === 'period' ? 'period'
-        : kind === 'predicted' ? 'pred' : '';
+        : kind === 'period' ? 'period' : kind === 'predicted' ? 'pred' : '';
     }
-    var cells = WD.map(function (w) { return '<div class="c2-cal-head">' + w + '</div>'; }).join('');
-    for (var i = 0; i < lead; i++) cells += '<div class="c2-cal-cell" aria-hidden="true"></div>';
+    var cells = WD.map(function (w) { return '<div class="c2-cal-head" aria-hidden="true">' + w + '</div>'; }).join('');
+    for (var i = 0; i < lead; i++) cells += '<div class="c2-cal-cell c2-cal-blank" aria-hidden="true"></div>';
     for (var d = 1; d <= days; d++) {
-      var iso = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-      var kind = marks[iso], run = runOf(kind);
-      var marker = kind === 'ovulation' ? '<span class="m ovu-gear">❋</span>' : '';
+      var iso = isoDate(d), kind = marks[iso], run = runOf(kind), column = (lead + d - 1) % 7;
+      /* A band ends at a gap, a change of phase or a week boundary. */
+      var begins = run && (d === 1 || column === 0 || runOf(marks[isoDate(d - 1)]) !== run);
+      var ends = run && (d === days || column === 6 || runOf(marks[isoDate(d + 1)]) !== run);
+      var label = year + '年' + month + '月' + d + '日，' + WD_FULL[(column + 1) % 7] +
+        (iso === todayStr ? '，今天' : '') + (labels[kind] ? '，' + labels[kind] : '') +
+        (noted[iso] ? '，有记录' : '') + '，点击记录';
       cells += '<button type="button" class="c2-cal-cell' + (iso === todayStr ? ' today' : '') +
         (noted[iso] ? ' has-note' : '') + (kind === 'ovulation' ? ' ovu-day' : '') +
-        (run ? ' c2-run c2-run-' + run : '') + '"' +
-        (run ? ' data-run="' + run + '"' : '') +
-        ' data-c2="day" data-date="' + iso + '">' +
-        '<span class="d">' + d + '</span>' + marker + '</button>';
+        (run ? ' c2-run c2-run-' + run : '') + (begins ? ' run-start' : '') + (ends ? ' run-end' : '') + '"' +
+        ' data-c2="day" data-date="' + iso + '" aria-label="' + h(label) + '"' +
+        (iso === todayStr ? ' aria-current="date"' : '') + '>' +
+        '<span class="d">' + d + '</span>' +
+        (kind === 'ovulation' ? '<span class="m ovu-gear" aria-hidden="true">✦</span>' : '') + '</button>';
     }
-    return '<div class="c2-cal">' + cells + '</div>';
-  }
-
-  /* ---------- scalloped day chains (SVG overlay) ---------- */
-  /* One blob per day with adjacent blobs overlapping: the union reads as a single
-     scalloped capsule. Runs never cross a week row, so each row segment gets its
-     own path; the boundary is a run of ellipse arcs (large=0, sweep=1). */
-  function chainPath(run, xs, cy, pitch) {
-    var rx = pitch / 2 + 3.5, ry = 21;
-    var k = xs.length;
-    function arc(x, y) {
-      return 'A' + rx + ' ' + ry + ' 0 0 1 ' + x.toFixed(1) + ' ' + y.toFixed(1);
-    }
-    if (k === 1) {
-      return '<ellipse class="c2-run-shape ' + run + '" cx="' + xs[0].toFixed(1) +
-        '" cy="' + cy.toFixed(1) + '" rx="' + rx.toFixed(1) + '" ry="' + ry + '"/>';
-    }
-    var S = xs[1] - xs[0];
-    var hf = ry * Math.sqrt(Math.max(0, 1 - (S / (2 * rx)) * (S / (2 * rx))));
-    var d = 'M' + (xs[0] - rx).toFixed(1) + ' ' + cy.toFixed(1) + arc(xs[0] + S / 2, cy - hf);
-    for (var i = 1; i < k; i++) d += arc(xs[i] + S / 2, cy - hf);
-    d += arc(xs[k - 1] + rx, cy) + arc(xs[k - 1] - S / 2, cy + hf);
-    for (i = k - 2; i >= 1; i--) d += arc(xs[i] - S / 2, cy + hf);
-    d += arc(xs[0] - rx, cy) + 'Z';
-    return '<path class="c2-run-shape ' + run + '" d="' + d + '"/>';
-  }
-
-  function drawRunChains() {
-    var cal = document.querySelector('.c2-view-cal:not([hidden]) .c2-cal');
-    if (!cal || !cal.clientWidth) return;
-    var svg = cal.querySelector('.c2-cal-svg');
-    if (!svg) {
-      svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'c2-cal-svg');
-      svg.setAttribute('aria-hidden', 'true');
-      cal.insertBefore(svg, cal.firstChild);
-    }
-    svg.setAttribute('viewBox', '0 0 ' + cal.clientWidth + ' ' + cal.clientHeight);
-    var calRect = cal.getBoundingClientRect();
-    var pitch = cal.clientWidth / 7;
-    var cells = cal.querySelectorAll('.c2-cal-cell[data-run]');
-    var html = '', i = 0;
-    while (i < cells.length) {
-      var run = cells[i].dataset.run, row = cells[i].offsetTop, xs = [], cy = 0, j = i;
-      while (j < cells.length && cells[j].dataset.run === run && cells[j].offsetTop === row) {
-        var r = cells[j].querySelector('.d').getBoundingClientRect();
-        xs.push(r.left + r.width / 2 - calRect.left);
-        cy = r.top + r.height / 2 - calRect.top;
-        j++;
-      }
-      html += chainPath(run, xs, cy, pitch);
-      i = j;
-    }
-    svg.innerHTML = html;
+    return '<div class="c2-cal" role="group" aria-label="' + year + '年' + month + '月周期日历">' + cells + '</div>' +
+      '<div class="c2-cal-footer"><span>点选日期，记录当天的感受</span>' +
+      (monthAnchor().slice(0, 7) !== todayStr.slice(0, 7)
+        ? '<button type="button" data-c2="month-today">回到本月 ↗</button>'
+        : '<span class="c2-today-key"><i></i>今天</span>') + '</div>';
   }
 
   function monthLabel() {
     var p = monthAnchor().split('-');
-    return p[0] + '.' + (+p[1]);
+    return '<span class="c2-month-year">' + p[0] + '年</span>' + (+p[1]) + '月';
   }
 
   function mainCard(s) {
@@ -319,9 +274,9 @@ var Cycle2 = (function () {
       metrics.push(['🌷', '当前阶段',
         (PHASE_LABEL[s.today.phase] || '') + ' · 周期第 ' + s.today.cycle_day + ' 天']);
     }
-    return '<section class="c2-card">' +
+    return '<section class="c2-card c2-calendar-card">' +
       '<div class="c2-head">' +
-        '<div style="display:flex;align-items:center;gap:0">' +
+        '<div class="c2-month-nav">' +
           '<button type="button" class="c2-month-arrow" data-c2="month-prev" aria-label="上个月">‹</button>' +
           '<button type="button" class="c2-month" data-c2="month-pick">' + monthLabel() + ' <span class="mp-caret">▾</span></button>' +
           '<button type="button" class="c2-month-arrow" data-c2="month-next" aria-label="下个月">›</button>' +
@@ -329,7 +284,9 @@ var Cycle2 = (function () {
         '<button type="button" class="c2-toggle" data-c2="toggle-view">' +
           '<i></i>' + (viewMode === 'calendar' ? '周期视图' : '日历视图') + '</button>' +
       '</div>' +
-      lengthText +
+      '<div class="c2-calendar-summary"><div class="c2-current-phase">' +
+        (s.today ? '<span>' + h(PHASE_LABEL[s.today.phase] || s.today.label) + '</span><b>周期第 ' + s.today.cycle_day + ' 天</b>'
+          : '<span>认识自己的节奏</span><b>从一次记录开始</b>') + '</div>' + lengthText + '</div>' +
       '<div class="c2-view-cal"' + (viewMode === 'calendar' ? '' : ' hidden') + '>' + calendarGrid(s) + '</div>' +
       '<div class="c2-view-ring"' + (viewMode === 'ring' ? '' : ' hidden') + '>' +
         '<div class="c2-ring-wrap">' + ring(s) + '</div>' +
@@ -599,7 +556,6 @@ var Cycle2 = (function () {
     box.innerHTML = c2HeaderHTML('🌷 生理周期', '四相分期 · 越记越准', 'dog-couple.png') +
       own(s) + modalsHTML();
     bindForms();
-    drawRunChains();
   }
 
   function fillDay(date) {
@@ -879,6 +835,12 @@ var Cycle2 = (function () {
       openMonthPicker(monthAnchor(), function (ym) { anchor = ym; request(); });
       return;
     }
+    if (a === 'month-today') {
+      e.preventDefault();
+      anchor = todayISO().slice(0, 7);
+      request();
+      return;
+    }
     if (a === 'month-prev' || a === 'month-next') {
       e.preventDefault();
       shiftMonth(a === 'month-next' ? 1 : -1);
@@ -979,14 +941,6 @@ var Cycle2 = (function () {
         !document.querySelector('#cycle2Content :focus')) paintPage(s);
     }).catch(function () { scrub(); });
   }, 15000);
-
-  /* The chains are measured off the live grid, so re-measure when it moves. */
-  var runResize = 0;
-  window.addEventListener('resize', function () {
-    if (!state || recordTab || CURRENT_VIEW !== 'cycle2') return;
-    clearTimeout(runResize);
-    runResize = setTimeout(drawRunChains, 150);
-  });
 
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) scrub(); else if (ME) mount();

@@ -77,80 +77,90 @@ html.dark .c2-page{
   background:var(--c2-accent-bg);border:1px solid var(--c2-accent-bd);
 }
 
-/* ---------- card head: month chip + view toggle ---------- */
-.c2-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+/* ---------- calendar card ---------- */
+.c2-calendar-card{
+  --c2-cal-period:#c44c70;--c2-cal-period-ink:#fff;
+  --c2-cal-pred:#fff4f7;--c2-cal-pred-line:#cb6c89;--c2-cal-pred-ink:#a53d60;
+  --c2-cal-fertile:#edf0fb;--c2-cal-fertile-ink:#5969a5;
+  padding:20px 18px 14px;border-width:1px;
+}
+html.dark .c2-calendar-card{
+  --c2-cal-period:#a83f60;--c2-cal-period-ink:#fff2f6;
+  --c2-cal-pred:#31212d;--c2-cal-pred-line:#bb7892;--c2-cal-pred-ink:#f1b5ca;
+  --c2-cal-fertile:#252e47;--c2-cal-fertile-ink:#b8c5f6;
+}
+.c2-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.c2-month-nav{display:flex;align-items:center;gap:2px}
 .c2-month{
-  display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;
-  font-size:17px;font-weight:800;color:var(--ink-primary);cursor:pointer;padding:4px 2px;
+  display:inline-flex;align-items:baseline;gap:5px;border:0;background:transparent;
+  min-height:44px;font-size:19px;font-weight:800;color:var(--ink-primary);cursor:pointer;padding:5px 2px;
 }
-.c2-month:active{opacity:.7}
+.c2-month-year{font-size:12px;font-weight:600;color:var(--ink-muted)}
+.c2-month .mp-caret{font-size:10px;color:var(--ink-muted)}
 .c2-month-arrow{
-  border:0;background:transparent;cursor:pointer;color:var(--ink-light);
-  font-size:18px;font-weight:700;line-height:1;padding:2px 7px;
+  display:inline-flex;align-items:center;justify-content:center;width:32px;min-height:44px;
+  border:0;background:transparent;cursor:pointer;color:var(--ink-secondary);font-size:25px;font-weight:400;padding:0;
 }
-.c2-month-arrow:active{color:var(--ink-secondary)}
 .c2-toggle{
-  display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;
-  border-radius:999px;border:1.5px solid var(--line-strong);background:var(--bg-card-subtle);
-  color:var(--ink-secondary);font-size:12.5px;font-weight:700;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 10px;
+  border-radius:14px;border:1px solid var(--line-subtle);background:var(--bg-card-subtle);
+  color:var(--ink-secondary);font-size:11px;font-weight:600;cursor:pointer;
 }
 .c2-toggle i{
-  width:13px;height:13px;border-radius:50%;display:inline-block;
-  background:conic-gradient(var(--c2-period) 0 40%, var(--c2-ovu) 40% 62%, var(--c2-foll) 62% 82%, var(--c2-lute) 82% 100%);
+  width:12px;height:12px;border-radius:50%;display:inline-block;
+  background:conic-gradient(var(--c2-period) 0 40%,var(--c2-ovu) 40% 62%,var(--c2-foll) 62% 82%,var(--c2-lute) 82% 100%);
 }
-.c2-toggle:active{transform:scale(.97)}
-
-/* ---------- cycle length summary ---------- */
-.c2-length{margin:14px 0 2px;display:flex;align-items:baseline;gap:6px}
-.c2-length b{font-size:28px;font-weight:900;letter-spacing:-.5px}
-.c2-length span{font-size:12px;color:var(--ink-muted);font-weight:700}
+.c2-calendar-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 2px 18px}
+.c2-current-phase{display:flex;flex-direction:column;gap:5px}
+.c2-current-phase span{font-size:11px;color:var(--ink-muted)}
+.c2-current-phase b{font-size:18px;line-height:1.4;color:var(--ink-primary);font-weight:750}
+.c2-length{display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin:0}
+.c2-length b{font-size:23px;line-height:1;font-weight:750;letter-spacing:-.6px;color:var(--ink-primary)}
+.c2-length span{font-size:10px;color:var(--ink-muted);font-weight:500}
 .c2-length.empty b{color:var(--ink-light)}
 
 /* ---------- calendar grid ---------- */
-.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0;position:relative;margin:10px 0 4px}
-.c2-cal-head{
-  text-align:center;font-size:12px;font-weight:800;color:var(--ink-muted);
-  padding:7px 0 5px;letter-spacing:.5px;
-}
+.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px 0;position:relative;margin:0}
+.c2-cal-head{text-align:center;font-size:11px;font-weight:500;color:var(--ink-muted);padding:0 0 12px}
 .c2-cal-cell{
-  position:relative;border:0;background:transparent;cursor:pointer;
+  position:relative;isolation:isolate;border:0;background:transparent;cursor:pointer;
   display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
-  gap:4px;padding:6px 0 9px;min-height:54px;border-radius:14px;
+  padding:8px 0 17px;min-width:0;min-height:59px;border-radius:0;font:inherit;
 }
-.c2-cal-cell:active{background:var(--bg-card-subtle)}
-/* scalloped day chains live in one SVG under the cells, drawn by drawRunChains() */
-.c2-cal-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.c2-run-shape.fertile{fill:var(--c2-fertile-bg)}
-.c2-run-shape.period{fill:var(--c2-period-bg)}
-.c2-run-shape.pred{
-  fill:none;stroke:var(--c2-pred-bd);stroke-width:1.8;
-  stroke-linecap:round;stroke-dasharray:.1 4.8;
-}
+.c2-cal-blank{pointer-events:none}
 .c2-cal-cell .d{
-  position:relative;
-  width:34px;height:34px;border-radius:50%;display:inline-flex;
-  align-items:center;justify-content:center;font-size:15px;font-weight:700;
-  color:var(--ink-secondary);
+  position:relative;box-sizing:border-box;width:34px;height:34px;border-radius:50%;display:inline-flex;
+  align-items:center;justify-content:center;font-size:15px;font-weight:550;line-height:1;
+  color:var(--ink-secondary);font-variant-numeric:tabular-nums;
 }
-.c2-cal-cell.c2-run-fertile .d{color:var(--c2-fertile-tx);font-weight:800}
-.c2-cal-cell.c2-run-pred .d{color:var(--c2-pred-tx);font-weight:800}
-.c2-cal-cell.c2-run-period .d{color:var(--c2-period-tx);font-weight:800}
-.c2-cal-cell.today .d{
-  border:1.7px solid var(--c2-today-ring);background:transparent;
-  color:var(--ink-primary);font-weight:900;
-}
-/* a small red dot under the number flags days that already have a record */
+.c2-run::before{content:'';position:absolute;z-index:-1;left:0;right:0;top:7px;height:36px;box-sizing:border-box}
+.c2-run.run-start::before{left:2px;border-radius:18px 0 0 18px}
+.c2-run.run-end::before{right:2px;border-radius:0 18px 18px 0}
+.c2-run.run-start.run-end::before{border-radius:18px}
+.c2-run-period::before{background:var(--c2-cal-period)}
+.c2-run-period .d{color:var(--c2-cal-period-ink);font-weight:650}
+.c2-run-fertile::before{background:var(--c2-cal-fertile)}
+.c2-run-fertile .d{color:var(--c2-cal-fertile-ink)}
+.c2-run-pred::before{background:var(--c2-cal-pred);border-block:1px dashed var(--c2-cal-pred-line)}
+.c2-run-pred.run-start::before{border-left:1px dashed var(--c2-cal-pred-line)}
+.c2-run-pred.run-end::before{border-right:1px dashed var(--c2-cal-pred-line)}
+.c2-run-pred .d{color:var(--c2-cal-pred-ink)}
+.c2-cal-cell.ovu-day .d{box-shadow:inset 0 0 0 1.5px var(--c2-cal-fertile-ink);font-weight:750}
+.c2-cal-cell.today .d{background:var(--ink-primary);color:var(--bg-card);font-weight:750;box-shadow:0 0 0 2px var(--bg-card)}
 .c2-cal-cell.has-note::after{
-  content:'';position:absolute;bottom:4px;left:calc(50% - 3px);
-  width:6px;height:6px;border-radius:50%;background:var(--c2-note);
+  content:'';position:absolute;bottom:6px;left:calc(50% - 2px);
+  width:4px;height:4px;border-radius:50%;background:var(--c2-note);
 }
-.c2-cal-cell.ovu-day.has-note::after{left:calc(50% + 8px)}
-.c2-cal-cell .m{width:7px;height:7px;border-radius:50%;background:transparent}
-.c2-cal-cell .m.ovu-gear{
-  width:auto;height:auto;background:transparent;box-shadow:none;
-  position:relative;font-size:11px;line-height:7px;font-weight:700;
-  color:var(--c2-fertile-tx);
-}
+.c2-cal-cell .m.ovu-gear{position:absolute;bottom:2px;font-size:12px;line-height:12px;color:var(--c2-cal-fertile-ink)}
+.c2-cal-cell.ovu-day.has-note::after{left:calc(50% + 7px)}
+.c2-cal-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;margin:8px 2px 0;color:var(--ink-muted);font-size:10px}
+.c2-cal-footer button{border:0;background:transparent;color:var(--ink-secondary);font:inherit;font-weight:650;cursor:pointer;min-height:44px;padding:0 2px}
+.c2-today-key{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.c2-today-key i{width:7px;height:7px;border-radius:50%;background:var(--ink-primary)}
+.c2-month:focus-visible,.c2-month-arrow:focus-visible,.c2-toggle:focus-visible,.c2-cal-cell:focus-visible,.c2-cal-footer button:focus-visible{outline:2px solid var(--c2-accent);outline-offset:2px;border-radius:10px}
+@media (hover:hover){.c2-cal-cell:hover .d{outline:1px solid var(--ink-light);outline-offset:2px}.c2-month-arrow:hover,.c2-month:hover{color:var(--c2-accent)}}
+.c2-cal-cell:active .d{transform:scale(.92)}
+@media(max-width:360px){.c2-calendar-card{padding:16px 12px 12px}.c2-month{font-size:17px;gap:3px}.c2-month-arrow{width:28px}.c2-toggle{padding:0 8px;gap:4px}.c2-current-phase b{font-size:16px}}
 
 /* ---------- legend ---------- */
 .c2-legend{display:flex;flex-wrap:wrap;gap:4px 13px;justify-content:center;margin:14px 0 2px}
@@ -170,6 +180,14 @@ html.dark .c2-page{
 .c2-legend .follicular{background:var(--c2-foll)}
 .c2-legend .luteal{background:var(--c2-lute)}
 .c2-legend .note{background:var(--c2-note)}
+
+.c2-calendar-card .c2-calendar-legend{justify-content:flex-start;gap:9px 14px;margin:12px 2px 16px;padding-top:14px;border-top:1px solid var(--line-subtle)}
+.c2-calendar-card .c2-calendar-legend span{font-size:10px;font-weight:500}
+.c2-calendar-card .c2-calendar-legend .period{width:14px;height:8px;border-radius:4px;background:var(--c2-cal-period)}
+.c2-calendar-card .c2-calendar-legend .pill-dash{width:14px;height:8px;border-radius:4px;border:1px dashed var(--c2-cal-pred-line);background:var(--c2-cal-pred)}
+.c2-calendar-card .c2-calendar-legend .pill-fill{width:14px;height:8px;border-radius:4px;background:var(--c2-cal-fertile);box-shadow:inset 0 0 0 1px var(--c2-cal-fertile-ink)}
+.c2-calendar-card .c2-calendar-legend .gear{color:var(--c2-cal-fertile-ink)}
+.c2-calendar-card .c2-calendar-legend .note{width:4px;height:4px}
 
 /* ---------- dot ring ---------- */
 .c2-ring-wrap{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 4px}
