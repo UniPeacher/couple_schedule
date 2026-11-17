@@ -499,20 +499,23 @@ html.dark .journal-page{
 .month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0}
 .month-head-cell{text-align:center;font-size:11px;font-weight:500;color:var(--ink-muted);padding:2px 0 15px}
 .month-head-cell:nth-child(6),.month-head-cell:nth-child(7){color:var(--album-accent)}
-.month-cell{font:inherit;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-width:0;height:69px;min-height:0;padding:8px 1px 13px;border:0;border-top:1px solid var(--line-subtle);background:transparent;color:var(--ink-primary);border-radius:0;cursor:pointer;transition:background .15s ease;overflow:visible;box-shadow:none}
-.mday-num{display:flex;align-items:center;justify-content:center;width:29px;height:29px;border-radius:50%;font-size:14px;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;flex-shrink:0}
+.month-cell{font:inherit;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:46px;min-height:0;padding:4px 1px;border:0;border-top:1px solid var(--line-subtle);background:transparent;color:var(--ink-primary);border-radius:0;cursor:pointer;transition:background .15s ease;overflow:visible;box-shadow:none}
+.mday-num{position:relative;display:flex;align-items:center;justify-content:center;width:29px;height:29px;border-radius:50%;font-size:14px;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;flex-shrink:0}
 .month-cell.today .mday-num{box-shadow:inset 0 0 0 1px var(--album-accent);color:var(--album-accent)}
 .month-cell.selected .mday-num{background:var(--album-accent);color:var(--bg-card);box-shadow:none}
 .month-cell.selected{background:transparent}
 .month-cell.other-month{color:var(--ink-light);cursor:default;opacity:.55;pointer-events:none}
-.mday-node-row{position:absolute;top:40px;left:1px;right:1px;display:flex;align-items:center;justify-content:center;gap:1px;min-width:0;font-size:9px;font-weight:500;line-height:1.5;color:var(--album-accent);white-space:nowrap}
-.mday-node-label{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.mday-node-more{flex-shrink:0;font-size:8px;opacity:.8}
-.mday-record-dot{position:absolute;bottom:7px;left:calc(50% - 2px);height:4px;width:4px;background:var(--album-accent);border-radius:50%}
+.mday-marks{position:absolute;top:-1px;right:-2px;display:flex;align-items:center;gap:2px;line-height:0;pointer-events:none}
+.mday-node-mark,.mday-record-dot{display:block;box-sizing:border-box;width:5px;height:5px;border-radius:50%;box-shadow:0 0 0 1.5px var(--bg-card)}
+.mday-record-dot{background:var(--album-accent)}
+.mday-node-mark{border:1.4px solid var(--album-accent)}
+.month-cell.selected .mday-marks{top:-4px;right:-6px}
 .journal-page .c2-cell-mark{display:none}
 .album-calendar-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-top:14px;margin-top:5px;border-top:1px solid var(--line-subtle);font-size:10px;color:var(--ink-muted)}
-.album-calendar-foot>span:first-child{display:flex;align-items:center;gap:6px}
-.album-legend-dot{display:inline-block;width:4px;height:4px;background:var(--album-accent);border-radius:50%}
+.album-calendar-foot>span:first-child{display:flex;align-items:center;gap:5px}
+.album-legend-dot,.album-legend-node{display:inline-block;width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.album-legend-dot{background:var(--album-accent)}
+.album-legend-node{background:var(--bg-card);box-shadow:inset 0 0 0 1.4px var(--album-accent)}
 .album-day{min-width:0;padding:4px 0 0}
 .album-day-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
 .album-day-heading .album-eyebrow{font-size:10px;letter-spacing:1px;color:var(--ink-muted)}
@@ -561,9 +564,9 @@ html.dark .journal-page{
   .month-cal-wrap{padding:15px 16px 12px;border-radius:21px}
   .album-month-summary{margin-bottom:13px;color:var(--ink-secondary)}
   .month-head-cell{padding-bottom:10px;color:var(--ink-secondary)}
-  .month-cell{height:58px;padding-top:5px;padding-bottom:7px}
-  .mday-node-row{top:36px}
-  .mday-record-dot{bottom:3px}
+  .month-cell{height:44px;padding:3px 1px}
+  .mday-marks{top:1px;right:2px}
+  .mday-node-mark,.mday-record-dot{width:4px;height:4px}
   .album-calendar-foot{padding-top:11px;margin-top:2px;color:var(--ink-secondary)}
   .album-day{padding:0 2px}
   .album-cover{aspect-ratio:16/10}
@@ -575,9 +578,7 @@ html.dark .journal-page{
   .journal-heading p{font-size:10.5px}
   .journal-puppies{width:58px;height:62px}
   .month-cal-wrap{padding-left:10px;padding-right:10px}
-  .month-cell{height:56px}
-  .mday-node-row{font-size:8px}
-  .mday-node-more{font-size:7px}
+  .month-cell{height:42px}
   .journal-page .month-jump-btn strong{font-size:21px}
   .album-month-nav button{min-width:32px}
   .album-calendar-foot{font-size:9px}

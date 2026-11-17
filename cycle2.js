@@ -235,13 +235,15 @@ var Cycle2 = (function () {
       var label = year + '年' + month + '月' + d + '日，' + WD_FULL[(column + 1) % 7] +
         (iso === todayStr ? '，今天' : '') + (labels[kind] ? '，' + labels[kind] : '') +
         (noted[iso] ? '，有记录' : '') + '，点击记录';
+      var markHTML = (kind === 'ovulation' ? '<i class="c2-m-ovu">✦</i>' : '') +
+        (noted[iso] ? '<i class="c2-m-note"></i>' : '');
       cells += '<button type="button" class="c2-cal-cell' + (iso === todayStr ? ' today' : '') +
         (noted[iso] ? ' has-note' : '') + (kind === 'ovulation' ? ' ovu-day' : '') +
         (run ? ' c2-run c2-run-' + run : '') + (begins ? ' run-start' : '') + (ends ? ' run-end' : '') + '"' +
         ' data-c2="day" data-date="' + iso + '" aria-label="' + h(label) + '"' +
         (iso === todayStr ? ' aria-current="date"' : '') + '>' +
-        '<span class="d">' + d + '</span>' +
-        (kind === 'ovulation' ? '<span class="m ovu-gear" aria-hidden="true">✦</span>' : '') + '</button>';
+        '<span class="d">' + d + (markHTML ? '<span class="c2-marks" aria-hidden="true">' + markHTML + '</span>' : '') +
+        '</span></button>';
     }
     return '<div class="c2-cal" role="group" aria-label="' + year + '年' + month + '月周期日历">' + cells + '</div>' +
       '<div class="c2-cal-footer"><span>点选日期，记录当天的感受</span>' +

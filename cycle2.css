@@ -120,12 +120,12 @@ html.dark .c2-calendar-card{
 .c2-length.empty b{color:var(--ink-light)}
 
 /* ---------- calendar grid ---------- */
-.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px 0;position:relative;margin:0}
-.c2-cal-head{text-align:center;font-size:11px;font-weight:500;color:var(--ink-muted);padding:0 0 12px}
+.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px 0;position:relative;margin:0}
+.c2-cal-head{text-align:center;font-size:11px;font-weight:500;color:var(--ink-muted);padding:0 0 8px}
 .c2-cal-cell{
   position:relative;isolation:isolate;border:0;background:transparent;cursor:pointer;
-  display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
-  padding:8px 0 17px;min-width:0;min-height:59px;border-radius:0;font:inherit;
+  display:flex;align-items:center;justify-content:center;
+  padding:5px 0;min-width:0;min-height:44px;border-radius:0;font:inherit;
 }
 .c2-cal-blank{pointer-events:none}
 .c2-cal-cell .d{
@@ -133,7 +133,7 @@ html.dark .c2-calendar-card{
   align-items:center;justify-content:center;font-size:15px;font-weight:550;line-height:1;
   color:var(--ink-secondary);font-variant-numeric:tabular-nums;
 }
-.c2-run::before{content:'';position:absolute;z-index:-1;left:0;right:0;top:7px;height:36px;box-sizing:border-box}
+.c2-run::before{content:'';position:absolute;z-index:-1;left:0;right:0;top:5px;height:34px;box-sizing:border-box}
 .c2-run.run-start::before{left:2px;border-radius:18px 0 0 18px}
 .c2-run.run-end::before{right:2px;border-radius:0 18px 18px 0}
 .c2-run.run-start.run-end::before{border-radius:18px}
@@ -147,12 +147,11 @@ html.dark .c2-calendar-card{
 .c2-run-pred .d{color:var(--c2-cal-pred-ink)}
 .c2-cal-cell.ovu-day .d{box-shadow:inset 0 0 0 1.5px var(--c2-cal-fertile-ink);font-weight:750}
 .c2-cal-cell.today .d{background:var(--ink-primary);color:var(--bg-card);font-weight:750;box-shadow:0 0 0 2px var(--bg-card)}
-.c2-cal-cell.has-note::after{
-  content:'';position:absolute;bottom:6px;left:calc(50% - 2px);
-  width:4px;height:4px;border-radius:50%;background:var(--c2-note);
-}
-.c2-cal-cell .m.ovu-gear{position:absolute;bottom:2px;font-size:12px;line-height:12px;color:var(--c2-cal-fertile-ink)}
-.c2-cal-cell.ovu-day.has-note::after{left:calc(50% + 7px)}
+.c2-marks{position:absolute;top:1px;right:-1px;display:flex;align-items:center;gap:2px;line-height:0;pointer-events:none}
+.c2-m-ovu{font-size:9px;line-height:1;font-style:normal;color:var(--c2-cal-fertile-ink)}
+.c2-m-note{width:4px;height:4px;border-radius:50%;background:var(--c2-note);box-shadow:0 0 0 1.2px var(--bg-card)}
+.c2-cal-cell.today .c2-m-ovu{color:var(--bg-card)}
+.c2-cal-cell.today .c2-m-note{box-shadow:0 0 0 1.5px var(--ink-primary)}
 .c2-cal-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;margin:8px 2px 0;color:var(--ink-muted);font-size:10px}
 .c2-cal-footer button{border:0;background:transparent;color:var(--ink-secondary);font:inherit;font-weight:650;cursor:pointer;min-height:44px;padding:0 2px}
 .c2-today-key{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
