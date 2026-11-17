@@ -522,12 +522,12 @@ var Cycle2 = (function () {
 
   function modalsHTML() {
     return '<div class="overlay" id="cycle2PeriodModal"><div class="modal" role="dialog" aria-modal="true">' +
-      '<h3 id="cycle2PeriodTitle">记录实际经期</h3><form id="cycle2PeriodForm" method="post">' +
+      '<div class="mhead"><div class="mhead-left"><h3 id="cycle2PeriodTitle">记录实际经期</h3></div></div><form id="cycle2PeriodForm" method="post">' +
       '<input type="hidden" name="id">' +
       field('开始日期', dt('start_date', todayISO(), true, todayISO())) +
       field('结束日期（进行中留空）', dt('end_date', '', false, todayISO())) +
       '<p class="c2-muted" id="cycle2PeriodHint">只记录实际发生的日期。</p>' +
-      '<div class="c2-actions"><button type="button" class="p-btn" data-c2="close-period">取消</button>' +
+      '<div class="c2-actions foot"><button type="button" class="p-btn" data-c2="close-period">取消</button>' +
       '<button class="p-btn pri">保存记录</button></div></form></div></div>';
   }
 

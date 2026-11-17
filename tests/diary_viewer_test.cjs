@@ -28,7 +28,7 @@ function fixture() {
   const context = vm.createContext({
     $: x => elements[x],
     document: {querySelectorAll: () => Object.values(elements).filter(x => x.classList.contains('show'))},
-    history: {state: null, back() {}}, syncPageScrollLock() {},
+    history: {state: null, back() {}}, syncPageScrollLock() {}, restoreModalFocus() {},
     activeDiaryDate: '', DIARY_DAY_CACHE: {}, DIARY_DAY_NODES: {}, MONTH_DATA: null,
     fmtDateCN: x => x, esc: x => x, diaryDayHTML: (date, list) => date + ':' + JSON.stringify(list),
     api: url => new Promise((resolve, reject) => pending.push({url, resolve, reject})),

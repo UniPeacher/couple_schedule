@@ -167,6 +167,7 @@ function uiConfirm(opts){
     history.pushState({type:"uconfirm"}, "");
     var ov = document.createElement("div");
     ov.className = "overlay uconfirm";
+    ov._returnFocus = document.activeElement;
     ov.innerHTML = '<div class="modal confirm-modal">' +
       '<div class="confirm-ico">' + (opts.icon || "🐾") + '</div>' +
       '<h3 class="confirm-title">' + esc(opts.title || "确定吗？") + '</h3>' +
@@ -183,6 +184,7 @@ function uiConfirm(opts){
       if (mo) mo.disconnect();
       ov.classList.remove("show");
       syncPageScrollLock();
+      restoreModalFocus(ov);
       setTimeout(function(){ if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }, 220);
       /* 按钮/Esc 关闭：消费自己压入的历史条目；手势返回已在 popstate 弹掉，无需再退 */
       if (history.state && history.state.type === "uconfirm"){
@@ -206,7 +208,11 @@ function uiConfirm(opts){
     mo = new MutationObserver(function(){ finish(false); });
     mo.observe(document.getElementById("app"), {childList:true});
     document.body.appendChild(ov);
+    prepareModal(ov);
+    ov.querySelector('.modal').setAttribute('aria-describedby', 'confirm-description');
+    ov.querySelector('.confirm-msg').id = 'confirm-description';
     ov.classList.add("show");
+    syncPageScrollLock();
     try { (opts.danger ? ov.querySelector(".confirm-btn.cancel") : ov.querySelector(".confirm-btn.ok")).focus(); } catch(e){}
   });
   return activeConfirm;
@@ -363,15 +369,89 @@ window.softRefresh = softRefresh;
 /* 模态框打开与关闭（支持原生历史记录与物理/手势返回键）；打开期间锁住 body 滚动防穿透。
    每个弹窗与一条历史条目一一配对：首次打开压入；已开着（或条目已在栈顶）只刷新不叠加；
    在别的弹窗上层打开时顶替下层条目（编辑页顶替详情页），返回不留空条目。 */
+var modalTitleId = 0;
+function prepareModal(el){
+  var box = el.querySelector('.modal');
+  if (!box) return;
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('tabindex', '-1');
+  var title = box.querySelector('h3, .sheet-title');
+  if (title){
+    if (!title.id) title.id = (el.id || 'dialog-' + (++modalTitleId)) + '-title';
+    box.setAttribute('aria-labelledby', title.id);
+  }
+  var head = box.querySelector('.mhead');
+  if (head && !head.querySelector('.modal-close')){
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'modal-close';
+    close.setAttribute('aria-label', '关闭弹窗');
+    close.textContent = '×';
+    close.addEventListener('click', function(){ if (el._dismiss) el._dismiss(); else closeAllModals(); });
+    head.appendChild(close);
+  }
+  box.querySelectorAll('.field, .c2-field').forEach(function(field){
+    var label = field.querySelector('label');
+    var input = field.querySelector('input:not([type=hidden]), select, textarea');
+    if (label && input && !label.htmlFor && !label.contains(input)){
+      if (!input.id) input.id = (el.id || 'dialog') + '-' + (input.name || 'field');
+      label.htmlFor = input.id;
+    }
+  });
+}
+function focusModal(el){
+  var box = el.querySelector('.modal');
+  if (box) box.focus({preventScroll:true});
+}
+function restoreModalFocus(el){
+  var target = el && el._returnFocus;
+  requestAnimationFrame(function(){
+    if (target && target.isConnected && target.getClientRects().length) target.focus({preventScroll:true});
+  });
+}
+function topModal(){
+  var top = null, z = -1;
+  document.querySelectorAll('.overlay.show').forEach(function(el){
+    var level = parseInt(getComputedStyle(el).zIndex) || 0;
+    if (level >= z){ top = el; z = level; }
+  });
+  return top;
+}
+document.addEventListener('keydown', function(e){
+  var ov = topModal();
+  if (!ov || !ov.querySelector('.modal')) return;
+  if (e.key === 'Escape'){
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (ov._dismiss) ov._dismiss(); else closeAllModals();
+  } else if (e.key === 'Tab'){
+    var controls = Array.from(ov.querySelectorAll('button:not(:disabled), input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]')).filter(function(el){ return el.getClientRects().length > 0; });
+    var first = controls[0], last = controls[controls.length - 1];
+    if (!first){ e.preventDefault(); focusModal(ov); return; }
+    if (!ov.contains(document.activeElement) || (e.shiftKey && (document.activeElement === first || document.activeElement === ov.querySelector('.modal')))){
+      e.preventDefault(); (e.shiftKey ? last : first).focus();
+    } else if (!e.shiftKey && (document.activeElement === last || document.activeElement === ov.querySelector('.modal'))){
+      e.preventDefault(); first.focus();
+    }
+  }
+}, true);
 function openModal(modalId){
   var el = $(modalId);
   if (!el) return;
   var already = el.classList.contains("show") ||
     (history.state && history.state.type === "modal" && history.state.id === modalId);
   var nested = !already && !!document.querySelector(".overlay.show:not(.uconfirm)");
+  if (!already){
+    var previous = document.querySelector('.overlay.show:not(.uconfirm)');
+    el._returnFocus = previous && previous._returnFocus ? previous._returnFocus : document.activeElement;
+    if (previous && previous !== el) previous.classList.remove('show');
+  }
+  prepareModal(el);
   el.classList.add("show");
   syncPageScrollLock();
   if (already) return;
+  focusModal(el);
   if (nested) history.replaceState({type:"modal", id:modalId}, "");
   else history.pushState({type:"modal", id:modalId}, "");
 }
@@ -381,6 +461,7 @@ function closeAllModals(fromPop){
   var showed = false;
   document.querySelectorAll(".overlay.show:not(.uconfirm)").forEach(function(o){
     o.classList.remove("show");
+    restoreModalFocus(o);
     showed = true;
   });
   var pv = $("#ovPhotoViewer");
@@ -1034,6 +1115,7 @@ function paintWishDetail(){
   var box = $("#ovWishDetailBox");
   if (!box) return;
   box.innerHTML = wishDetailHTML(findWish(curWishDetailId));
+  prepareModal($('#ovWishDetail'));
 }
 function openWishDetail(wid){
   curWishDetailId = +wid;
@@ -1910,35 +1992,47 @@ function savePhotoUrlToDevice(imgUrl){
 
 function showPhotoActionSheet(imgUrl, liveUrl){
   var old = $("#ovPhotoSheet");
-  if (old) old.remove();
+  if (old) return;
   var sheet = document.createElement("div");
   sheet.id = "ovPhotoSheet";
-  sheet.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10050;display:flex;align-items:flex-end;justify-content:center;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom));animation:fadeIn .15s ease";
+  sheet.className = 'overlay photo-action-overlay show';
+  sheet._returnFocus = document.activeElement;
   var saveBtnLabel = liveUrl ? "📸 保存实况照片到相册" : "💾 保存图片到手机相册";
   sheet.innerHTML =
-    '<div style="width:100%;max-width:400px;background:var(--bg-card);border-radius:20px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,0.35);display:flex;flex-direction:column;gap:8px">' +
-      '<div style="text-align:center;font-size:12.5px;font-weight:800;color:var(--ink-muted);padding:4px 0">🐾 手账照片操作</div>' +
+    '<div class="modal photo-action-modal">' +
+      '<div class="mhead"><div class="mhead-left"><h3>手账照片</h3></div></div><div class="photo-action-buttons">' +
       '<button type="button" class="p-btn pri" id="actSaveImgBtn" style="width:100%;justify-content:center;padding:11px;font-size:14px">' + saveBtnLabel + '</button>' +
       (liveUrl ? '<button type="button" class="p-btn" id="actSaveLiveBtn" style="width:100%;justify-content:center;padding:10px;font-size:13.5px">🎬 仅导出 MP4 视频</button>' : '') +
       '<button type="button" class="p-btn" id="actCancelSheetBtn" style="width:100%;justify-content:center;padding:10px;font-size:13.5px">取消</button>' +
-    '</div>';
+    '</div></div>';
+  history.pushState({type:'photo-sheet'}, '');
+  sheet._dismiss = function(){
+    sheet.remove(); syncPageScrollLock(); restoreModalFocus(sheet);
+    if (history.state && history.state.type === 'photo-sheet'){
+      skipNextPopRender = true;
+      history.back();
+    }
+  };
   document.body.appendChild(sheet);
+  prepareModal(sheet);
+  syncPageScrollLock();
+  focusModal(sheet);
   sheet.onclick = function(ev){
-    if (ev.target === sheet) sheet.remove();
+    if (ev.target === sheet) sheet._dismiss();
   };
   var bSave = sheet.querySelector("#actSaveImgBtn");
   if (bSave) bSave.onclick = function(){
-    sheet.remove();
+    sheet._dismiss();
     savePhotoUrlToDevice(imgUrl);
   };
   var bLive = sheet.querySelector("#actSaveLiveBtn");
   if (bLive) bLive.onclick = function(){
-    sheet.remove();
+    sheet._dismiss();
     savePhotoUrlToDevice(liveUrl);
   };
   var bCancel = sheet.querySelector("#actCancelSheetBtn");
   if (bCancel) bCancel.onclick = function(){
-    sheet.remove();
+    sheet._dismiss();
   };
 }
 
@@ -2592,7 +2686,12 @@ function openDetail(id, date, force){
       var changed = JSON.stringify(j) !== JSON.stringify(cached);
       EVENT_DETAIL_CACHE[key] = j;
       if (changed && curDetail && curDetail.id === +id && $("#ovDetail").classList.contains("show")){
+        var draft = $('#cmtText') ? $('#cmtText').value : '';
+        var typing = document.activeElement && document.activeElement.id === 'cmtText';
         $("#ovDetailBox").innerHTML = detailHTML(j);
+        prepareModal($('#ovDetail'));
+        $('#cmtText').value = draft;
+        if (typing) $('#cmtText').focus({preventScroll:true});
       }
     }).catch(function(){});
     return;
@@ -2628,16 +2727,14 @@ function detailHTML(j){
     adjNote = '<div class="adj-note">↪️ 这一周已调到 ' + esc((occ.moved_to || "").slice(5)) + '，其余周次照常</div>';
   }
   var ownerPrefix = isBoth ? "💕 两人共同 · " : (isA ? "🐶 小金毛 · " : "🐾 小白狗 · ");
-  var rows = '<div class="d-meta">' +
-    '<div class="row"><span class="k">归属</span><span class="v">' +
-      '<span class="school-badge ' + o.uid + '">' + ownerPrefix + esc(o.name) + '</span>' +
-    '</span></div>' +
-    '<div class="row"><span class="k">时间</span><span class="v">' + occ.tstart + "–" + occ.tend +
-      (ev.repeat === "weekly" ? "（每周" + WD[ev.weekday] + "）" : "（单次 " + esc(ev.date) + "）") + '</span></div>' +
-    (occ.location ? '<div class="row"><span class="k">地点</span><span class="v">📍 ' + esc(occ.location) + '</span></div>' : "") +
-    (ev.week_spec ? '<div class="row"><span class="k">周次</span><span class="v">🗓️ ' + esc(ev.week_spec) + '周</span></div>' : "") +
-    (occ.note ? '<div class="row"><span class="k">备注</span><span class="v">📝 ' + esc(occ.note) + '</span></div>' : "") +
-    '</div>';
+  var owner = '<span class="detail-owner ' + esc(o.uid) + '">' + ownerPrefix + esc(o.name) + '</span>';
+  var repeat = ev.repeat === 'weekly' ? '每周' + WD[ev.weekday].slice(1) + (ev.week_spec ? ' · ' + ev.week_spec + '周' : ' · 每周重复') : '单次日程 · ' + ev.date;
+  var rows = '<section class="detail-schedule" aria-label="日程安排">' +
+    '<div class="detail-time"><span class="detail-label">时间安排</span><strong>' + esc(occ.tstart) + '<span class="detail-time-dash">—</span>' + esc(occ.tend) + '</strong>' +
+      '<span class="detail-repeat">' + esc(repeat) + '</span></div>' +
+    '<div class="detail-place"><span class="detail-pin" aria-hidden="true">⌖</span><div><span class="detail-label">地点</span><p>' + esc(occ.location || '暂未填写地点') + '</p></div></div>' +
+    '</section>' +
+    (occ.note ? '<section class="detail-note"><span class="detail-label">小提醒</span><p>' + esc(occ.note) + '</p></section>' : '');
 
   var cmts = j.comments.length ? j.comments.map(function(c){
     var cIsA = c.uid === "a";
@@ -2656,7 +2753,7 @@ function detailHTML(j){
     "❤️ 宝贝辛苦啦！",
     "✨ 准时到！"
   ].map(function(t){
-    return '<span class="phrase-pill" data-act="quick-cmt" data-text="' + esc(t) + '">' + esc(t) + '</span>';
+    return '<button type="button" class="phrase-pill" data-act="quick-cmt" data-text="' + esc(t) + '">' + esc(t) + '</button>';
   }).join("");
 
   var canAdjust = ev.repeat === "weekly" && !!curDetail && !!curDetail.date;
@@ -2667,29 +2764,26 @@ function detailHTML(j){
     weekBtns = '<button class="p-btn" data-act="edit-week" data-id="' + ev.id + '">🔧 只改这一周</button>';
   }
 
-  return '<div class="mhead">' +
-      '<div class="mhead-left"><h3>' + esc(ev.title) + '</h3></div>' +
-      '<img src="/img/dog-add.png" alt="" class="mhead-img">' +
+  return '<div class="mhead detail-head">' +
+      '<div class="mhead-left"><span class="modal-eyebrow">日程详情</span><h3>' + esc(ev.title) + '</h3>' +
+      '<div class="detail-byline">' + owner + (dateLine ? '<span class="detail-date">' + esc(dateLine) + '</span>' : '') + '</div></div>' +
+      '<button type="button" class="modal-close" data-act="close" aria-label="关闭弹窗">×</button>' +
     '</div>' +
-    (dateLine ? '<div style="font-size:12px;color:var(--ink-muted);margin:-6px 0 10px;font-weight:600">当前查看 ' + dateLine + ' 的安排</div>' : "") +
-    adjNote +
-    rows +
-    '<div style="font-weight:800;font-size:13.5px;margin:14px 0 4px;color:var(--ink-primary);display:flex;align-items:center;gap:6px">' +
-      '<span>情侣留言板 💕</span><span style="font-size:12px;color:var(--ink-light)">(' + j.comments.length + ')</span>' +
-    '</div>' +
-    '<div class="quick-phrases">' + quickPhrases + '</div>' +
-    '<div class="cmts">' + cmts + '</div>' +
-    '<div class="crow">' +
-      '<input id="cmtText" maxlength="500" placeholder="和 TA 说点什么…（回车发送）">' +
-      '<button class="p-btn pri" data-act="send-cmt" style="padding:8px 16px">🐾 发送</button>' +
-    '</div>' +
+    '<div class="detail-body">' + adjNote + rows +
     (weekBtns ? '<div class="week-adjust-row">' + weekBtns + '</div>' : '') +
-    '<div class="foot" style="justify-content:space-between;margin-top:14px;flex-wrap:wrap;gap:8px">' +
-      '<div style="display:flex;gap:6px">' +
-        '<button class="p-btn pri" data-act="edit-event" data-id="' + ev.id + '">✏️ 编辑日程</button>' +
-        '<button class="p-btn danger" data-act="del-event" data-id="' + ev.id + '">删除此日程</button>' +
+    '<section class="detail-messages" aria-labelledby="detail-messages-title">' +
+      '<div class="detail-section-head"><h4 id="detail-messages-title">留句话给 TA <span aria-hidden="true">♡</span></h4><span class="detail-count">' + j.comments.length + ' 条留言</span></div>' +
+      '<div class="cmts">' + cmts + '</div>' +
+      '<div class="quick-phrases" aria-label="快捷留言">' + quickPhrases + '</div>' +
+      '<div class="crow">' +
+        '<input id="cmtText" aria-label="情侣留言" maxlength="500" placeholder="把关心留在这里…">' +
+        '<button type="button" class="p-btn pri" data-act="send-cmt">发送</button>' +
       '</div>' +
-      '<button class="p-btn" data-act="close">关闭</button>' +
+    '</section></div>' +
+    '<div class="foot detail-foot">' +
+      '<button type="button" class="p-btn danger" data-act="del-event" data-id="' + ev.id + '">删除日程</button>' +
+      '<button type="button" class="p-btn" data-act="close">关闭</button>' +
+      '<button type="button" class="p-btn pri" data-act="edit-event" data-id="' + ev.id + '">编辑日程</button>' +
     '</div>';
 }
 
@@ -4505,6 +4599,7 @@ function uiSheetShell(opts){
   });
   var ov = document.createElement("div");
   ov.className = "overlay usheet";
+  ov._returnFocus = document.activeElement;
   ov.innerHTML = '<div class="modal sheet-modal">' +
     '<div class="sheet-head"><span class="sheet-title">' + (opts.title || "选择") + '</span>' +
     '<button type="button" class="sheet-close" aria-label="关闭">✕</button></div>' +
@@ -4519,6 +4614,7 @@ function uiSheetShell(opts){
     if (mo) mo.disconnect();
     ov.classList.remove("show");
     syncPageScrollLock();
+    restoreModalFocus(ov);
     setTimeout(function(){ if (ov && ov.parentNode) ov.parentNode.removeChild(ov); }, 180);
   }
   function onKey(e){ if (e.key === "Escape") finish(); }
@@ -4534,7 +4630,8 @@ function uiSheetShell(opts){
     if (typeof CURRENT_VIEW !== "undefined" && CURRENT_VIEW !== entryView) finish();
   });
   mo.observe(document.getElementById("app"), {childList:true});
-  requestAnimationFrame(function(){ ov.classList.add("show"); syncPageScrollLock(); });
+  prepareModal(ov);
+  requestAnimationFrame(function(){ ov.classList.add("show"); syncPageScrollLock(); focusModal(ov); });
   return ov;
 }
 function uiDateSheet(input, onPick){
@@ -4862,6 +4959,8 @@ window.addEventListener("popstate", function(e){
   if (skipNextPopRender){ skipNextPopRender = false; return; }
 
   // 0. 确认弹窗在最上层时，物理返回只关闭确认弹窗，不动视图与历史
+  var ps = document.querySelector('#ovPhotoSheet.show');
+  if (ps && ps._dismiss){ ps._dismiss(); return; }
   var uc = document.querySelector(".overlay.uconfirm.show");
   if (uc && uc._dismiss){ uc._dismiss(); return; }
   // 0.2 自绘选择弹层在最上层时，物理返回只关闭它
