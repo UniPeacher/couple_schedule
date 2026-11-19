@@ -30,9 +30,9 @@ from datetime import date, timedelta
 
 __all__ = [
     "DAY_MILESTONES", "SOLAR_FESTIVALS", "LUNAR_FESTIVALS",
-    "parse_ymd", "fmt_ymd", "days_between", "day_number", "cn_num",
+    "parse_ymd", "fmt_ymd", "cn_num",
     "lunar_to_solar", "lunar_new_year", "special_days_in_year",
-    "next_special_day", "next_occurrence", "upcoming", "milestone_dates",
+    "next_occurrence", "upcoming", "calendar_nodes_in_month",
 ]
 
 # ---------------------------------------------------------------- 常量配置
@@ -76,23 +76,6 @@ def parse_ymd(s):
 def fmt_ymd(d):
     """date → 'YYYY-MM-DD'"""
     return "%04d-%02d-%02d" % (d.year, d.month, d.day)
-
-
-def days_between(frm, to):
-    """to - frm（天）。任一端无效返回 None。"""
-    a, b = parse_ymd(frm), parse_ymd(to)
-    if a is None or b is None:
-        return None
-    return (b - a).days
-
-
-def day_number(start, today=None):
-    """「在一起第 N 天」：当天 = 第 1 天。start 无效返回 None。"""
-    s = parse_ymd(start)
-    if s is None:
-        return None
-    t = parse_ymd(today) if today is not None else date.today()
-    return (t - s).days + 1
 
 
 def _clamp(y, m, d):
@@ -227,36 +210,6 @@ def lunar_to_solar(lunar_year, lunar_month, lunar_day, is_leap_month=False):
     return ny + timedelta(days=offset + lunar_day - 1)
 
 
-def lunar_month_day_of(solar_day):
-    """公历 date → (农历年, 月, 日, 是否闰月)。给「今天农历几号」这类展示用，可选。"""
-    if not (isinstance(solar_day, date) and _LUNAR_BASE_DAY <= solar_day):
-        return None
-    # 找到所在农历年
-    y = _LUNAR_BASE_YEAR
-    cursor = _LUNAR_BASE_DAY
-    while True:
-        ydays = _lunar_year_days(y)
-        nxt = cursor + timedelta(days=ydays)
-        if solar_day < nxt or y >= _LUNAR_BASE_YEAR + len(_LUNAR) - 1:
-            break
-        cursor = nxt
-        y += 1
-    delta = (solar_day - cursor).days  # 该农历年内第几天（0 起）
-    leap = _leap_month(y)
-    m = 1
-    while True:
-        mdays = _lunar_month_days(y, m)
-        if delta < mdays:
-            return (y, m, delta + 1, False)
-        delta -= mdays
-        if leap == m:
-            ldays = _lunar_month_days(y, 0)
-            if delta < ldays:
-                return (y, m, delta + 1, True)
-            delta -= ldays
-        m += 1
-
-
 # ---------------------------------------------------------------- 节日与纪念日
 
 
@@ -304,17 +257,95 @@ def special_days_in_year(year, start_date):
     return out
 
 
-def next_special_day(today, start_date):
-    """距今最近的一个未来日子（含今天）。找不到返回 None。"""
-    t = parse_ymd(today)
-    if t is None:
-        return None
-    y0 = t.year
-    all_days = []
-    for y in range(y0 - 1, y0 + 3):
-        all_days.extend(special_days_in_year(y, start_date))
-    future = sorted((d for d in all_days if d["date"] >= fmt_ymd(t)), key=lambda x: x["date"])
-    return future[0] if future else None
+# ------------------------------------------------ 手账日历展示
+
+_CALENDAR_MILESTONES = (99, 100, 520, 999, 1000, 1314)
+_CALENDAR_SOLAR = (
+    (1, 1, "元旦", False), (2, 14, "情人节", True),
+    (3, 14, "白色情人节", True), (5, 1, "劳动节", False),
+    (5, 20, "520", True), (10, 1, "国庆节", False),
+    (12, 25, "圣诞节", True), (12, 31, "跨年夜", False),
+)
+_CALENDAR_LUNAR = (
+    (1, 1, "春节", False), (1, 15, "元宵节", False),
+    (5, 5, "端午节", False), (7, 7, "七夕", True),
+    (8, 15, "中秋节", False),
+)
+# 节气日期：香港天文台 / DATA.GOV.HK 公历与农历对照表（1901–2100）。
+# https://www.hko.gov.hk/tc/gts/time/calendar/text/files/T2026c.txt
+# 清明为4月日号，冬至为12月日号减20；1900年采用 solarlunar 同源日期。
+_QINGMING_DAYS = "5" + (
+    "56655665566555655565556555655565556555655565555555555555555555555555555555545554555455545554555455545554555445544554455445544554455445544554445444544454445444544454445444544444444444444444444444444445"
+)
+_DONGZHI_DAYS = "2" + (
+    "23322332233223322232223222322232223222322232223222322222222222222222222222222222222222212221222122212221222122212221222112211221122112211221122112211221122111211121112111211121112111211121111111111112"
+)
+_CALENDAR_PRIORITY = {
+    "anniversary": 0, "birthday": 1, "countdown": 1,
+    "milestone": 2, "romantic": 3, "festival": 4,
+}
+
+
+def calendar_nodes_in_month(ym, items):
+    """手账月历节点，按日期分组；展示规则独立于消息提醒。"""
+    first = parse_ymd(str(ym) + "-01")
+    if first is None:
+        return {}
+    year = first.year
+    out = {}
+
+    def add(d, label, kind, icon, detail):
+        if d is not None and d.year == year and d.month == first.month:
+            out.setdefault(fmt_ymd(d), []).append({
+                "label": label, "kind": kind, "icon": icon, "detail": detail,
+            })
+
+    for month, day, label, romantic in _CALENDAR_SOLAR:
+        add(date(year, month, day), label, "romantic" if romantic else "festival",
+            "💕" if romantic else "✨", "每年 %d 月 %d 日" % (month, day))
+    for month, day, label, romantic in _CALENDAR_LUNAR:
+        add(lunar_to_solar(year, month, day), label,
+            "romantic" if romantic else "festival", "💕" if romantic else "🏮",
+            "农历 %d 月 %d 日" % (month, day))
+    ny = lunar_new_year(year)
+    if ny is not None:
+        add(ny - timedelta(days=1), "除夕", "festival", "🏮", "农历一年的最后一天")
+    if 1900 <= year <= 2100:
+        i = year - 1900
+        add(date(year, 4, int(_QINGMING_DAYS[i])), "清明", "festival", "🌿", "清明节气")
+        add(date(year, 12, 20 + int(_DONGZHI_DAYS[i])), "冬至", "festival", "❄️", "冬至节气")
+
+    dated = [(item, parse_ymd(item.get("date"))) for item in items]
+    loves = sorted(((item, d) for item, d in dated
+                    if d is not None and item.get("target_type") == "love"),
+                   key=lambda pair: (pair[1], pair[0].get("id", 0)))
+    if loves:
+        anchor = loves[0][1]
+        for n in _CALENDAR_MILESTONES:
+            d = anchor + timedelta(days=n - 1)
+            add(d, "第%d天" % n, "milestone", "💗",
+                "在一起的第 %d 天%s · 从 %s 开始" %
+                (n, " · 一生一世" if n == 1314 else "", fmt_ymd(anchor)))
+    for item, start in dated:
+        if start is None:
+            continue
+        kind = item.get("target_type", "love")
+        title = item.get("title", "")
+        if kind == "love":
+            years = year - start.year
+            if years > 0:
+                add(_clamp(year, start.month, start.day), "%s周年" % cn_num(years),
+                    "anniversary", "💖", "%s · 在一起满 %d 年" % (title, years))
+            elif years == 0:
+                add(start, title or "在一起", "anniversary", "💖", "在一起的第 1 天")
+        elif kind == "birthday":
+            add(_clamp(year, start.month, start.day), title or "生日", "birthday",
+                "🎂", "每年的生日纪念")
+        else:
+            add(start, title or "倒计时", "countdown", "⏳", "这一天的约定")
+    for nodes in out.values():
+        nodes.sort(key=lambda node: _CALENDAR_PRIORITY[node["kind"]])
+    return out
 
 
 # ------------------------------------------------ sched-share 适配：生日循环
@@ -389,12 +420,6 @@ def next_occurrence(anchor, today, kind="solar"):
     return None
 
 
-def anniversary_date(start, n_days):
-    """在一起第 n_days 天的公历日期（当天 = 第 1 天）。"""
-    s = parse_ymd(start)
-    return None if s is None else s + timedelta(days=n_days - 1)
-
-
 def upcoming(items, today, days=30):
     """给通知系统的入口：today 起 days 天内将要发生的日子，按日期升序。
 
@@ -467,10 +492,3 @@ def upcoming(items, today, days=30):
                     "turns": turns, "label": label})
     out.sort(key=lambda x: (x["date"], str(x["title"])))
     return out
-
-
-def milestone_dates(start_date, today, days=7):
-    """相恋天数里程碑的提前提醒（love 专用，30/100/520 这种容易忘）。
-    返回 upcoming() 同构 dict 列表。"""
-    items = [{"id": None, "title": "在一起", "date": start_date, "target_type": "love"}]
-    return [x for x in upcoming(items, today, days=days)]

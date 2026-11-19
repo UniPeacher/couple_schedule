@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feat/cycle-v2 ]
     tags: [ 'v*' ]
   workflow_dispatch:
 
@@ -29,29 +29,44 @@ jobs:
         with:
           gradle-version: 8.5
 
+      - name: Test server URL migration
+        working-directory: ./android
+        run: |
+          mkdir -p build/url-tests
+          javac -d build/url-tests app/src/main/java/com/unipeacher/schedule/ServerUrlMigration.java tests/com/unipeacher/schedule/ServerUrlMigrationTest.java
+          java -cp build/url-tests com.unipeacher.schedule.ServerUrlMigrationTest
+
       - name: Build Android Release APK
         working-directory: ./android
         run: |
           gradle assembleRelease --stacktrace
 
+      - name: Read version from build.gradle
+        run: |
+          VERSION=$(grep -oP 'versionName\s+"\K[^"]+' android/app/build.gradle)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Building v$VERSION"
+
       - name: Prepare APK Artifact
         run: |
           mkdir -p output
-          cp android/app/build/outputs/apk/release/app-release.apk output/couple-schedule-v1.0.0.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "output/couple-schedule-v$VERSION.apk"
 
       - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: couple-schedule-apk
-          path: output/couple-schedule-v1.0.0.apk
+          path: output/couple-schedule-v${{ env.VERSION }}.apk
           retention-days: 30
 
+      # 只有打 tag 才发 Release：普通推送只产构建产物，避免同一版本号反复覆盖已发布的包
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: output/couple-schedule-v1.0.0.apk
-          tag_name: v1.0.0
-          name: "线条小狗日程 v1.0.0 🐾"
+          files: output/couple-schedule-v${{ env.VERSION }}.apk
+          tag_name: ${{ github.ref_name }}
+          name: "线条小狗日程 ${{ github.ref_name }} 🐾"
           body: |
             ## 🐾 线条小狗情侣日程共享 App (Android)
 
@@ -59,6 +74,6 @@ jobs:
             - 🥛 **沉浸式手账主题**：状态栏与导航栏奶白暖调手账配色
             - 🔄 **手势下拉刷新**：支持下拉手势随时同步课表与情侣留言
             - 💾 **自动持久化登录**：退出应用无需重复输入密码
-            - ⚙️ **灵活配置网址**：长按屏幕空白处可自由配置服务器后端 URL
+            - ⚙️ **服务地址**：网页设置 → AI 简报服务 → 修改客户端服务地址；加载失败时也可以修改
           draft: false
           prerelease: false

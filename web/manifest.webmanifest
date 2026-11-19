@@ -1,0 +1,15 @@
+{
+  "name": "线条小狗 · 两人日程",
+  "short_name": "两人日程",
+  "description": "情侣日程共享小窝：课表、手账、心愿、纪念日",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf6f0",
+  "theme_color": "#faf6f0",
+  "icons": [
+    { "src": "/img/dog-couple.png", "sizes": "447x447", "type": "image/png", "purpose": "any" }
+  ]
+}

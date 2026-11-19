@@ -1,0 +1,303 @@
+/* Cycle journal, scoped to the cycle tab. */
+/* ---------- overview ---------- */
+.c2-page{
+  --c2-accent:#a83f65;
+  --c2-accent-d:#8b3053;
+  --c2-accent-bg:#fcf0f4;
+  --c2-accent-bd:#ead1dc;
+  --c2-accent-tx:#86314f;
+  --c2-hero-bg:#faeaf1;
+  --c2-hero-ink:#42233a;
+  --c2-hero-sub:#715064;
+  --c2-art:#c98da8;
+  --c2-on-accent:#fff;
+  --c2-period:#a83f65;
+  --c2-ovu:#5363a8;
+  --c2-foll:#39796b;
+  --c2-lute:#77568f;
+  --c2-track:#e0d2db;
+  --c2-band:#f1e7ed;
+  --c2-note:#4e796e;
+  max-width:940px;
+}
+html.dark .c2-page{
+  --c2-accent:#f0a9c4;
+  --c2-accent-d:#ffd2e2;
+  --c2-accent-bg:#32212e;
+  --c2-accent-bd:#5d3c51;
+  --c2-accent-tx:#ffd0e1;
+  --c2-hero-bg:#3f263a;
+  --c2-hero-ink:#fff0f7;
+  --c2-hero-sub:#e4bfd3;
+  --c2-art:#8e5976;
+  --c2-on-accent:#351626;
+  --c2-period:#ea9bb9;
+  --c2-ovu:#aab8fa;
+  --c2-foll:#92d7c5;
+  --c2-lute:#d5b2f0;
+  --c2-track:#574957;
+  --c2-band:#3b303d;
+  --c2-note:#90cbbc;
+}
+.c2-dashboard,.c2-sidebar{display:grid;gap:14px;min-width:0}
+.c2-dashboard{align-items:start}
+.c2-card{
+  min-width:0;background:var(--bg-card);border:1px solid var(--line-subtle);border-radius:23px;
+  padding:18px;margin:0 0 14px;box-shadow:var(--shadow-sm);color:var(--ink-primary);
+}
+.c2-dashboard .c2-card{margin:0}
+.c2-card h2,.c2-card h3,.c2-record-head h1{margin:0;line-height:1.35;color:inherit}
+.c2-card h2{font-size:20px}
+.c2-card h3{font-size:15px}
+.c2-card h3 small{font-size:11px;color:var(--ink-secondary);margin-left:8px}
+.c2-card p,.c2-disclaimer{font-size:13px;margin:8px 0 0;line-height:1.65;overflow-wrap:anywhere}
+.c2-muted,.c2-disclaimer{color:var(--ink-secondary)}
+.c2-loading{text-align:center;padding-block:32px}
+.c2-label{font-size:11px;line-height:1.3;font-weight:750;letter-spacing:.13em;color:var(--c2-accent-tx)}
+.c2-scope,.c2-conf{
+  display:inline-flex;align-items:center;min-height:25px;padding:2px 9px;border-radius:999px;
+  border:1px solid var(--c2-accent-bd);font-size:11px;font-weight:700;white-space:nowrap;
+  background:var(--c2-accent-bg);color:var(--c2-accent-tx);
+}
+.c2-hero{
+  position:relative;isolation:isolate;overflow:hidden;padding:20px;
+  background:linear-gradient(127deg,var(--c2-accent-bg),var(--c2-hero-bg));
+  border-color:var(--c2-accent-bd);color:var(--c2-hero-ink);
+}
+.c2-hero-art{position:absolute;right:-16px;bottom:-10px;width:148px;stroke:var(--c2-art);stroke-width:1.4;opacity:.55;z-index:-1}
+.c2-art-dot{fill:var(--c2-art);stroke:none}
+.c2-hero-meta,.c2-forecast-kicker,.c2-section-head{display:flex;align-items:center;justify-content:space-between;gap:9px}
+.c2-hero h1{font-size:clamp(25px,5.8vw,36px);line-height:1.2;letter-spacing:-.035em;margin:14px 0 0}
+.c2-hero p{color:var(--c2-hero-sub);max-width:26em;font-size:14px}
+.c2-hero .c2-actions{margin-top:18px}
+.c2-primary,.c2-quiet,.c2-back{
+  min-height:44px;padding:0 13px;border:1px solid transparent;border-radius:12px;
+  font:inherit;font-size:13px;font-weight:760;cursor:pointer;
+}
+.c2-primary{background:var(--c2-accent);color:var(--c2-on-accent)}
+.c2-quiet,.c2-back{background:var(--c2-accent-bg);border-color:var(--c2-accent-bd);color:var(--c2-accent-tx)}
+.c2-forecast{padding:17px 18px}
+.c2-forecast-kicker{min-height:25px}
+.c2-forecast h2{margin:8px 0 0;color:var(--ink-primary);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.c2-forecast[data-prediction="available"] h2{font-size:clamp(23px,5.5vw,33px);color:var(--c2-accent-tx)}
+.c2-forecast p,.c2-forecast-note{color:var(--ink-secondary);font-size:12px}
+.c2-forecast-note{margin-top:9px}
+.c2-empty-head{display:flex;align-items:center;gap:9px;margin:0 0 14px;flex-wrap:wrap}
+.c2-ico-chip{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--c2-accent-bg);font-size:16px}
+.c2-disclaimer{padding:0 4px 14px;margin:14px 0 0;font-size:12px}
+
+/* ---------- calendar ---------- */
+.c2-section-head h2{margin-top:4px}
+.c2-view-tabs{display:flex;align-items:center;gap:2px;padding:3px;border-radius:12px;background:var(--bg-card-subtle)}
+.c2-view-tabs button,.c2-month-nav button{
+  min-height:44px;border:0;background:transparent;color:var(--ink-secondary);font:inherit;
+  font-size:12px;font-weight:700;cursor:pointer;border-radius:9px;white-space:nowrap;
+}
+.c2-view-tabs button{padding:0 9px}
+.c2-view-tabs button[aria-pressed="true"]{color:var(--c2-accent-tx);background:var(--bg-card);box-shadow:var(--shadow-sm)}
+.c2-month-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0 5px;flex-wrap:wrap}
+.c2-month-nav{display:flex;align-items:center;gap:2px}
+.c2-month-nav .c2-month{font-size:15px;color:var(--ink-primary)}
+.c2-month-nav .c2-month span{color:var(--ink-secondary);margin-left:2px}
+.c2-month-nav .c2-month-arrow{width:42px;font-size:24px;font-weight:450}
+.c2-month-row .p-btn,.c2-day-actions .p-btn,.c2-recent .p-btn{min-height:44px;font-size:12px}
+.c2-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));row-gap:2px}
+.c2-cal-head{text-align:center;font-size:12px;color:var(--ink-secondary);padding:4px 0}
+.c2-cal-cell{
+  min-width:0;min-height:46px;padding:3px 0;border:0;background:transparent;border-radius:9px;
+  position:relative;display:grid;place-items:center;color:var(--ink-primary);font:inherit;cursor:pointer;
+}
+.c2-cal-cell .d{
+  width:31px;height:31px;display:grid;place-items:center;border:1px solid transparent;border-radius:50%;
+  font-size:14px;line-height:1;font-weight:660;font-variant-numeric:tabular-nums;
+}
+.c2-cal-cell[aria-current="date"] .d{font-weight:850}
+.c2-today-tag{
+  position:absolute;top:0;right:2px;z-index:1;min-width:15px;padding:1px 2px;border-radius:5px;
+  background:var(--c2-accent);color:var(--c2-on-accent);font-size:10px;font-weight:800;line-height:1.2;
+}
+.c2-cal-cell[aria-pressed="true"]{background:var(--c2-accent-bg);box-shadow:inset 0 0 0 1px var(--c2-accent-bd)}
+.c2-day-period .d{background:var(--c2-period);color:var(--c2-on-accent)}
+.c2-day-predicted .d{border:1.5px dashed var(--c2-period);color:var(--c2-accent-tx)}
+.c2-day-open-start .d{border:1.5px solid var(--c2-period);border-radius:8px;color:var(--c2-accent-tx)}
+.c2-m-note{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--c2-note)}
+.c2-legend{display:flex;flex-wrap:wrap;gap:7px 13px;margin:10px 0 13px;color:var(--ink-secondary)}
+.c2-legend span{display:inline-flex;align-items:center;gap:5px;font-size:11.5px}
+.c2-legend i,.c2-recent-row i{display:inline-block;width:9px;height:9px;flex:0 0 auto;border-radius:50%;background:var(--c2-period)}
+.c2-legend .predicted{background:transparent;border:1px dashed var(--c2-period);width:11px;height:11px}
+.c2-legend .open-start,.c2-recent-row .open-start{background:transparent;border:1px solid var(--c2-period);border-radius:2px}
+.c2-legend .note{background:var(--c2-note);width:5px;height:5px}
+.c2-legend .follicular{background:var(--c2-foll)}
+.c2-legend .ovulation{background:var(--c2-ovu)}
+.c2-legend .luteal{background:var(--c2-lute)}
+.c2-day-summary{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 9px;
+  padding:9px 10px;border:1px solid var(--line-subtle);border-radius:12px;background:var(--bg-card-subtle);
+}
+.c2-day-summary strong,.c2-day-summary span{display:block;font-size:12px}
+.c2-day-summary span{margin-top:3px;color:var(--ink-secondary)}
+.c2-day-actions{display:flex;gap:5px;flex-wrap:wrap}
+.c2-day-actions .p-btn{padding-inline:8px}
+.c2-view-ring .c2-legend{justify-content:center}
+.c2-ring-caption{text-align:center;color:var(--ink-secondary)}
+
+/* ---------- history and records ---------- */
+.c2-recent .c2-section-head{margin-bottom:10px}
+.c2-recent-row{
+  display:flex;align-items:center;gap:10px;width:100%;min-height:53px;cursor:pointer;
+  border:0;border-top:1px solid var(--line-subtle);padding:8px 2px;background:transparent;
+  text-align:left;color:var(--ink-primary);font:inherit;font-size:13px;
+}
+.c2-recent-row strong,.c2-recent-row small{display:block}
+.c2-recent-row small{margin-top:3px;color:var(--ink-secondary);font-size:11px}
+.c2-recent-row>span:last-child{margin-left:auto;color:var(--ink-secondary);font-size:19px}
+.c2-record-head{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+.c2-record-head h1{font-size:24px;margin-top:3px}
+.c2-record-head .c2-scope{margin-left:auto}
+.c2-back{width:44px;padding:0;font-size:27px}
+.c2-setting-group{border-top:1px solid var(--line-subtle);margin-top:16px;padding-top:15px}
+.c2-details>h3{margin-top:15px}
+.c2-page button:focus-visible,.c2-details summary:focus-visible,.c2-opt:focus-within{outline:2px solid var(--c2-accent);outline-offset:2px}
+@media(hover:hover){
+  .c2-month-nav button:hover,.c2-cal-cell:hover,.c2-recent-row:hover{background:var(--c2-accent-bg)}
+  .c2-primary:hover{background:var(--c2-accent-d)}
+}
+@media(min-width:720px){
+  .c2-dashboard{grid-template-columns:minmax(0,1.6fr) minmax(246px,1fr)}
+  .c2-hero,.c2-forecast{height:100%}
+  .c2-forecast{display:flex;flex-direction:column;justify-content:center}
+  .c2-hero-art{right:5px;bottom:-8px;width:185px}
+}
+@media(max-width:360px){
+  .c2-dashboard,.c2-sidebar{gap:11px}
+  .c2-dashboard .c2-card{padding-inline:12px}
+  .c2-view-tabs button{padding-inline:6px}
+  .c2-cal-cell .d{width:28px;height:28px}
+}
+
+/* ---------- dot ring ---------- */
+.c2-ring-wrap{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0 4px}
+.c2-ring{width:min(290px,76vw);height:min(290px,76vw);display:block;overflow:visible}
+.c2-ring .c2-track{fill:none;stroke:var(--c2-band);stroke-width:26}
+.c2-ring .c2-arc{fill:none;stroke-width:26;opacity:.3}
+.c2-ring .c2-arc.menstrual{stroke:var(--c2-period)}
+.c2-ring .c2-arc.follicular{stroke:var(--c2-foll)}
+.c2-ring .c2-arc.ovulation{stroke:var(--c2-ovu)}
+.c2-ring .c2-arc.luteal{stroke:var(--c2-lute)}
+.c2-ring .c2-dot{fill:var(--c2-track)}
+.c2-ring .c2-dot.menstrual{fill:var(--c2-period)}
+.c2-ring .c2-dot.follicular{fill:var(--c2-foll)}
+.c2-ring .c2-dot.ovulation{fill:var(--c2-ovu)}
+.c2-ring .c2-dot.luteal{fill:var(--c2-lute)}
+/* future days are drawn hollow with a thin stroke: prediction ≠ record */
+.c2-ring .c2-dot.future{fill:var(--bg-card);stroke-width:1.6}
+.c2-ring .c2-dot.future.menstrual{stroke:var(--c2-period)}
+.c2-ring .c2-dot.future.follicular{stroke:var(--c2-foll)}
+.c2-ring .c2-dot.future.ovulation{stroke:var(--c2-ovu)}
+.c2-ring .c2-dot.future.luteal{stroke:var(--c2-lute)}
+.c2-ring .c2-dot.is-today{stroke:var(--ink-primary);stroke-width:1.75}
+.c2-ring .c2-ring-date{font-size:13px;font-weight:760;fill:var(--c2-accent-tx);text-anchor:middle}
+.c2-ring .c2-ring-phase{font-size:20px;font-weight:850;fill:var(--ink-primary);text-anchor:middle}
+.c2-ring .c2-ring-day{font-size:13px;font-weight:650;fill:var(--ink-secondary);text-anchor:middle}
+
+/* ---------- record sub-page tabs ---------- */
+.c2-tabs{
+  display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;
+  scrollbar-width:none;-ms-overflow-style:none;
+}
+.c2-tabs::-webkit-scrollbar{display:none}
+.c2-tab{
+  flex:0 0 auto;min-height:44px;padding:0 16px;border-radius:999px;
+  border:1.5px solid var(--line-strong);background:var(--bg-card-subtle);
+  color:var(--ink-secondary);font-size:13px;font-weight:800;cursor:pointer;
+}
+.c2-tab.on{
+  border-color:transparent;color:var(--c2-on-accent);
+  background:linear-gradient(135deg,var(--c2-accent) 0%,var(--c2-accent-d) 100%);
+  box-shadow:0 4px 14px rgba(104,35,61,.16);
+}
+
+/* ---------- option pills ---------- */
+.c2-chip-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 14px}
+.c2-opt{
+  display:flex;align-items:center;gap:9px;min-height:48px;padding:10px 14px;
+  border-radius:999px;border:1.5px solid var(--line-subtle);background:var(--bg-card-subtle);
+  color:var(--ink-secondary);font-size:13.5px;font-weight:700;cursor:pointer;text-align:left;
+  transition:background .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease;
+}
+.c2-opt .em{font-size:17px;line-height:1;flex:0 0 auto}
+.c2-opt:active{transform:scale(.97)}
+.c2-opt.on{
+  border-color:transparent;color:var(--c2-on-accent);
+  background:linear-gradient(135deg,var(--c2-accent) 0%,var(--c2-accent-d) 100%);
+  box-shadow:0 4px 12px rgba(104,35,61,.16);
+}
+.c2-opt input{position:absolute;opacity:0;pointer-events:none;width:0;height:0}
+.c2-group-label{
+  font-size:12px;font-weight:800;color:var(--ink-muted);letter-spacing:.4px;margin:18px 0 10px;
+  display:flex;align-items:center;gap:7px;
+}
+.c2-group-label::before{
+  content:'';width:6px;height:6px;border-radius:50%;background:var(--c2-accent);opacity:.75;
+}
+.c2-group-label:first-of-type{margin-top:6px}
+
+/* ---------- fixed bottom save bar ---------- */
+.c2-savebar{
+  position:fixed;left:0;right:0;bottom:0;z-index:60;
+  padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+  background:linear-gradient(to top,var(--bg-page) 62%,transparent);
+  display:flex;justify-content:center;
+}
+.c2-savebar button{
+  width:100%;max-width:900px;height:52px;border:0;border-radius:999px;
+  background:linear-gradient(135deg,var(--c2-accent) 0%,var(--c2-accent-d) 100%);
+  color:var(--c2-on-accent);font-size:16px;font-weight:900;letter-spacing:1px;cursor:pointer;
+  box-shadow:0 8px 22px rgba(104,35,61,.16);
+}
+.c2-savebar button:disabled{opacity:.6}
+.c2-savebar button:active{transform:scale(.985)}
+.c2-page.has-savebar{padding-bottom:100px}
+
+/* ---------- insights ---------- */
+.c2-insights{list-style:none;padding:0;margin:0}
+.c2-insights li{font-size:12.5px;line-height:1.7;padding:9px 0;border-bottom:1px solid var(--line-subtle)}
+.c2-insights li:last-child{border:0}
+.c2-insights .c2-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.c2-insights .good .c2-dot{background:#4f9e6b}
+.c2-insights .fair .c2-dot{background:#c9a227}
+.c2-insights .watch .c2-dot{background:#d0724a}
+
+/* ---------- forms ---------- */
+.c2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.c2-field{display:flex;flex-direction:column;gap:6px;font-size:12px;margin:12px 0;color:var(--ink-secondary)}
+.c2-field input,.c2-field select,.c2-field textarea{
+  width:100%;max-width:100%;min-width:0;background:var(--input-bg);color:var(--ink-primary);
+  border:1.5px solid var(--input-border);border-radius:14px;padding:11px;font:inherit;font-size:14px;
+  box-sizing:border-box;
+}
+.c2-field input:focus,.c2-field select:focus,.c2-field textarea:focus{
+  outline:2px solid var(--c2-accent)!important;outline-offset:2px;
+}
+.c2-check{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.6;margin:10px 0;color:var(--ink-secondary)}
+.c2-check input{margin-top:4px;accent-color:var(--c2-accent);width:16px;height:16px;flex-shrink:0}
+.c2-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.c2-actions .p-btn{font-size:12px;min-height:44px}
+.c2-history{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line-subtle);font-size:13px}
+.c2-history:last-child{border:0}
+.c2-history strong{white-space:nowrap}
+.c2-nowrap{white-space:nowrap}
+.c2-history .c2-actions{margin:0}
+.c2-details>summary{cursor:pointer;font-size:14px;font-weight:700;color:var(--ink-secondary);padding:8px 0;min-height:44px;line-height:1.6}
+.c2-details[open]>summary{margin-bottom:6px}
+
+@media(max-width:420px){
+  .c2-grid,.c2-chip-grid{gap:8px}
+  .c2-history{flex-wrap:wrap}
+  .c2-opt{font-size:12.5px;padding:8px 12px;min-height:44px}
+  .c2-ring{width:min(252px,72vw);height:min(252px,72vw)}
+}
+/* Keep focused days clear of the shared floating navigation. */
+.c2-page :is(button,summary){scroll-margin-bottom:calc(82px + env(safe-area-inset-bottom))}
+body:has(.c2-page) .toast{top:calc(62px + env(safe-area-inset-top));bottom:auto}
+.c2-page [hidden]{display:none !important}

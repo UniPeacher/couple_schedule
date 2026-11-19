@@ -4,7 +4,8 @@ data/
 *.db-*
 *.key
 *.txt
-!requirements.txt
+.env
+node_modules/
 
 # 备份与私有脚本/日志
 *.bak*

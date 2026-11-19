@@ -8,7 +8,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app
 
-fixture = tempfile.TemporaryDirectory(prefix='cycle-browser-', dir=os.environ['TMPDIR'])
+fixture = tempfile.TemporaryDirectory(prefix='cycle-browser-')
 app.DATA_DIR = fixture.name
 app.DB_PATH = os.path.join(fixture.name, 'sched.db')
 app.SECRET = 'browser-test-secret-not-production'

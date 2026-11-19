@@ -1,0 +1,32 @@
+'use strict';
+// 生产只读冒烟：心愿卡片能点开详情、能进编辑并带出原值，不保存、不写库。
+const {chromium}=require('playwright');const {execFileSync}=require('node:child_process');const assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({executablePath:'/home/uni/.local/bin/chromium',headless:true,args:['--no-sandbox']});try{
+const token=execFileSync('sudo',['-n','docker','exec','sched-share','python','-c',"import app;app.SECRET=app.load_secret();print(app.make_token('a'))"],{encoding:'utf8'}).trim();
+const ctx=await browser.newContext({viewport:{width:390,height:844}});
+await ctx.addCookies([{name:'sched_sess',value:token,url:'http://127.0.0.1:8795',httpOnly:true,sameSite:'Lax'}]);
+const p=await ctx.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));
+await p.goto('http://127.0.0.1:8795');
+await p.locator('.bottom-nav [data-v="month"]').click();
+await p.locator('.page-container [data-v="wishes"]').click();
+await p.locator('#wishesListContainer').waitFor();
+const cards=await p.locator('.wish-card').count();
+assert.ok(cards>0,'生产库里没有心愿卡片，无法验证');
+assert.equal(await p.locator('.wish-card').first().getAttribute('data-act'),'open-wish');
+const origTitle=await p.locator('.wish-card .wish-title').first().textContent();
+await p.locator('.wish-card').first().click();
+await p.locator('#ovWishDetail.show').waitFor();
+const detail=await p.locator('#ovWishDetailBox').textContent();
+assert.ok(detail.includes(origTitle.trim()),'详情没带出卡片标题');
+assert.ok(detail.includes('记录于')&&detail.includes('状态'));
+await p.locator('[data-act="edit-wish-detail"]').click();
+await p.locator('#we_title').waitFor();
+assert.equal(await p.locator('#we_title').inputValue(),origTitle.trim());
+assert.ok(await p.locator('#wishEditCatSeg .opt.on').count()===1);
+await p.locator('[data-act="cancel-edit-wish"]').click();
+await p.locator('#we_title').waitFor({state:'detached'});
+await p.locator('#ovWishDetail [data-act="close"]').click();
+await p.locator('#ovWishDetail.show').waitFor({state:'detached'});
+assert.deepEqual(errors,[]);
+console.log('WISHES_PRODUCTION_OK: '+cards+' cards, tap opens detail with title, edit prefills and cancels; no production writes');
+}finally{await browser.close();}})().catch(e=>{console.error(e.message);process.exitCode=1;});

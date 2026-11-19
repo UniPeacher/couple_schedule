@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" content="#faf6f0">
+<meta name="color-scheme" content="light dark">
+<script>
+(function(){
+  try {
+    var savedDark = localStorage.getItem("sched_dark_mode");
+    var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (savedDark === "1" || (savedDark !== "0" && prefersDark)){
+      document.documentElement.classList.add("dark");
+    }
+    var tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.content = document.documentElement.classList.contains("dark") ? "#15181e" : "#faf6f0";
+    var csm = document.querySelector('meta[name="color-scheme"]');
+    if (csm) csm.content = document.documentElement.classList.contains("dark") ? "dark" : "light";
+  } catch(e){}
+})();
+</script>
+<style>
+html, body {
+  background-color: #faf6f0 !important;
+}
+html.dark, html.dark body {
+  background-color: #15181e !important;
+}
+</style>
+<title>线条小狗 · 两人日程 🐾</title>
+<link rel="icon" type="image/png" href="/img/dogheads.png">
+<link rel="preload" as="image" href="/img/dogheads.png">
+<link rel="preload" as="image" href="/img/dog-couple.webp?v=20261116a">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/img/dog-couple.png">
+<link rel="stylesheet" href="/app.css?v=20261118journaltabs1">
+<link rel="stylesheet" href="/cycle2.css?v=20261118cycle2">
+<link rel="stylesheet" href="/settings_ui.css?v=20261115a">
+</head>
+<body>
+<div id="splashScreen" class="splash-screen">
+  <div class="splash-card">
+    <div class="splash-hero-box">
+      <div class="splash-aura"></div>
+      <img src="/img/dog-couple.webp?v=20261116a" alt="线条小狗贴贴" class="splash-img">
+      <span class="splash-heart">💕</span>
+    </div>
+    <div class="splash-title">线条小狗 · 两人日程 🐾</div>
+    <div class="splash-sub">今天也在认真生活，努力奔向你 💕</div>
+    <div class="splash-paws">
+      <span class="splash-paw">🐾</span>
+      <span class="splash-paw">🐾</span>
+      <span class="splash-paw">🐾</span>
+    </div>
+  </div>
+</div>
+<div id="app">
+  <div class="skeleton-app">
+    <div class="skeleton-topbar">
+      <div class="skeleton-brand">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-title"></div>
+      </div>
+      <div class="skeleton-pill"></div>
+    </div>
+    <div class="skeleton-weekbar">
+      <div class="skeleton-bar-md"></div>
+    </div>
+    <div class="skeleton-grid">
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:60px;margin-top:15px"></div>
+        <div class="skeleton-block" style="height:80px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:100px;margin-top:35px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:70px;margin-top:10px"></div>
+        <div class="skeleton-block" style="height:55px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:90px;margin-top:50px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:65px;margin-top:20px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:50px;margin-top:30px"></div>
+      </div>
+      <div class="skeleton-col">
+        <div class="skeleton-col-header"></div>
+        <div class="skeleton-block" style="height:60px;margin-top:60px"></div>
+      </div>
+    </div>
+    <div class="skeleton-bnav">
+      <div class="skeleton-bnav-item"></div>
+      <div class="skeleton-bnav-item"></div>
+      <div class="skeleton-bnav-item"></div>
+      <div class="skeleton-bnav-item"></div>
+    </div>
+  </div>
+</div>
+<script id="__SSR_DATA__">window.__INITIAL_DATA__ = null;</script>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/cycle2.js?v=20261118cycle2"></script>
+<script src="/settings_ui.js?v=20261117refresh1"></script>
+<script src="/trips.js?v=20261119layout1"></script>
+<script src="/app.js?v=20261119layout1"></script>
+</body>
+</html>

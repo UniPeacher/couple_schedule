@@ -3,24 +3,13 @@ services:
     build: .
     image: sched-share:latest
     container_name: sched-share
-    user: "1000:1000"
+    user: "${SCHED_UID:-1000}:${SCHED_GID:-1000}"
     restart: unless-stopped
     environment:
-      - TZ=Asia/Shanghai
-      - PORT=8795
-      - DATA_DIR=/data
+      TZ: Asia/Shanghai
+      PORT: 8795
+      DATA_DIR: /data
     ports:
       - "127.0.0.1:8795:8795"
     volumes:
       - ./data:/data
-      - ./app.py:/app/app.py
-      - ./special_days.py:/app/special_days.py
-      - ./cycle.py:/app/cycle.py
-      - ./cycle_collaboration.py:/app/cycle_collaboration.py
-      - ./cycle.js:/app/cycle.js
-      - ./cycle.css:/app/cycle.css
-      - ./settings_service.py:/app/settings_service.py
-      - ./settings_ui.js:/app/settings_ui.js
-      - ./settings_ui.css:/app/settings_ui.css
-      - ./template_page.html:/app/template_page.html
-      - ./dog-couple.png:/app/dog-couple.png
